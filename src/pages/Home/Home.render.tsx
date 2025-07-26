@@ -14,7 +14,7 @@ import {
 import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 
-const Home = ({ navigation }: any) => {
+const Home = ({ navigation, route }: { navigation: any; route: any }) => {
   return (
     <PageContainer>
       <ContentContainer>
@@ -90,7 +90,7 @@ const Home = ({ navigation }: any) => {
           onPress={() => navigation.navigate('Details')}
         />
       </ContentContainer>
-      <Navbar />
+      <Navbar navigation={navigation} route={route} />
     </PageContainer>
   );
 };
