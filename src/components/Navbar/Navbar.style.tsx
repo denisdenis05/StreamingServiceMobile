@@ -7,7 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { ReactNode } from 'react';
-import { colors } from '../../constants/styling.tsx';
+import { colors, sizes } from '../../constants/styling.tsx';
 import LinearGradient from 'react-native-linear-gradient';
 import DefaultText from '../DefaultText';
 
@@ -20,16 +20,20 @@ interface Props {
 const styles = StyleSheet.create({
   gradientContainer: {
     position: 'absolute',
-    height: 100,
+    height: sizes.navbarHeight,
     width: '100%',
     bottom: 0,
     paddingHorizontal: 30,
     paddingTop: 20,
     paddingBottom: 10,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   mainContainer: {
     display: 'flex',
     flexDirection: 'row',
+    justifyContent: 'space-around',
     gap: 20,
     width: '100%',
     height: '100%',

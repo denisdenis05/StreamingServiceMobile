@@ -72,8 +72,12 @@ export const CardContainer = ({ children }: Props) => {
   );
 };
 
-export const MusicCard = ({ children }: Props) => {
-  return <Pressable style={[styles.card]}>{children}</Pressable>;
+export const MusicCard = ({ children, onPress }: Props) => {
+  return (
+    <Pressable style={[styles.card]} onPress={onPress}>
+      {children}
+    </Pressable>
+  );
 };
 
 export const CardImage = ({ source }: ImageProps) => {

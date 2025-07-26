@@ -17,14 +17,16 @@ const HorizontalCardCarousel = ({
   sectionTitle: string;
   content: any;
 }) => {
-  const handleCardClick = () => {};
+  const handleCardClick = () => {
+    navigation.navigate('Playing');
+  };
 
   return (
     <MainContainer>
       <SectionTitle>{sectionTitle}</SectionTitle>
       <CardContainer>
         {content.map((card: any, index: number) => (
-          <MusicCard key={index} onPress={() => handleCardClick()}>
+          <MusicCard key={index} onPress={handleCardClick}>
             <CardImage source={{ uri: card.cover }} />
             <CardTitle>{card.title}</CardTitle>
             <CardAuthor>{card.author}</CardAuthor>

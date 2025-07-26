@@ -12,3 +12,7 @@ export const opacities = {
   veryTransparent: 0.3,
   transparent: 0,
 };
+
+export const sizes = {
+  navbarHeight: 100,
+};

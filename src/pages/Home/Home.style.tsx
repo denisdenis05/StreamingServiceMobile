@@ -2,6 +2,7 @@ import { Animated, Image, ImageProps, StyleSheet, View } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
+import { sizes } from '../../constants/styling.tsx';
 
 interface Props {
   children: ReactNode;
@@ -22,6 +23,7 @@ const styles = StyleSheet.create({
     minHeight: '100%',
     flexDirection: 'column',
     gap: 40,
+    paddingBottom: sizes.navbarHeight,
   },
   image: { height: 40, width: 40, borderRadius: 20 },
   title: { fontWeight: 'bold', fontSize: 24 },
