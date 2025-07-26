@@ -1,6 +1,7 @@
-import { Image, ImageProps, StyleSheet, View } from 'react-native';
+import { Animated, Image, ImageProps, StyleSheet, View } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
+import ScrollView = Animated.ScrollView;
 
 interface Props {
   children: ReactNode;
@@ -15,6 +16,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   contentContainer: {
+    flexGrow: 1,
     display: 'flex',
     width: '100%',
     minHeight: '100%',
@@ -30,7 +32,14 @@ export const HeaderContainer = ({ children }: Props) => {
 };
 
 export const ContentContainer = ({ children }: Props) => {
-  return <View style={styles.contentContainer}>{children}</View>;
+  return (
+    <ScrollView
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  );
 };
 
 export const StyledImage = ({ source }: ImageProps) => {

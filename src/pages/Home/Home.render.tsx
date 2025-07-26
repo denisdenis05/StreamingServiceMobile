@@ -1,5 +1,4 @@
 import React from 'react';
-import DefaultButton from '../../components/DefaultButton';
 import PageContainer from '../../components/PageContainer';
 import {
   ContentContainer,
@@ -9,10 +8,13 @@ import {
 } from './Home.style.tsx';
 import {
   PLACEHOLDER_PROFILE_PIC,
+  PLACEHOLDER_SECTION_CONTENT,
+  PLACEHOLDER_SECTION_NAME,
   PLACEHOLDER_USERNAME,
 } from '../../constants/placeholders.tsx';
 import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
+import HorizontalCardCarouselRender from '../../components/HorizontalCardCarousel';
 
 const Home = ({ navigation, route }: { navigation: any; route: any }) => {
   return (
@@ -25,70 +27,14 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
             {PLACEHOLDER_USERNAME}
           </HeaderTitle>
         </HeaderContainer>
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
-        <DefaultButton
-          title="Go to Details"
-          onPress={() => navigation.navigate('Details')}
-        />
+        {Array.from({ length: 10 }).map((_, index) => (
+          <HorizontalCardCarouselRender
+            key={index}
+            navigation={navigation}
+            sectionTitle={`${PLACEHOLDER_SECTION_NAME} ${index + 1}`}
+            content={PLACEHOLDER_SECTION_CONTENT}
+          />
+        ))}
       </ContentContainer>
       <Navbar navigation={navigation} route={route} />
     </PageContainer>
