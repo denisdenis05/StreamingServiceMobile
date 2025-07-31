@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StyleSheet, Dimensions, Animated, PanResponder } from 'react-native';
 import {
   AlbumCover,
@@ -20,81 +20,47 @@ import ShufflIcon from '../../../assets/icons/shuffleIcon.tsx';
 import RepeatIcon from '../../../assets/icons/repeatIcon.tsx';
 import BackwardIcon from '../../../assets/icons/backwardIcon.tsx';
 import PlayIcon from '../../../assets/icons/playIcon.tsx';
+import PauseIcon from '../../../assets/icons/pauseIcon.tsx';
 import ForwardIcon from '../../../assets/icons/forwardIcon.tsx';
-import {
-  PLACEHOLDER_ALBUM_COVER,
-  PLACEHOLDER_SONG,
-  PLACEHOLDER_SONG_ARTIST,
-} from '../../constants/placeholders.tsx';
+import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
+import {
+  getIsBuffering,
+  getIsLoading,
+  pauseTrack,
+  resumeTrack,
+  seekTo,
+  skipToNext,
+  skipToPrevious,
+  useCurrentTrack,
+} from '../../services/AudioPlayerService.ts';
+import { State, usePlaybackState } from 'react-native-track-player';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Playing = ({ navigation }: any) => {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(245); // 4:05 minutes
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
-
-  useEffect(() => {
-    let interval: any;
-    if (isPlaying && !isLoading) {
-      interval = setInterval(() => {
-        setCurrentTime(prev => {
-          if (prev >= duration) {
-            setIsPlaying(false);
-            return 0;
-          }
-          return prev + 1;
-        });
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [isPlaying, isLoading, duration]);
-
-  const handleSeek = (timeInSeconds: any) => {
-    console.log('Seeking to:', timeInSeconds);
-    setCurrentTime(timeInSeconds);
-    // Here seek audio player
-  };
-
-  const handleSeekStart = () => {
-    console.log('Seek started');
-    // Pause audio updates while seeking
-  };
-
-  const handleSeekEnd = () => {
-    console.log('Seek ended');
-    // Resume audio updates
-  };
+  const playbackState = usePlaybackState();
+  const currentlyPlayingSong = useCurrentTrack();
 
   const translateY = useRef(new Animated.Value(0)).current;
 
   const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (evt, gestureState) => {
-      return (
-        gestureState.dy > 0 &&
-        Math.abs(gestureState.dy) > Math.abs(gestureState.dx)
-      );
-    },
-    onPanResponderMove: (evt, gestureState) => {
+    onMoveShouldSetPanResponder: (_, gestureState) =>
+      gestureState.dy > 0 &&
+      Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+    onPanResponderMove: (_, gestureState) => {
       if (gestureState.dy > 0) {
         translateY.setValue(gestureState.dy);
       }
     },
-    onPanResponderRelease: (evt, gestureState) => {
+    onPanResponderRelease: (_, gestureState) => {
       if (gestureState.dy > 100 || gestureState.vy > 0.5) {
-        // Dismiss modal
         Animated.timing(translateY, {
           toValue: SCREEN_HEIGHT,
           duration: 300,
           useNativeDriver: true,
-        }).start(() => {
-          navigateBack();
-        });
+        }).start(() => navigation.goBack());
       } else {
-        // Snap back
         Animated.spring(translateY, {
           toValue: 0,
           useNativeDriver: true,
@@ -111,53 +77,46 @@ const Playing = ({ navigation }: any) => {
     }).start();
   }, []);
 
-  const navigateBack = () => {
-    navigation.goBack();
-  };
-
   return (
     <BackdropContainer>
       <Animated.View
-        style={[
-          styles.container,
-          {
-            transform: [{ translateY }],
-          },
-        ]}
+        style={[styles.container, { transform: [{ translateY }] }]}
         {...panResponder.panHandlers}
       >
         <ContentContainer>
           <DragIndicator />
           <HeaderContainer>
-            <ArrowDownIcon height={25} onPress={navigateBack} />
-            <HeaderTitle>Playing {PLACEHOLDER_SONG}</HeaderTitle>
+            <ArrowDownIcon height={25} onPress={navigation.goBack} />
+            <HeaderTitle>Playing {currentlyPlayingSong?.album}</HeaderTitle>
             <MoreIcon height={25} />
           </HeaderContainer>
           <AlbumCover source={{ uri: PLACEHOLDER_ALBUM_COVER }} />
           <SongDetailsContainer>
             <SongDescriptorContainer>
-              <SongTitle>{PLACEHOLDER_SONG}</SongTitle>
-              <SongAuthor>{PLACEHOLDER_SONG_ARTIST}</SongAuthor>
+              <SongTitle>{currentlyPlayingSong?.title}</SongTitle>
+              <SongAuthor>{currentlyPlayingSong?.artist}</SongAuthor>
             </SongDescriptorContainer>
-            <HeartIcon height={25} onPress={navigateBack} />
+            <HeartIcon height={25} onPress={() => {}} />
           </SongDetailsContainer>
           <AudioProgressBar
-            currentTime={currentTime}
-            duration={duration}
-            isLoading={isLoading}
-            isBuffering={isBuffering}
-            onSeek={handleSeek}
-            showThumb={true}
-            showTimeLabels={true}
-            onSeekStart={handleSeekStart}
-            onSeekEnd={handleSeekEnd}
+            isLoading={getIsLoading()}
+            isBuffering={getIsBuffering()}
+            onSeek={seekTo}
+            showThumb
+            showTimeLabels
+            onSeekStart={() => {}}
+            onSeekEnd={() => {}}
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer>
             <ShufflIcon height={30} />
-            <BackwardIcon height={30} />
-            <PlayIcon height={30} />
-            <ForwardIcon height={30} />
+            <BackwardIcon height={30} onPress={skipToPrevious} />
+            {playbackState.state === State.Playing ? (
+              <PauseIcon height={30} onPress={pauseTrack} />
+            ) : (
+              <PlayIcon height={30} onPress={resumeTrack} />
+            )}
+            <ForwardIcon height={30} onPress={skipToNext} />
             <RepeatIcon height={30} />
           </AllPlayingControlsContainer>
         </ContentContainer>

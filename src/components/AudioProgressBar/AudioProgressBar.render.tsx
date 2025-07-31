@@ -12,14 +12,15 @@ import {
   TimeContainer,
   TimeText,
 } from './AudioProgressBar.style.tsx';
+import { getDuration, getPosition } from '../../services/AudioPlayerService.ts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface AudioProgressBarProps {
   currentTime?: number;
   duration?: number;
-  isLoading?: boolean;
-  isBuffering?: boolean;
+  isLoading: boolean;
+  isBuffering: boolean;
   onSeek?: (timeInSeconds: number) => void;
   onSeekStart?: () => void;
   onSeekEnd?: () => void;
@@ -30,8 +31,6 @@ interface AudioProgressBarProps {
 }
 
 const AudioProgressBar = ({
-  currentTime = 0,
-  duration = 0,
   isLoading = false,
   isBuffering = false,
   onSeek,
@@ -42,6 +41,8 @@ const AudioProgressBar = ({
   disabled = false,
   containerStyle,
 }: AudioProgressBarProps) => {
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState(0);
   const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 40);
@@ -60,6 +61,28 @@ const AudioProgressBar = ({
     const seconds = Math.floor(timeInSeconds % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
+
+  useEffect(() => {
+    let isMounted = true;
+    const update = async () => {
+      try {
+        const pos = await getPosition();
+        const dur = await getDuration();
+        if (isMounted) {
+          setCurrentTime(pos);
+          setDuration(dur);
+        }
+      } catch (e) {
+        console.warn('Error fetching position/duration', e);
+      }
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
     if (showThumb) {
