@@ -4,6 +4,7 @@ import TrackPlayer, {
   Event,
   useTrackPlayerEvents,
   State,
+  AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 import { useState, useCallback } from 'react';
 import { cacheTrack, getCacheFilePath, isTrackCached } from './CachingService';
@@ -14,7 +15,7 @@ let isSetup = false;
 export async function setupPlayer() {
   if (isSetup) return;
 
-  await TrackPlayer.setupPlayer({ waitForBuffer: true });
+  await TrackPlayer.setupPlayer();
   await TrackPlayer.updateOptions({
     capabilities: [
       Capability.Play,
@@ -23,6 +24,11 @@ export async function setupPlayer() {
       Capability.SkipToPrevious,
     ],
     compactCapabilities: [Capability.Play, Capability.Pause],
+    android: {
+      alwaysPauseOnInterruption: true,
+      appKilledPlaybackBehavior:
+        AppKilledPlaybackBehavior.StopPlaybackAndRemoveNotification,
+    },
   });
 
   isSetup = true;
@@ -31,11 +37,7 @@ export async function setupPlayer() {
 async function processTrack(track: Track): Promise<Track> {
   let localPath: string | null = null;
   console.log('hgere');
-  if (
-    track.url &&
-    typeof track.url === 'string' &&
-    track.url.startsWith('http')
-  ) {
+  if (track.url && track.url.startsWith('http')) {
     console.log('hgere');
     const cached = await isTrackCached(track.url);
     console.log(`Track cached: ${cached} for URL: ${track.url}`);
@@ -67,7 +69,7 @@ async function processTrack(track: Track): Promise<Track> {
     } else {
       console.log('Caching track in background...');
       cacheTrack(track.url).catch(e => {
-        console.log(`Final track URL: ${finalUrl}`);
+        console.log(`Error while caching: ${e}`);
       });
       const finalUrl = localPath ? `file://${localPath}` : track.url;
       return {
@@ -78,7 +80,6 @@ async function processTrack(track: Track): Promise<Track> {
   }
 }
 
-// Simple player functions for single track
 export async function playTrack(track: Track) {
   await setupPlayer();
   await TrackPlayer.stop();
@@ -184,7 +185,6 @@ export function useQueue() {
     if (nextIndex < queue.length) {
       playTrackAtIndex(nextIndex);
     } else {
-      // End of queue
       setIsPlaying(false);
     }
   }, [currentIndex, queue.length, playTrackAtIndex]);
@@ -193,10 +193,8 @@ export function useQueue() {
     const progress = await TrackPlayer.getProgress();
 
     if (progress.position > 5) {
-      // If more than 5 seconds played, restart current track
       await TrackPlayer.seekTo(0);
     } else {
-      // Play previous track
       const prevIndex = currentIndex - 1;
       if (prevIndex >= 0) {
         playTrackAtIndex(prevIndex);
@@ -208,7 +206,6 @@ export function useQueue() {
     if (currentTrack) {
       await TrackPlayer.play();
     } else if (queue.length > 0) {
-      // No current track, start from beginning
       playTrackAtIndex(0);
     }
   }, [currentTrack, queue.length, playTrackAtIndex]);
@@ -230,11 +227,9 @@ export function useQueue() {
         const newQueue = [...prev];
         newQueue.splice(index, 1);
 
-        // Adjust current index if needed
         if (index < currentIndex) {
           setCurrentIndex(prev => prev - 1);
         } else if (index === currentIndex) {
-          // Current track was removed, stop playback
           setCurrentIndex(-1);
           TrackPlayer.stop();
           TrackPlayer.reset();

@@ -52,8 +52,25 @@ const AlbumViewer = ({ navigation, route }: any) => {
       artist: recording.artistName,
       album: recording.releaseTitle,
       mediaId: recording.id,
-      artwork: PLACEHOLDER_ALBUM_COVER,
+      artwork: recording.cover,
     }));
+    replaceQueue(tracks);
+    setShouldPlayFromStart(true);
+
+    navigation.navigate('Playing', {});
+  };
+
+  const handlePlayFromRecording = (recordingIndex: number) => {
+    const tracks: Track[] = recordings.slice(recordingIndex).map(recording => ({
+      id: recording.id,
+      url: `http://192.168.1.14:5068/Stream?id=${recording.id}`,
+      title: recording.title,
+      artist: recording.artistName,
+      album: recording.releaseTitle,
+      mediaId: recording.id,
+      artwork: recording.cover,
+    }));
+
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
 
@@ -74,7 +91,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
         <PlayIcon height={25} onPress={handlePlayAlbum} />
       </SongDetailsContainer>
       <RecordingsContainer>
-        {recordings.map((recording: Recording) => (
+        {recordings.map((recording: Recording, index: number) => (
           <PlaylistSong
             key={recording.id.toString()}
             navigation={navigation}
@@ -83,6 +100,10 @@ const AlbumViewer = ({ navigation, route }: any) => {
             songAuthor={recording.artistName}
             albumId={albumId}
             albumTitle={albumTitle}
+            albumCover={recording.cover}
+            playAction={() => {
+              handlePlayFromRecording(index);
+            }}
           />
         ))}
       </RecordingsContainer>
