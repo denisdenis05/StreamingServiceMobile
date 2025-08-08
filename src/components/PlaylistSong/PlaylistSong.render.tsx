@@ -6,7 +6,8 @@ import {
   MusicCard,
 } from './PlaylistSong.style.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
-import { playTrack, resetQueue } from '../../services/AudioPlayerService.ts';
+import { useMusicQueue } from '../../../MusicProvider.tsx';
+import { useEffect, useState } from 'react';
 
 const PlaylistSong = ({
   navigation,
@@ -22,17 +23,29 @@ const PlaylistSong = ({
   albumId: any;
   albumTitle: any;
 }) => {
+  const { replaceQueue, playQueueFromStart, queue } = useMusicQueue();
+  const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
+
+  useEffect(() => {
+    if (shouldPlayFromStart) {
+      playQueueFromStart();
+      setShouldPlayFromStart(false);
+    }
+  }, [queue]);
+
   const handleCardClick = () => {
-    resetQueue();
-    playTrack({
-      id: 'audio1',
-      url: `http://192.168.1.137:5068/Stream?id=${songId}`,
-      title: songTitle,
-      artist: songAuthor,
-      album: albumTitle,
-      mediaId: songId,
-      artwork: PLACEHOLDER_ALBUM_COVER,
-    });
+    replaceQueue([
+      {
+        id: 'audio1',
+        url: `http://192.168.1.14:5068/Stream?id=${songId}`,
+        title: songTitle,
+        artist: songAuthor,
+        album: albumTitle,
+        mediaId: songId,
+        artwork: PLACEHOLDER_ALBUM_COVER,
+      },
+    ]);
+    setShouldPlayFromStart(true);
     navigation.navigate('Playing', {});
   };
 

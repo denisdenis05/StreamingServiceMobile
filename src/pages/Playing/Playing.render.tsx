@@ -24,23 +24,16 @@ import PauseIcon from '../../../assets/icons/pauseIcon.tsx';
 import ForwardIcon from '../../../assets/icons/forwardIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
-import {
-  getIsBuffering,
-  getIsLoading,
-  pauseTrack,
-  resumeTrack,
-  seekTo,
-  skipToNext,
-  skipToPrevious,
-  useCurrentTrack,
-} from '../../services/AudioPlayerService.ts';
 import { State, usePlaybackState } from 'react-native-track-player';
+import { useMusicQueue } from '../../../MusicProvider.tsx';
+import { seekTo } from '../../services/AudioPlayerService.ts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Playing = ({ navigation }: any) => {
   const playbackState = usePlaybackState();
-  const currentlyPlayingSong = useCurrentTrack();
+  const { currentTrack, isLoading, play, pause, playNext, playPrevious } =
+    useMusicQueue();
 
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -87,20 +80,20 @@ const Playing = ({ navigation }: any) => {
           <DragIndicator />
           <HeaderContainer>
             <ArrowDownIcon height={25} onPress={navigation.goBack} />
-            <HeaderTitle>Playing {currentlyPlayingSong?.album}</HeaderTitle>
+            <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
             <MoreIcon height={25} />
           </HeaderContainer>
           <AlbumCover source={{ uri: PLACEHOLDER_ALBUM_COVER }} />
           <SongDetailsContainer>
             <SongDescriptorContainer>
-              <SongTitle>{currentlyPlayingSong?.title}</SongTitle>
-              <SongAuthor>{currentlyPlayingSong?.artist}</SongAuthor>
+              <SongTitle>{currentTrack?.title}</SongTitle>
+              <SongAuthor>{currentTrack?.artist}</SongAuthor>
             </SongDescriptorContainer>
             <HeartIcon height={25} onPress={() => {}} />
           </SongDetailsContainer>
           <AudioProgressBar
-            isLoading={getIsLoading()}
-            isBuffering={getIsBuffering()}
+            isLoading={isLoading}
+            isBuffering={false}
             onSeek={seekTo}
             showThumb
             showTimeLabels
@@ -110,13 +103,13 @@ const Playing = ({ navigation }: any) => {
           />
           <AllPlayingControlsContainer>
             <ShufflIcon height={30} />
-            <BackwardIcon height={30} onPress={skipToPrevious} />
+            <BackwardIcon height={30} onPress={playPrevious} />
             {playbackState.state === State.Playing ? (
-              <PauseIcon height={30} onPress={pauseTrack} />
+              <PauseIcon height={30} onPress={pause} />
             ) : (
-              <PlayIcon height={30} onPress={resumeTrack} />
+              <PlayIcon height={30} onPress={play} />
             )}
-            <ForwardIcon height={30} onPress={skipToNext} />
+            <ForwardIcon height={30} onPress={playNext} />
             <RepeatIcon height={30} />
           </AllPlayingControlsContainer>
         </ContentContainer>

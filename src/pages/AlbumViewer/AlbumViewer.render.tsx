@@ -11,21 +11,23 @@ import {
 import ArrowLeftIcon from '../../../assets/icons/arrowLeftIcon.tsx';
 import PlayIcon from '../../../assets/icons/playIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
-import { addTrack, resetQueue } from '../../services/AudioPlayerService.ts';
 import PlaylistSong from '../../components/PlaylistSong';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Recording } from '../../constants/types.tsx';
-import { play } from 'react-native-track-player/lib/src/trackPlayer';
+import { Track } from 'react-native-track-player';
+import { useMusicQueue } from '../../../MusicProvider.tsx';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist } = route.params;
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const { replaceQueue, playQueueFromStart, queue } = useMusicQueue();
+  const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
 
   useEffect(() => {
     axios
       .get(
-        `http://192.168.1.137:5068/Metadata/get-recordings?albumId=${albumId}`
+        `http://192.168.1.14:5068/Metadata/get-recordings?albumId=${albumId}`
       )
       .then(res => {
         setRecordings(res.data);
@@ -35,20 +37,25 @@ const AlbumViewer = ({ navigation, route }: any) => {
       });
   }, []);
 
+  useEffect(() => {
+    if (shouldPlayFromStart) {
+      playQueueFromStart();
+      setShouldPlayFromStart(false);
+    }
+  }, [queue]);
+
   const handlePlayAlbum = () => {
-    recordings.forEach(recording => {
-      resetQueue();
-      addTrack({
-        id: 'audio1',
-        url: `http://192.168.1.137:5068/Stream?id=${recording.id}`,
-        title: recording.title,
-        artist: recording.artistName,
-        album: recording.releaseTitle,
-        mediaId: recording.id,
-        artwork: PLACEHOLDER_ALBUM_COVER,
-      });
-      play();
-    });
+    const tracks: Track[] = recordings.map(recording => ({
+      id: recording.id,
+      url: `http://192.168.1.14:5068/Stream?id=${recording.id}`,
+      title: recording.title,
+      artist: recording.artistName,
+      album: recording.releaseTitle,
+      mediaId: recording.id,
+      artwork: PLACEHOLDER_ALBUM_COVER,
+    }));
+    replaceQueue(tracks);
+    setShouldPlayFromStart(true);
 
     navigation.navigate('Playing', {});
   };

@@ -21,7 +21,7 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
 
   useEffect(() => {
     axios
-      .get('http://192.168.1.137:5068/Metadata/get-available-albums')
+      .get('http://192.168.1.14:5068/Metadata/get-available-albums')
       .then(res => {
         setAlbums(res.data);
       })
