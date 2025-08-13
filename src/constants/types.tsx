@@ -5,3 +5,10 @@ export interface Recording {
   releaseTitle: string;
   cover: string;
 }
+
+export interface Album {
+  id: string;
+  title: string;
+  artistName: string;
+  cover: string;
+}

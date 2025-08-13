@@ -15,13 +15,14 @@ import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import HorizontalCardCarouselRender from '../../components/HorizontalCardCarousel';
 import axios from 'axios';
+import { API_URL } from '@env';
 
 const Home = ({ navigation, route }: { navigation: any; route: any }) => {
   const [albums, setAlbums] = useState([]);
 
   useEffect(() => {
     axios
-      .get('http://192.168.1.14:5068/Metadata/get-available-albums')
+      .get(`${API_URL}/Metadata/get-available-albums`)
       .then(res => {
         setAlbums(res.data);
       })

@@ -17,20 +17,22 @@ import axios from 'axios';
 import { Recording } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
+import { HeaderTitle } from '../Home/Home.style.tsx';
+import { API_URL } from '@env';
 
 const AlbumViewer = ({ navigation, route }: any) => {
-  const { albumId, albumTitle, albumArtist } = route.params;
+  const { albumId, albumTitle, albumArtist, albumCover } = route.params;
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const { replaceQueue, playQueueFromStart, queue } = useMusicQueue();
   const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
+  const [fetched, setFetched] = useState(false);
 
   useEffect(() => {
     axios
-      .get(
-        `http://192.168.1.14:5068/Metadata/get-recordings?albumId=${albumId}`
-      )
+      .get(`${API_URL}/Metadata/get-recordings?albumId=${albumId}`)
       .then(res => {
         setRecordings(res.data);
+        setFetched(true);
       })
       .catch(err => {
         console.error('Failed to fetch recordings:', err);
@@ -47,7 +49,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayAlbum = () => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `http://192.168.1.14:5068/Stream?id=${recording.id}`,
+      url: `${API_URL}/Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -63,7 +65,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayFromRecording = (recordingIndex: number) => {
     const tracks: Track[] = recordings.slice(recordingIndex).map(recording => ({
       id: recording.id,
-      url: `http://192.168.1.14:5068/Stream?id=${recording.id}`,
+      url: `${API_URL}/Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -82,7 +84,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       <HeaderContainer>
         <ArrowLeftIcon height={25} onPress={navigation.goBack} />
       </HeaderContainer>
-      <AlbumCover source={{ uri: PLACEHOLDER_ALBUM_COVER }} />
+      <AlbumCover source={{ uri: albumCover || PLACEHOLDER_ALBUM_COVER }} />
       <SongDetailsContainer>
         <SongDescriptorContainer>
           <SongTitle>{albumTitle}</SongTitle>
@@ -91,21 +93,27 @@ const AlbumViewer = ({ navigation, route }: any) => {
         <PlayIcon height={25} onPress={handlePlayAlbum} />
       </SongDetailsContainer>
       <RecordingsContainer>
-        {recordings.map((recording: Recording, index: number) => (
-          <PlaylistSong
-            key={recording.id.toString()}
-            navigation={navigation}
-            songId={recording.id}
-            songTitle={recording.title}
-            songAuthor={recording.artistName}
-            albumId={albumId}
-            albumTitle={albumTitle}
-            albumCover={recording.cover}
-            playAction={() => {
-              handlePlayFromRecording(index);
-            }}
-          />
-        ))}
+        {recordings.length > 0 ? (
+          recordings.map((recording: Recording, index: number) => (
+            <PlaylistSong
+              key={recording.id.toString()}
+              navigation={navigation}
+              songId={recording.id}
+              songTitle={recording.title}
+              songAuthor={recording.artistName}
+              albumId={albumId}
+              albumTitle={albumTitle}
+              albumCover={recording.cover}
+              playAction={() => {
+                handlePlayFromRecording(index);
+              }}
+            />
+          ))
+        ) : fetched ? (
+          <HeaderTitle>
+            Album temporarily unavailable, check again in a few minutes
+          </HeaderTitle>
+        ) : null}
       </RecordingsContainer>
     </ContentContainer>
   );

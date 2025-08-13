@@ -18,8 +18,18 @@ const HorizontalCardCarousel = ({
   sectionTitle: string;
   content: any;
 }) => {
-  const handleCardClick = (albumId: any, albumTitle: any, albumArtist: any) => {
-    navigation.navigate('AlbumViewer', { albumId, albumTitle, albumArtist });
+  const handleCardClick = (
+    albumId: any,
+    albumTitle: any,
+    albumArtist: any,
+    albumCover: any
+  ) => {
+    navigation.navigate('AlbumViewer', {
+      albumId,
+      albumTitle,
+      albumArtist,
+      albumCover,
+    });
   };
 
   return (
@@ -30,7 +40,7 @@ const HorizontalCardCarousel = ({
           <MusicCard
             key={index}
             onPress={() => {
-              handleCardClick(card.id, card.title, card.artistName);
+              handleCardClick(card.id, card.title, card.artistName, card.cover);
             }}
           >
             <CardImage

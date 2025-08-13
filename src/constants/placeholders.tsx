@@ -4,7 +4,7 @@ export const PLACEHOLDER_PROFILE_PIC =
 export const PLACEHOLDER_USERNAME = 'Denis';
 
 export const PLACEHOLDER_ALBUM_COVER =
-  'https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fassets.fontsinuse.com%2Fstatic%2Fuse-media-items%2F52%2F51196%2Ffull-1500x1500%2F58f577f9%2FC9H8-PWUIAAzbQ2-jpg-large-e.jpeg&f=1&nofb=1&ipt=6af001816a8c593326e7326563f24bdf5ee23b5439a732541152b71bb5942d21';
+  'https://images.genius.com/214832242f9aede9acebc03c2e89cd76.500x500x1.png';
 
 export const PLACEHOLDER_SECTION_NAME = 'Recent listens';
 export const PLACEHOLDER_SECTION_CONTENT = [

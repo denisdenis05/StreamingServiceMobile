@@ -25,7 +25,7 @@ const PlayingOverlay = ({ navigation }: { navigation: any }) => {
     <MainContainer onPress={handleClick}>
       <MetadataContainer>
         <CardImage
-          source={{ uri: currentTrack?.cover || PLACEHOLDER_ALBUM_COVER }}
+          source={{ uri: currentTrack?.artwork || PLACEHOLDER_ALBUM_COVER }}
         />
         <TextContainer>
           <CardTitle>{currentTrack?.title}</CardTitle>

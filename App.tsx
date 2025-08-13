@@ -6,6 +6,7 @@ import Playing from './src/pages/Playing';
 import { setupPlayer } from './src/services/AudioPlayerService.ts';
 import AlbumViewer from './src/pages/AlbumViewer';
 import { MusicProvider } from './MusicProvider.tsx';
+import Search from './src/pages/Search';
 
 const Stack = createNativeStackNavigator();
 
@@ -29,6 +30,11 @@ const App = () => {
           <Stack.Screen
             name="Home"
             component={Home}
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="Search"
+            component={Search}
             options={{ headerShown: false }}
           />
           <Stack.Screen
