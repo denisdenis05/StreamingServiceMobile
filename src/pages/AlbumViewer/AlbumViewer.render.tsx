@@ -19,6 +19,7 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { HeaderTitle } from '../Home/Home.style.tsx';
 import { API_URL } from '@env';
 import { useApi } from '../../hooks/useApi.ts';
+import { useAuth } from '../../hooks/AuthContext.tsx';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover } = route.params;
@@ -27,6 +28,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
   const [fetched, setFetched] = useState(false);
   const api = useApi();
+  const { token } = useAuth();
 
   useEffect(() => {
     api
@@ -56,6 +58,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       album: recording.releaseTitle,
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
+      headers: { Authorization: `Bearer ${token}` },
     }));
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
@@ -72,6 +75,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       album: recording.releaseTitle,
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
+      headers: { Authorization: `Bearer ${token}` },
     }));
 
     replaceQueue(tracks);

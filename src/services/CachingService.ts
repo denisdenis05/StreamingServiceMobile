@@ -36,13 +36,16 @@ export async function isTrackCached(url: string) {
   return RNFS.exists(path);
 }
 
-export async function cacheTrack(url: string) {
+export async function cacheTrack(url: string, headers: any) {
   await ensureCacheDir(AUDIO_CACHE_DIR);
   const path = getCacheFilePath(url);
   if (await RNFS.exists(path)) return path;
 
-  const result = await RNFS.downloadFile({ fromUrl: url, toFile: path })
-    .promise;
+  const result = await RNFS.downloadFile({
+    fromUrl: url,
+    toFile: path,
+    headers,
+  }).promise;
   if (result.statusCode === 200) {
     return path;
   } else {

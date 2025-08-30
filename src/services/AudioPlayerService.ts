@@ -63,7 +63,7 @@ async function processTrack(track: Track): Promise<Track> {
         );
       }
     } else {
-      cacheTrack(track.url).catch(e => {
+      cacheTrack(track.url, track.headers).catch(e => {
         console.error(`Error while caching track ${track.id}:`, e);
       });
     }
