@@ -168,10 +168,12 @@ export const StyledInput = ({
   value,
   onChangeText,
   placeholder,
+  secureTextEntry = false, // Add secureTextEntry prop
 }: {
   value: string;
   onChangeText: (text: string) => void;
   placeholder?: string;
+  secureTextEntry?: boolean;
 }) => {
   return (
     <TextInput
@@ -179,6 +181,7 @@ export const StyledInput = ({
       placeholder={placeholder || '...'}
       value={value}
       onChangeText={onChangeText}
+      secureTextEntry={secureTextEntry}
     />
   );
 };

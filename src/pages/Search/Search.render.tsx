@@ -11,14 +11,14 @@ import { PLACEHOLDER_PROFILE_PIC } from '../../constants/placeholders.tsx';
 import { SEARCH_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import { Album } from '../../constants/types.tsx';
 import SearchEntry from '../../components/SearchEntry';
-import { API_URL } from '@env';
+import { useApi } from '../../hooks/useApi.ts';
 
 const Search = ({ navigation, route }: { navigation: any; route: any }) => {
   const [query, setQuery] = useState('');
   const [albums, setAlbums] = useState<Album[]>([]);
+  const api = useApi();
 
   useEffect(() => {
     if (query.length <= 3) {
@@ -29,10 +29,9 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     const delayDebounce = setTimeout(() => {
       const fetchData = async () => {
         try {
-          const response = await axios.get(
-            `${API_URL}/Metadata/search-albums`,
-            { params: { query } }
-          );
+          const response = await api.get(`Metadata/search-albums`, {
+            params: { query },
+          });
           setAlbums(response.data);
         } catch (error) {
           console.error('Error fetching search results:', error);

@@ -61,6 +61,7 @@ const LoginCard: React.FC<{
       value={password}
       onChangeText={setPassword}
       placeholder="Password"
+      secureTextEntry={true}
     />
     <RemmeberMe isChecked={rememberMe} setIsChecked={setRememberMe} />
     <LoginButton onPress={handleLogin}>
@@ -106,6 +107,7 @@ const RegisterCard = ({
         value={password}
         onChangeText={setPassword}
         placeholder={'Password'}
+        secureTextEntry={true}
       />
       <LoginButton onPress={handleRegister}>
         <ButtonText>Create account</ButtonText>
