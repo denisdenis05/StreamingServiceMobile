@@ -3,6 +3,8 @@ export const colors = {
   navbarGradient: ['#121212CC', '#121212FF'],
   normalText: '#FFFFFF',
   slightlyTransparentText: '#FFFFFFCC',
+  lowOpacityText: '#FFFFFF33',
+  sloghtlyColoredText: '#C8CEDE',
 };
 
 export const opacities = {

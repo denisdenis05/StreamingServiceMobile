@@ -6,7 +6,7 @@ import TrackPlayer, {
   State,
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { cacheTrack, getCacheFilePath, isTrackCached } from './CachingService';
 import RNFS from 'react-native-fs';
 
@@ -22,6 +22,7 @@ export async function setupPlayer() {
       Capability.Pause,
       Capability.SkipToNext,
       Capability.SkipToPrevious,
+      Capability.SeekTo,
     ],
     compactCapabilities: [Capability.Play, Capability.Pause],
     android: {
@@ -35,49 +36,39 @@ export async function setupPlayer() {
 }
 
 async function processTrack(track: Track): Promise<Track> {
-  let localPath: string | null = null;
-  console.log('hgere');
   if (track.url && track.url.startsWith('http')) {
-    console.log('hgere');
     const cached = await isTrackCached(track.url);
-    console.log(`Track cached: ${cached} for URL: ${track.url}`);
 
     if (cached) {
-      localPath = getCacheFilePath(track.url);
-      console.log(`Using cached file: ${localPath}`);
+      let localPath = getCacheFilePath(track.url);
 
       try {
         const stat = await RNFS.stat(localPath);
-        console.log(`Cached file size: ${stat.size} bytes`);
-        if (stat.size === 0) {
-          console.warn('Cached file is empty, falling back to streaming');
-          localPath = null;
+        if (stat.size > 0) {
+          return {
+            ...track,
+            url: `file://${localPath}`,
+          };
+        } else {
+          console.warn(
+            'Cached file is empty or invalid, falling back to streaming:',
+            localPath
+          );
         }
       } catch (error) {
         console.warn(
           'Error reading cached file, falling back to streaming:',
+          localPath,
           error
         );
-        localPath = null;
       }
-
-      const finalUrl = localPath ? `file://${localPath}` : track.url;
-      return {
-        ...track,
-        url: finalUrl,
-      };
     } else {
-      console.log('Caching track in background...');
       cacheTrack(track.url).catch(e => {
-        console.log(`Error while caching: ${e}`);
+        console.error(`Error while caching track ${track.id}:`, e);
       });
-      const finalUrl = localPath ? `file://${localPath}` : track.url;
-      return {
-        ...track,
-        url: finalUrl,
-      };
     }
   }
+  return track;
 }
 
 export async function playTrack(track: Track) {
@@ -119,39 +110,45 @@ export function useQueue() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const isStoppingRef = useRef(false);
+
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
 
-  useTrackPlayerEvents([Event.PlaybackState], async event => {
-    setIsPlaying(event.state === State.Playing);
-    if (event.state === State.Stopped) {
-      playNext();
+  useTrackPlayerEvents(
+    [Event.PlaybackState, Event.PlaybackQueueEnded],
+    async event => {
+      if (event.type === Event.PlaybackState) {
+        setIsPlaying(event.state === State.Playing);
+        setIsLoading(
+          event.state === State.Loading || event.state === State.Buffering
+        );
+
+        if (event.state === State.Stopped && !isStoppingRef.current) {
+          playNext();
+        }
+      }
     }
-    setIsLoading(
-      event.state === State.Loading || event.state === State.Buffering
-    );
-    setIsPlaying(event.state === State.Playing);
-    setIsLoading(
-      event.state === State.Loading || event.state === State.Buffering
-    );
-  });
+  );
 
   const playTrackAtIndex = useCallback(
     async (index: number) => {
-      if (index < 0 || index >= queue.length) return;
-      console.log('We play track at index ' + index);
+      if (index < 0 || index >= queue.length) {
+        return;
+      }
       try {
         setIsLoading(true);
         setCurrentIndex(index);
 
         const track = queue[index];
-        console.log('we load from: ' + track.url);
 
-        const processedTrack = await processTrack(track);
-        console.log('HERE WTF');
-        console.log('we play from: ' + processedTrack.url);
+        isStoppingRef.current = true;
         await setupPlayer();
         await TrackPlayer.stop();
         await TrackPlayer.reset();
+        isStoppingRef.current = false;
+
+        const processedTrack = await processTrack(track);
+
         await TrackPlayer.add(processedTrack);
         await TrackPlayer.play();
       } catch (error) {
@@ -180,12 +177,14 @@ export function useQueue() {
     TrackPlayer.reset();
   }, []);
 
-  const playNext = useCallback(() => {
+  const playNext = useCallback(async () => {
     const nextIndex = currentIndex + 1;
     if (nextIndex < queue.length) {
-      playTrackAtIndex(nextIndex);
+      await playTrackAtIndex(nextIndex);
     } else {
       setIsPlaying(false);
+      await TrackPlayer.stop();
+      await TrackPlayer.reset();
     }
   }, [currentIndex, queue.length, playTrackAtIndex]);
 
@@ -197,7 +196,9 @@ export function useQueue() {
     } else {
       const prevIndex = currentIndex - 1;
       if (prevIndex >= 0) {
-        playTrackAtIndex(prevIndex);
+        await playTrackAtIndex(prevIndex);
+      } else {
+        await TrackPlayer.seekTo(0);
       }
     }
   }, [currentIndex, playTrackAtIndex]);
@@ -206,7 +207,7 @@ export function useQueue() {
     if (currentTrack) {
       await TrackPlayer.play();
     } else if (queue.length > 0) {
-      playTrackAtIndex(0);
+      await playTrackAtIndex(0);
     }
   }, [currentTrack, queue.length, playTrackAtIndex]);
 
@@ -214,10 +215,9 @@ export function useQueue() {
     await TrackPlayer.pause();
   }, []);
 
-  const playQueueFromStart = useCallback(() => {
-    console.log('queue length: ' + queue.length);
+  const playQueueFromStart = useCallback(async () => {
     if (queue.length > 0) {
-      playTrackAtIndex(0);
+      await playTrackAtIndex(0);
     }
   }, [queue.length, playTrackAtIndex]);
 

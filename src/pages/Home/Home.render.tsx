@@ -7,6 +7,7 @@ import {
   StyledImage,
 } from './Home.style.tsx';
 import {
+  PLACEHOLDER_ALBUM_COVER,
   PLACEHOLDER_PROFILE_PIC,
   PLACEHOLDER_SECTION_NAME,
   PLACEHOLDER_USERNAME,
@@ -14,21 +15,37 @@ import {
 import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import HorizontalCardCarouselRender from '../../components/HorizontalCardCarousel';
-import axios from 'axios';
-import { API_URL } from '@env';
+import { Album } from '../../constants/types.tsx';
+import { cacheImage } from '../../services/CachingService.ts';
+import { useApi } from '../../hooks/useApi.ts';
 
 const Home = ({ navigation, route }: { navigation: any; route: any }) => {
-  const [albums, setAlbums] = useState([]);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const api = useApi();
 
   useEffect(() => {
-    axios
-      .get(`${API_URL}/Metadata/get-available-albums`)
-      .then(res => {
-        setAlbums(res.data);
-      })
-      .catch(err => {
-        console.error('Failed to fetch recordings:', err);
-      });
+    const fetchAndCacheAlbums = async () => {
+      try {
+        const res = await api.get(`Metadata/get-available-albums`);
+        const fetchedAlbums: Album[] = res.data;
+
+        const processedAlbumsPromises = fetchedAlbums.map(async album => {
+          if (album.cover && album.cover !== PLACEHOLDER_ALBUM_COVER) {
+            const cachedCoverUri = await cacheImage(album.cover);
+            return { ...album, cover: cachedCoverUri };
+          }
+          return album;
+        });
+
+        const updatedAlbums = await Promise.all(processedAlbumsPromises);
+
+        setAlbums(updatedAlbums);
+      } catch (err) {
+        console.error('Failed to fetch and cache albums:', err);
+      }
+    };
+
+    fetchAndCacheAlbums();
   }, []);
 
   return (

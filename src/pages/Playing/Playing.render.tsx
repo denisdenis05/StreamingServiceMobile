@@ -83,7 +83,9 @@ const Playing = ({ navigation }: any) => {
             <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
             <MoreIcon height={25} />
           </HeaderContainer>
-          <AlbumCover source={{ uri: PLACEHOLDER_ALBUM_COVER }} />
+          <AlbumCover
+            source={{ uri: currentTrack?.artwork || PLACEHOLDER_ALBUM_COVER }}
+          />
           <SongDetailsContainer>
             <SongDescriptorContainer>
               <SongTitle>{currentTrack?.title}</SongTitle>

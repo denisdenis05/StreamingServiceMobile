@@ -13,12 +13,12 @@ import PlayIcon from '../../../assets/icons/playIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import PlaylistSong from '../../components/PlaylistSong';
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import { Recording } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { HeaderTitle } from '../Home/Home.style.tsx';
 import { API_URL } from '@env';
+import { useApi } from '../../hooks/useApi.ts';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover } = route.params;
@@ -26,10 +26,11 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const { replaceQueue, playQueueFromStart, queue } = useMusicQueue();
   const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const api = useApi();
 
   useEffect(() => {
-    axios
-      .get(`${API_URL}/Metadata/get-recordings?albumId=${albumId}`)
+    api
+      .get(`Metadata/get-recordings?albumId=${albumId}`)
       .then(res => {
         setRecordings(res.data);
         setFetched(true);
@@ -54,7 +55,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       artist: recording.artistName,
       album: recording.releaseTitle,
       mediaId: recording.id,
-      artwork: recording.cover,
+      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
     }));
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
@@ -70,7 +71,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       artist: recording.artistName,
       album: recording.releaseTitle,
       mediaId: recording.id,
-      artwork: recording.cover,
+      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
     }));
 
     replaceQueue(tracks);
