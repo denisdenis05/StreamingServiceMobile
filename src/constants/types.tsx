@@ -12,3 +12,9 @@ export interface Album {
   artistName: string;
   cover: string;
 }
+
+export enum RepeatingType {
+  None = 0,
+  Album = 1,
+  Song = 2,
+}

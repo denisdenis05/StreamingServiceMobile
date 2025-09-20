@@ -23,8 +23,9 @@ import { useAuth } from '../../hooks/AuthContext.tsx';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover } = route.params;
+  const [startIndex, setStartIndex] = useState(0);
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const { replaceQueue, playQueueFromStart, queue } = useMusicQueue();
+  const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
   const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
   const [fetched, setFetched] = useState(false);
   const api = useApi();
@@ -44,7 +45,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
 
   useEffect(() => {
     if (shouldPlayFromStart) {
-      playQueueFromStart();
+      playTrackAtIndex(startIndex);
       setShouldPlayFromStart(false);
     }
   }, [queue]);
@@ -60,6 +61,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
     }));
+    setStartIndex(0);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
 
@@ -67,7 +69,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   };
 
   const handlePlayFromRecording = (recordingIndex: number) => {
-    const tracks: Track[] = recordings.slice(recordingIndex).map(recording => ({
+    const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
       url: `${API_URL}/Stream?id=${recording.id}`,
       title: recording.title,
@@ -78,6 +80,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       headers: { Authorization: `Bearer ${token}` },
     }));
 
+    setStartIndex(recordingIndex);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
 

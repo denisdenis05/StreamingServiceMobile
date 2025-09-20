@@ -9,6 +9,7 @@ import TrackPlayer, {
 import { useState, useCallback, useRef } from 'react';
 import { cacheTrack, getCacheFilePath, isTrackCached } from './CachingService';
 import RNFS from 'react-native-fs';
+import { RepeatingType } from '../constants/types.tsx';
 
 let isSetup = false;
 
@@ -109,6 +110,7 @@ export function useQueue() {
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [repeatingState, setRepeatingState] = useState(RepeatingType.None);
 
   const isStoppingRef = useRef(false);
   const queueRef = useRef(queue);
@@ -129,12 +131,18 @@ export function useQueue() {
 
         if (event.state === State.Ended) {
           console.log('Track ended, attempting to play next');
-          const nextIndex = currentIndexRef.current + 1;
-          if (nextIndex < queueRef.current.length) {
-            playTrackAtIndex(nextIndex);
+          if (repeatingState === RepeatingType.Song) {
+            await playTrackAtIndex(currentIndexRef.current);
           } else {
-            console.log('End of queue reached');
-            setIsPlaying(false);
+            if (currentIndex < queue.length - 1) {
+              const nextIndex = currentIndexRef.current + 1;
+              await playTrackAtIndex(nextIndex);
+            } else {
+              if (repeatingState === RepeatingType.Album) {
+                const nextIndex = 0;
+                await playTrackAtIndex(nextIndex);
+              }
+            }
           }
         }
 
@@ -273,6 +281,7 @@ export function useQueue() {
     playPrevious,
     playTrackAtIndex,
     playQueueFromStart,
+    setRepeatingState,
 
     hasNext: currentIndex < queue.length - 1,
     hasPrevious: currentIndex > 0,
