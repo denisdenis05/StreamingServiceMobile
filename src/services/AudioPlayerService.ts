@@ -281,6 +281,7 @@ export function useQueue() {
     playPrevious,
     playTrackAtIndex,
     playQueueFromStart,
+    repeatingState,
     setRepeatingState,
 
     hasNext: currentIndex < queue.length - 1,

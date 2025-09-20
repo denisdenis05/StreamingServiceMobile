@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { StyleSheet, Dimensions, Animated, PanResponder } from 'react-native';
+import { Animated, Dimensions, PanResponder, StyleSheet } from 'react-native';
 import {
   AlbumCover,
   AllPlayingControlsContainer,
@@ -18,6 +18,7 @@ import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import HeartIcon from '../../../assets/icons/heartIcon.tsx';
 import ShufflIcon from '../../../assets/icons/shuffleIcon.tsx';
 import RepeatIcon from '../../../assets/icons/repeatIcon.tsx';
+import RepeatOnceIcon from '../../../assets/icons/repeatOnceIcon.tsx';
 import BackwardIcon from '../../../assets/icons/backwardIcon.tsx';
 import PlayIcon from '../../../assets/icons/playIcon.tsx';
 import PauseIcon from '../../../assets/icons/pauseIcon.tsx';
@@ -27,13 +28,22 @@ import AudioProgressBar from '../../components/AudioProgressBar';
 import { State, usePlaybackState } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { seekTo } from '../../services/AudioPlayerService.ts';
+import { RepeatingType } from '../../constants/types.tsx';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Playing = ({ navigation }: any) => {
   const playbackState = usePlaybackState();
-  const { currentTrack, isLoading, play, pause, playNext, playPrevious } =
-    useMusicQueue();
+  const {
+    currentTrack,
+    isLoading,
+    play,
+    pause,
+    playNext,
+    playPrevious,
+    repeatingState,
+    setRepeatingState,
+  } = useMusicQueue();
 
   const translateY = useRef(new Animated.Value(0)).current;
 
@@ -112,7 +122,30 @@ const Playing = ({ navigation }: any) => {
               <PlayIcon height={30} onPress={play} />
             )}
             <ForwardIcon height={30} onPress={playNext} />
-            <RepeatIcon height={30} />
+            {repeatingState === RepeatingType.None ? (
+              <RepeatIcon
+                height={30}
+                onPress={() => {
+                  setRepeatingState(RepeatingType.Song);
+                }}
+              />
+            ) : repeatingState === RepeatingType.Song ? (
+              <RepeatOnceIcon
+                height={30}
+                fill={'green'}
+                onPress={() => {
+                  setRepeatingState(RepeatingType.Album);
+                }}
+              />
+            ) : (
+              <RepeatIcon
+                height={30}
+                fill={'green'}
+                onPress={() => {
+                  setRepeatingState(RepeatingType.None);
+                }}
+              />
+            )}
           </AllPlayingControlsContainer>
         </ContentContainer>
       </Animated.View>
