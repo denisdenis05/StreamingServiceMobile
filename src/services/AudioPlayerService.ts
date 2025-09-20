@@ -111,8 +111,12 @@ export function useQueue() {
   const [isLoading, setIsLoading] = useState(false);
 
   const isStoppingRef = useRef(false);
+  const queueRef = useRef(queue);
+  const currentIndexRef = useRef(currentIndex);
 
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
+  queueRef.current = queue;
+  currentIndexRef.current = currentIndex;
 
   useTrackPlayerEvents(
     [Event.PlaybackState, Event.PlaybackQueueEnded],
@@ -122,6 +126,17 @@ export function useQueue() {
         setIsLoading(
           event.state === State.Loading || event.state === State.Buffering
         );
+
+        if (event.state === State.Ended) {
+          console.log('Track ended, attempting to play next');
+          const nextIndex = currentIndexRef.current + 1;
+          if (nextIndex < queueRef.current.length) {
+            playTrackAtIndex(nextIndex);
+          } else {
+            console.log('End of queue reached');
+            setIsPlaying(false);
+          }
+        }
 
         if (event.state === State.Stopped && !isStoppingRef.current) {
           playNext();

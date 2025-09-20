@@ -41,7 +41,7 @@ module.exports = async function () {
     console.log('Queue ended', event);
   });
 
-  TrackPlayer.addEventListener(Event.PlaybackTrackChanged, event => {
+  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, event => {
     console.log('Track changed', event);
   });
 

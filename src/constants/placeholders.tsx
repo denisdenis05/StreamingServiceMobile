@@ -6,7 +6,7 @@ export const PLACEHOLDER_USERNAME = 'Denis';
 export const PLACEHOLDER_ALBUM_COVER =
   'https://images.genius.com/214832242f9aede9acebc03c2e89cd76.500x500x1.png';
 
-export const PLACEHOLDER_SECTION_NAME = 'Recent listens';
+export const PLACEHOLDER_SECTION_NAME = 'Available albums';
 export const PLACEHOLDER_SECTION_CONTENT = [
   { title: 'Damn.', author: 'Kendrick Lamar', cover: PLACEHOLDER_ALBUM_COVER },
   { title: 'Damn.', author: 'Kendrick Lamar', cover: PLACEHOLDER_ALBUM_COVER },
