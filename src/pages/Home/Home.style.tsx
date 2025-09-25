@@ -1,4 +1,11 @@
-import { Animated, Image, ImageProps, StyleSheet, View } from 'react-native';
+import {
+  Animated,
+  Image,
+  ImageProps,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
@@ -6,6 +13,11 @@ import { sizes } from '../../constants/styling.tsx';
 
 interface Props {
   children: ReactNode;
+}
+
+interface StyledImageProps extends ImageProps {
+  redirect?: string;
+  navigation?: any;
 }
 
 const styles = StyleSheet.create({
@@ -44,8 +56,16 @@ export const ContentContainer = ({ children }: Props) => {
   );
 };
 
-export const StyledImage = ({ source }: ImageProps) => {
-  return <Image source={source} style={styles.image} resizeMode="cover" />;
+export const StyledImage = ({
+  source,
+  redirect,
+  navigation,
+}: StyledImageProps) => {
+  return (
+    <TouchableOpacity onPress={() => navigation.navigate(redirect)}>
+      <Image source={source} style={styles.image} resizeMode="cover" />
+    </TouchableOpacity>
+  );
 };
 
 export const HeaderTitle = ({ children }: Props) => {

@@ -52,7 +52,11 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
     <PageContainer>
       <ContentContainer>
         <HeaderContainer>
-          <StyledImage source={{ uri: PLACEHOLDER_PROFILE_PIC }} />
+          <StyledImage
+            source={{ uri: PLACEHOLDER_PROFILE_PIC }}
+            navigation={navigation}
+            redirect={'Profile'}
+          />
           <HeaderTitle>
             {HOME_HEADER_TEXT}
             {PLACEHOLDER_USERNAME}
