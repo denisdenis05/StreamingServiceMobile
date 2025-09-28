@@ -10,8 +10,155 @@ import { useState, useCallback, useRef } from 'react';
 import { cacheTrack, getCacheFilePath, isTrackCached } from './CachingService';
 import RNFS from 'react-native-fs';
 import { RepeatingType } from '../constants/types.tsx';
+import { useApi } from '../hooks/useApi.ts';
 
 let isSetup = false;
+
+export class PlaybackTracker {
+  private sessionId: string;
+  private api: any;
+  private startTime: number;
+  private lastUpdateTime: number;
+  private totalListenedTime: number;
+  private updateInterval: ReturnType<typeof setInterval> | null;
+  private isPaused: boolean;
+  private pauseStartTime: number | null;
+
+  constructor(sessionId: string, api: any) {
+    this.sessionId = sessionId;
+    this.api = api;
+    this.startTime = Date.now();
+    this.lastUpdateTime = Date.now();
+    this.totalListenedTime = 0;
+    this.updateInterval = null;
+    this.isPaused = false;
+    this.pauseStartTime = null;
+  }
+
+  start(): void {
+    console.log('Starting playback tracking for session:', this.sessionId);
+    this.lastUpdateTime = Date.now();
+
+    this.updateInterval = setInterval(async () => {
+      if (!this.isPaused) {
+        const now = Date.now();
+        const deltaSeconds = Math.floor((now - this.lastUpdateTime) / 1000);
+
+        if (deltaSeconds > 0) {
+          this.totalListenedTime += deltaSeconds;
+          await this.reportProgress(deltaSeconds);
+          this.lastUpdateTime = now;
+        }
+      }
+    }, 30_000);
+  }
+
+  private async reportProgress(deltaSeconds: number): Promise<void> {
+    try {
+      await this.api.post('/lastfm/playback-progress', {
+        sessionId: this.sessionId,
+        deltaListenedSeconds: deltaSeconds,
+        totalListenedSeconds: this.totalListenedTime,
+      });
+
+      console.log(
+        `Progress reported: +${deltaSeconds}s (total: ${this.totalListenedTime}s) for session ${this.sessionId}`
+      );
+    } catch (error) {
+      console.error('Failed to report progress:', error);
+    }
+  }
+
+  async pause(): Promise<void> {
+    if (this.isPaused) return;
+
+    const now = Date.now();
+    const deltaSeconds = Math.floor((now - this.lastUpdateTime) / 1000);
+    if (deltaSeconds > 0) {
+      this.totalListenedTime += deltaSeconds;
+    }
+
+    this.isPaused = true;
+    this.pauseStartTime = now;
+
+    try {
+      await this.api.post('/lastfm/pause', {
+        sessionId: this.sessionId,
+        deltaListenedSeconds: deltaSeconds,
+        totalListenedSeconds: this.totalListenedTime,
+      });
+      console.log(`Pause reported for session ${this.sessionId}`);
+    } catch (error) {
+      console.error('Failed to report pause:', error);
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.isPaused) return;
+
+    this.isPaused = false;
+    this.lastUpdateTime = Date.now();
+    this.pauseStartTime = null;
+
+    try {
+      await this.api.post('/lastfm/resume', {
+        sessionId: this.sessionId,
+      });
+      console.log(`Resume reported for session ${this.sessionId}`);
+    } catch (error) {
+      console.error('Failed to report resume:', error);
+    }
+  }
+
+  async seek(fromSeconds: number, toSeconds: number): Promise<void> {
+    try {
+      await this.api.post('/lastfm/seek', {
+        sessionId: this.sessionId,
+        fromSeconds: Math.floor(fromSeconds),
+        toSeconds: Math.floor(toSeconds),
+      });
+
+      this.lastUpdateTime = Date.now();
+
+      console.log(
+        `Seek reported: ${fromSeconds}s -> ${toSeconds}s for session ${this.sessionId}`
+      );
+    } catch (error) {
+      console.error('Failed to report seek:', error);
+    }
+  }
+
+  async stop(): Promise<void> {
+    if (this.updateInterval) {
+      clearInterval(this.updateInterval);
+      this.updateInterval = null;
+    }
+
+    if (!this.isPaused) {
+      const now = Date.now();
+      const deltaSeconds = Math.floor((now - this.lastUpdateTime) / 1000);
+      if (deltaSeconds > 0) {
+        this.totalListenedTime += deltaSeconds;
+      }
+    }
+
+    try {
+      await this.api.post('/lastfm/stop-playback', {
+        sessionId: this.sessionId,
+        totalListenedSeconds: this.totalListenedTime,
+      });
+      console.log(
+        `Playback stopped for session ${this.sessionId}, total listened: ${this.totalListenedTime}s`
+      );
+    } catch (error) {
+      console.error('Failed to report playback stop:', error);
+    }
+  }
+
+  getTotalListenedTime(): number {
+    return this.totalListenedTime;
+  }
+}
 
 export async function setupPlayer() {
   if (isSetup) return;
@@ -112,25 +259,87 @@ export function useQueue() {
   const [isLoading, setIsLoading] = useState(false);
   const [repeatingState, setRepeatingState] = useState(RepeatingType.None);
 
+  const api = useApi();
+
   const isStoppingRef = useRef(false);
   const queueRef = useRef(queue);
   const currentIndexRef = useRef(currentIndex);
+
+  const playbackTrackerRef = useRef<PlaybackTracker | null>(null);
 
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
   queueRef.current = queue;
   currentIndexRef.current = currentIndex;
 
+  const startPlaybackTracking = async (track: Track) => {
+    try {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.stop();
+        playbackTrackerRef.current = null;
+      }
+
+      const isLocalCached = track.url?.startsWith('file://') || false;
+
+      const duration = await getDuration();
+
+      const response = await api.post('/lastfm/start-playback', {
+        trackId: track.id,
+        artist: track.artist || 'Unknown Artist',
+        track: track.title || 'Unknown Track',
+        album: track.album || 'Unknown Album',
+        durationSeconds: Math.floor(duration),
+        isLocalCached,
+      });
+
+      if (response.data.success) {
+        playbackTrackerRef.current = new PlaybackTracker(
+          response.data.sessionId,
+          api
+        );
+        playbackTrackerRef.current.start();
+
+        console.log(
+          `Started tracking for "${track.title}" with session ${response.data.sessionId}`
+        );
+      }
+    } catch (error) {
+      console.error('Failed to start playback tracking:', error);
+    }
+  };
+
   useTrackPlayerEvents(
-    [Event.PlaybackState, Event.PlaybackQueueEnded],
+    [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek],
     async event => {
       if (event.type === Event.PlaybackState) {
+        const wasPlaying = isPlaying;
         setIsPlaying(event.state === State.Playing);
         setIsLoading(
           event.state === State.Loading || event.state === State.Buffering
         );
 
+        if (event.state === State.Playing && !wasPlaying) {
+          if (playbackTrackerRef.current) {
+            await playbackTrackerRef.current.resume();
+          }
+        } else if (event.state === State.Paused && wasPlaying) {
+          if (playbackTrackerRef.current) {
+            await playbackTrackerRef.current.pause();
+          }
+        } else if (event.state === State.Stopped) {
+          if (playbackTrackerRef.current && !isStoppingRef.current) {
+            await playbackTrackerRef.current.stop();
+            playbackTrackerRef.current = null;
+          }
+        }
+
         if (event.state === State.Ended) {
           console.log('Track ended, attempting to play next');
+
+          if (playbackTrackerRef.current) {
+            await playbackTrackerRef.current.stop();
+            playbackTrackerRef.current = null;
+          }
+
           if (repeatingState === RepeatingType.Song) {
             await playTrackAtIndex(currentIndexRef.current);
           } else {
@@ -149,6 +358,14 @@ export function useQueue() {
         if (event.state === State.Stopped && !isStoppingRef.current) {
           playNext();
         }
+      } else if (event.type === Event.RemoteSeek) {
+        if (playbackTrackerRef.current) {
+          const currentPosition = await getPosition();
+          await playbackTrackerRef.current.seek(
+            currentPosition,
+            event.position
+          );
+        }
       }
     }
   );
@@ -164,23 +381,32 @@ export function useQueue() {
 
         const track = queue[index];
 
+        if (playbackTrackerRef.current) {
+          await playbackTrackerRef.current.stop();
+          playbackTrackerRef.current = null;
+        }
+
         isStoppingRef.current = true;
         await setupPlayer();
         await TrackPlayer.stop();
         await TrackPlayer.reset();
         isStoppingRef.current = false;
 
-        const processedTrack = await processTrack(track);
+        const processedTrack = track;
 
         await TrackPlayer.add(processedTrack);
         await TrackPlayer.play();
+
+        setTimeout(() => {
+          startPlaybackTracking(processedTrack);
+        }, 1000);
       } catch (error) {
         console.error('Error playing track:', error);
       } finally {
         setIsLoading(false);
       }
     },
-    [queue]
+    [queue, api]
   );
 
   const addToQueue = useCallback((tracks: Track | Track[]) => {
@@ -193,7 +419,12 @@ export function useQueue() {
     setCurrentIndex(-1);
   }, []);
 
-  const clearQueue = useCallback(() => {
+  const clearQueue = useCallback(async () => {
+    if (playbackTrackerRef.current) {
+      await playbackTrackerRef.current.stop();
+      playbackTrackerRef.current = null;
+    }
+
     setQueue([]);
     setCurrentIndex(-1);
     TrackPlayer.stop();
@@ -205,6 +436,11 @@ export function useQueue() {
     if (nextIndex < queue.length) {
       await playTrackAtIndex(nextIndex);
     } else {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.stop();
+        playbackTrackerRef.current = null;
+      }
+
       setIsPlaying(false);
       await TrackPlayer.stop();
       await TrackPlayer.reset();
@@ -215,12 +451,18 @@ export function useQueue() {
     const progress = await TrackPlayer.getProgress();
 
     if (progress.position > 5) {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.seek(progress.position, 0);
+      }
       await TrackPlayer.seekTo(0);
     } else {
       const prevIndex = currentIndex - 1;
       if (prevIndex >= 0) {
         await playTrackAtIndex(prevIndex);
       } else {
+        if (playbackTrackerRef.current) {
+          await playbackTrackerRef.current.seek(progress.position, 0);
+        }
         await TrackPlayer.seekTo(0);
       }
     }
@@ -245,7 +487,7 @@ export function useQueue() {
   }, [queue.length, playTrackAtIndex]);
 
   const removeFromQueue = useCallback(
-    (index: number) => {
+    async (index: number) => {
       setQueue(prev => {
         const newQueue = [...prev];
         newQueue.splice(index, 1);
@@ -253,6 +495,11 @@ export function useQueue() {
         if (index < currentIndex) {
           setCurrentIndex(prev => prev - 1);
         } else if (index === currentIndex) {
+          if (playbackTrackerRef.current) {
+            playbackTrackerRef.current.stop();
+            playbackTrackerRef.current = null;
+          }
+
           setCurrentIndex(-1);
           TrackPlayer.stop();
           TrackPlayer.reset();
@@ -263,6 +510,16 @@ export function useQueue() {
     },
     [currentIndex]
   );
+
+  const seekToPosition = useCallback(async (position: number) => {
+    const currentPosition = await getPosition();
+
+    if (playbackTrackerRef.current) {
+      await playbackTrackerRef.current.seek(currentPosition, position);
+    }
+
+    await TrackPlayer.seekTo(position);
+  }, []);
 
   return {
     queue,
@@ -280,7 +537,7 @@ export function useQueue() {
     playNext,
     playPrevious,
     playTrackAtIndex,
-    playQueueFromStart,
+    seekToPosition,
     repeatingState,
     setRepeatingState,
 

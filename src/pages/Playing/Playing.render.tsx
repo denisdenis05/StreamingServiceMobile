@@ -27,7 +27,6 @@ import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
 import { State, usePlaybackState } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
-import { seekTo } from '../../services/AudioPlayerService.ts';
 import { RepeatingType } from '../../constants/types.tsx';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -43,6 +42,7 @@ const Playing = ({ navigation }: any) => {
     playPrevious,
     repeatingState,
     setRepeatingState,
+    seekToPosition,
   } = useMusicQueue();
 
   const translateY = useRef(new Animated.Value(0)).current;
@@ -106,7 +106,7 @@ const Playing = ({ navigation }: any) => {
           <AudioProgressBar
             isLoading={isLoading}
             isBuffering={false}
-            onSeek={seekTo}
+            onSeek={seekToPosition}
             showThumb
             showTimeLabels
             onSeekStart={() => {}}
