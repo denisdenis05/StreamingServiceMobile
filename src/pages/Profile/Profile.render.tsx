@@ -3,11 +3,14 @@ import { ContentContainer, LastFmButton } from './Profile.style.tsx';
 import { useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
 import { Alert, Linking } from 'react-native';
+import { useAuth } from '../../hooks/AuthContext';
+import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
 
 const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
   const [lastFmConnected, setLastFmConnected] = useState(false);
   const [lastFmLoading, setLastFmLoading] = useState(false);
   const api = useApi();
+  const { logout } = useAuth();
 
   useEffect(() => {
     checkLastFmStatus();
@@ -96,6 +99,11 @@ const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
           connected={lastFmConnected}
           loading={lastFmLoading}
           onPress={handleLastFmConnect}
+        />
+        <DefaultButton
+          title="Logout"
+          onPress={logout}
+          style={{ backgroundColor: '#d51007' }}
         />
       </ContentContainer>
     </PageContainer>

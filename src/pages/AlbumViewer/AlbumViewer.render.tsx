@@ -17,7 +17,7 @@ import { Recording } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { HeaderTitle } from '../Home/Home.style.tsx';
-import { API_URL } from '@env';
+import Config from 'react-native-config';
 import { useApi } from '../../hooks/useApi.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 
@@ -53,7 +53,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayAlbum = () => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `${API_URL}/Stream?id=${recording.id}`,
+      url: `${Config.API_URL}/Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -71,7 +71,8 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayFromRecording = (recordingIndex: number) => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `${API_URL}/Stream?id=${recording.id}`,
+      //url: `http://streaming.denisgreholea.com/Stream?id=${recording.id}`,
+      url: `http://192.168.100.121:80/Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,

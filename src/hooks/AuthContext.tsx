@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import CookieManager from '@react-native-cookies/cookies';
 
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -64,6 +65,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     try {
       await AsyncStorage.removeItem(STORAGE_KEYS.token);
       await AsyncStorage.setItem(STORAGE_KEYS.isLoggedIn, 'false');
+      CookieManager.clearAll();
     } catch (e) {
       console.error('Failed to clear auth state:', e);
     }

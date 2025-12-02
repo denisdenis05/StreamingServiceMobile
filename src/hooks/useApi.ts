@@ -1,14 +1,16 @@
 import { useMemo } from 'react';
 import axios from 'axios';
 import { useAuth } from './AuthContext.tsx';
-import { API_URL } from '@env';
+import CookieManager from '@react-native-cookies/cookies';
+import Config from 'react-native-config';
+import { Platform } from 'react-native';
 
 export const useApi = () => {
   const { getToken, login, logout } = useAuth();
 
   const api = useMemo(() => {
     const instance = axios.create({
-      baseURL: API_URL,
+      baseURL: Config.API_URL,
       withCredentials: true,
     });
 
@@ -35,6 +37,9 @@ export const useApi = () => {
           response.data?.token
         ) {
           await login(response.data.token);
+          if (Platform.OS === 'android') {
+            CookieManager.flush();
+          }
         }
         return response;
       },
