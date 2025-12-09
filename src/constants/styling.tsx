@@ -4,7 +4,8 @@ export const colors = {
   normalText: '#FFFFFF',
   slightlyTransparentText: '#FFFFFFCC',
   lowOpacityText: '#FFFFFF33',
-  sloghtlyColoredText: '#C8CEDE',
+  veryLowOpacityText: '#FFFFFF11',
+  slightlyColoredText: '#C8CEDE',
 };
 
 export const opacities = {

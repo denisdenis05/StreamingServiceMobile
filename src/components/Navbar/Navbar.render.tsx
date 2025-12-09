@@ -8,6 +8,7 @@ import { navigationButtons } from '../../constants/navigation.tsx';
 import { opacities } from '../../constants/styling.tsx';
 import PlayingOverlay from '../PlayingOverlay';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
+import CreateOverlay from '../CreateOverlay';
 
 const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
   const currentScreen = route.name;
@@ -37,6 +38,7 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
           );
         })}
       </MainContainer>
+      <CreateOverlay navigation={navigation} />
       {queueLength > 0 && <PlayingOverlay navigation={navigation} />}
     </GradientContainer>
   );
