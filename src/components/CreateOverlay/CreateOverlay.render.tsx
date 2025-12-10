@@ -4,7 +4,7 @@ import MusicNoteIcon from '../../../assets/icons/musicNoteIcon.tsx';
 
 const CreateOverlay = ({ navigation }: { navigation: any }) => {
   const handleClick = () => {
-    navigation.navigate('Playing');
+    navigation.navigate('CreatePlaylist');
   };
 
   return (

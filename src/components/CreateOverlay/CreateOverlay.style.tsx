@@ -47,8 +47,9 @@ const styles = StyleSheet.create({
     color: colors.normalText,
     margin: 0,
     marginTop: 5,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: 'bold',
+    textAlignVertical: 'center',
   },
   actionIcon: {
     display: 'flex',
