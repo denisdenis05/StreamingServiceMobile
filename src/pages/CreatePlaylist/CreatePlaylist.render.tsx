@@ -10,6 +10,11 @@ import {
   StyledInput,
 } from './CreatePlaylist.style.tsx';
 import { useApi } from '../../hooks/useApi.ts';
+import {
+  PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE,
+  PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT,
+  PLACEHOLDER_CREATE_PLAYLIST_TITLE,
+} from '../../constants/placeholders.tsx';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -73,14 +78,14 @@ const CreatePlaylist = ({ navigation }: any) => {
         <ContentContainer>
           <DragIndicator />
           <CenteredContainer>
-            <CardTitle>Give your playlist a name</CardTitle>
+            <CardTitle>{PLACEHOLDER_CREATE_PLAYLIST_TITLE}</CardTitle>
             <StyledInput
               value={playlistName}
               onChangeText={setPlaylistName}
-              placeholder={'Cool playlist123'}
+              placeholder={PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE}
             />
             <StyledButton
-              title={'Create your playlist'}
+              title={PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT}
               onPress={createPlaylist}
               disabled={isLoading}
             />

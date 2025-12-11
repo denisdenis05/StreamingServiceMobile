@@ -1,15 +1,22 @@
 import { ActionItem, MainContainer } from './CreateOverlay.style.tsx';
 import React from 'react';
-import MusicNoteIcon from '../../../assets/icons/musicNoteIcon.tsx';
+import { createActionButtons } from '../../constants/navigation.tsx';
 
 const CreateOverlay = ({ navigation }: { navigation: any }) => {
-  const handleClick = () => {
-    navigation.navigate('CreatePlaylist');
-  };
-
   return (
-    <MainContainer onPress={handleClick}>
-      <ActionItem onPress={handleClick} icon={MusicNoteIcon} />
+    <MainContainer>
+      {createActionButtons.map((value, index) => {
+        return (
+          <ActionItem
+            key={index}
+            text={value.label}
+            onPress={() => {
+              value.onClick(navigation);
+            }}
+            icon={value.icon}
+          />
+        );
+      })}
     </MainContainer>
   );
 };

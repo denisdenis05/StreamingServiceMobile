@@ -17,9 +17,10 @@ interface Props {
 }
 
 interface ActionProps {
+  text: string;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
-  icon?: FC<any>;
+  icon?: React.ComponentType<{ height: number }>;
 }
 
 const styles = StyleSheet.create({
@@ -66,11 +67,11 @@ export const MainContainer = ({ children }: Props) => {
   return <View style={[styles.mainContainer]}>{children}</View>;
 };
 
-export const ActionItem = ({ onPress, icon }: ActionProps) => {
+export const ActionItem = ({ onPress, icon, text }: ActionProps) => {
   return (
     <Pressable style={[styles.actionItem]} onPress={onPress}>
       <ActionIcon icon={icon} />
-      <ActionTitle>Create a Playlist</ActionTitle>
+      <ActionTitle>{text}</ActionTitle>
     </Pressable>
   );
 };
