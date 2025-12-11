@@ -3,6 +3,8 @@ import SearchIcon from '../../assets/icons/searchIcon.tsx';
 import LibraryIcon from '../../assets/icons/libraryIcon.tsx';
 import CreateIcon from '../../assets/icons/createIcon.tsx';
 
+import MusicNoteIcon from '../../assets/icons/musicNoteIcon.tsx';
+
 type NavLabel = 'Home' | 'Search' | 'Library' | 'Create';
 
 export interface NavigationButton {
@@ -10,9 +12,25 @@ export interface NavigationButton {
   icon: React.ComponentType<{ height: number }>;
 }
 
+export interface ActionItem {
+  label: string;
+  icon: React.ComponentType<{ height: number }>;
+  onClick: (navigation: any) => void;
+}
+
 export const navigationButtons: NavigationButton[] = [
   { label: 'Home', icon: HomeIcon },
   { label: 'Search', icon: SearchIcon },
   { label: 'Library', icon: LibraryIcon },
   { label: 'Create', icon: CreateIcon },
+];
+
+export const createActionButtons: ActionItem[] = [
+  {
+    label: 'Create a Playlist',
+    icon: MusicNoteIcon,
+    onClick: navigation => {
+      navigation.navigate('CreatePlaylist');
+    },
+  },
 ];

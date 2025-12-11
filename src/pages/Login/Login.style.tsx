@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.lowOpacityText,
     borderRadius: 8,
     paddingHorizontal: 10,
-    color: colors.sloghtlyColoredText,
+    color: colors.slightlyColoredText,
   },
   loginButton: {
     height: 60,
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonText: {
-    color: colors.sloghtlyColoredText,
+    color: colors.slightlyColoredText,
     fontSize: 18,
     fontWeight: 'bold',
   },

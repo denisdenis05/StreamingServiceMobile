@@ -17,6 +17,7 @@ import { useApi } from './src/hooks/useApi.ts';
 import DeepLinkHandler from './src/services/DeepLinkHandler.ts';
 import { colors } from './src/constants/styling.tsx';
 import Profile from './src/pages/Profile';
+import CreatePlaylist from './src/pages/CreatePlaylist';
 
 const Stack = createNativeStackNavigator();
 
@@ -104,6 +105,16 @@ const InnerApp = () => {
       <Stack.Screen
         name="Playing"
         component={Playing}
+        options={{
+          presentation: 'modal',
+          animation: 'slide_from_bottom',
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+        }}
+      />
+      <Stack.Screen
+        name="CreatePlaylist"
+        component={CreatePlaylist}
         options={{
           presentation: 'modal',
           animation: 'slide_from_bottom',

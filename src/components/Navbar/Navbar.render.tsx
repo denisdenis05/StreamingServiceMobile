@@ -8,12 +8,19 @@ import { navigationButtons } from '../../constants/navigation.tsx';
 import { opacities } from '../../constants/styling.tsx';
 import PlayingOverlay from '../PlayingOverlay';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
+import CreateOverlay from '../CreateOverlay';
+import { useState } from 'react';
 
 const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
   const currentScreen = route.name;
   const { queueLength } = useMusicQueue();
+  const [pressedCreate, setPressedCreate] = useState(false);
 
   const handleTabClick = (screenName: string) => {
+    if (screenName === 'Create') {
+      setPressedCreate(!pressedCreate);
+      return;
+    }
     navigation.navigate(screenName);
   };
 
@@ -38,6 +45,7 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
         })}
       </MainContainer>
       {queueLength > 0 && <PlayingOverlay navigation={navigation} />}
+      {pressedCreate && <CreateOverlay navigation={navigation} />}
     </GradientContainer>
   );
 };

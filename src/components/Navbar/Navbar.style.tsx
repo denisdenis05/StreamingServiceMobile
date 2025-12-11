@@ -23,7 +23,6 @@ const styles = StyleSheet.create({
     height: sizes.navbarHeight,
     width: '100%',
     bottom: 0,
-    paddingHorizontal: 30,
     paddingTop: 20,
     paddingBottom: 10,
     display: 'flex',
