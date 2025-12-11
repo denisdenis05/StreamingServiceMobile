@@ -30,6 +30,8 @@ const styles = StyleSheet.create({
   cardContainer: {
     display: 'flex',
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
     gap: 10,
   },
   card: {

@@ -1,17 +1,28 @@
 import { ActionItem, MainContainer } from './CreateOverlay.style.tsx';
 import React from 'react';
-import { createActionButtons } from '../../constants/navigation.tsx';
+import { ActionItem as ActionItemType, createActionButtons } from '../../constants/navigation.tsx';
 
-const CreateOverlay = ({ navigation }: { navigation: any }) => {
+const CreateOverlay = ({
+  navigation,
+  menuOptions = createActionButtons,
+  onClose,
+  params,
+}: {
+  navigation: any;
+  menuOptions?: ActionItemType[];
+  onClose?: () => void;
+  params?: any;
+}) => {
   return (
     <MainContainer>
-      {createActionButtons.map((value, index) => {
+      {menuOptions.map((value, index) => {
         return (
           <ActionItem
             key={index}
             text={value.label}
             onPress={() => {
-              value.onClick(navigation);
+              value.onClick(navigation, params);
+              if (onClose) onClose();
             }}
             icon={value.icon}
           />

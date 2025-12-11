@@ -28,6 +28,9 @@ import AudioProgressBar from '../../components/AudioProgressBar';
 import { State, usePlaybackState } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { RepeatingType } from '../../constants/types.tsx';
+import { useState } from 'react';
+import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
+import { menuOptions } from '../../constants/navigation.tsx';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -45,6 +48,8 @@ const Playing = ({ navigation }: any) => {
     seekToPosition,
   } = useMusicQueue();
 
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const translateY = useRef(new Animated.Value(0)).current;
 
   const panResponder = PanResponder.create({
@@ -91,7 +96,13 @@ const Playing = ({ navigation }: any) => {
           <HeaderContainer>
             <ArrowDownIcon height={25} onPress={navigation.goBack} />
             <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
-            <MoreIcon height={25} />
+            <MoreIcon
+              height={25}
+              onPress={(event: any) => {
+                setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+                setMenuVisible(true);
+              }}
+            />
           </HeaderContainer>
           <AlbumCover
             source={{ uri: currentTrack?.artwork || PLACEHOLDER_ALBUM_COVER }}
@@ -101,7 +112,7 @@ const Playing = ({ navigation }: any) => {
               <SongTitle>{currentTrack?.title}</SongTitle>
               <SongAuthor>{currentTrack?.artist}</SongAuthor>
             </SongDescriptorContainer>
-            <HeartIcon height={25} onPress={() => {}} />
+            <HeartIcon height={25} onPress={() => { }} />
           </SongDetailsContainer>
           <AudioProgressBar
             isLoading={isLoading}
@@ -109,8 +120,8 @@ const Playing = ({ navigation }: any) => {
             onSeek={seekToPosition}
             showThumb
             showTimeLabels
-            onSeekStart={() => {}}
-            onSeekEnd={() => {}}
+            onSeekStart={() => { }}
+            onSeekEnd={() => { }}
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer>
@@ -149,6 +160,16 @@ const Playing = ({ navigation }: any) => {
           </AllPlayingControlsContainer>
         </ContentContainer>
       </Animated.View>
+      {menuVisible && (
+        <ContextMenu
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          options={menuOptions}
+          position={menuPosition}
+          navigation={navigation}
+          params={{ recordingIds: [currentTrack?.id] }}
+        />
+      )}
     </BackdropContainer>
   );
 };
