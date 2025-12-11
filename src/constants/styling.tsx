@@ -1,5 +1,6 @@
 export const colors = {
   background: '#121212',
+  secondaryBackground: '#262626',
   navbarGradient: ['#121212CC', '#121212FF'],
   normalText: '#FFFFFF',
   slightlyTransparentText: '#FFFFFFCC',

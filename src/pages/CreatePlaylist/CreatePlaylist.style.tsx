@@ -4,10 +4,12 @@ import {
   ImageProps,
   SafeAreaView,
   StyleSheet,
+  TextInput,
   View,
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
+import DefaultButton from '../../components/DefaultButton';
 
 interface Props {
   children: ReactNode;
@@ -46,6 +48,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: '80%',
     width: '100%',
+    gap: '10%',
+  },
+  styledInput: {
+    height: 60,
+    width: '80%',
+    minWidth: 250,
+    borderColor: colors.lowOpacityText,
+    borderWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    color: colors.slightlyColoredText,
+    fontSize: 26,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  button: {
+    backgroundColor: 'transparent',
+    borderColor: colors.normalText,
+    borderWidth: 3,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontWeight: 'bold',
   },
 });
 
@@ -67,4 +91,42 @@ export const CardTitle = ({ children }: Props) => {
 
 export const CenteredContainer = ({ children }: Props) => {
   return <View style={styles.centeredContainer}>{children}</View>;
+};
+
+export const StyledInput = ({
+  value,
+  onChangeText,
+  placeholder,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+}) => {
+  return (
+    <TextInput
+      style={styles.styledInput}
+      placeholder={placeholder || '...'}
+      value={value}
+      onChangeText={onChangeText}
+    />
+  );
+};
+
+export const StyledButton = ({
+  title,
+  onPress,
+  disabled,
+}: {
+  title: string;
+  onPress: () => void;
+  disabled: boolean;
+}) => {
+  return (
+    <DefaultButton
+      onPress={onPress}
+      title={title}
+      style={styles.button}
+      disabled={disabled}
+    />
+  );
 };

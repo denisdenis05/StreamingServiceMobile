@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, StyleSheet } from 'react-native';
 import {
   BackdropContainer,
@@ -6,12 +6,18 @@ import {
   CenteredContainer,
   ContentContainer,
   DragIndicator,
+  StyledButton,
+  StyledInput,
 } from './CreatePlaylist.style.tsx';
+import { useApi } from '../../hooks/useApi.ts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const CreatePlaylist = ({ navigation }: any) => {
+  const [playlistName, setPlaylistName] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
+  const api = useApi();
 
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gestureState) =>
@@ -46,6 +52,18 @@ const CreatePlaylist = ({ navigation }: any) => {
     }).start();
   }, []);
 
+  const createPlaylist = async () => {
+    if (isLoading) return;
+
+    setIsLoading(true);
+
+    var body = { name: playlistName, recordingIds: [] };
+    await api.post('library/playlists', body);
+
+    setIsLoading(false);
+    navigation.goBack();
+  };
+
   return (
     <BackdropContainer>
       <Animated.View
@@ -56,6 +74,16 @@ const CreatePlaylist = ({ navigation }: any) => {
           <DragIndicator />
           <CenteredContainer>
             <CardTitle>Give your playlist a name</CardTitle>
+            <StyledInput
+              value={playlistName}
+              onChangeText={setPlaylistName}
+              placeholder={'Cool playlist123'}
+            />
+            <StyledButton
+              title={'Create your playlist'}
+              onPress={createPlaylist}
+              disabled={isLoading}
+            />
           </CenteredContainer>
         </ContentContainer>
       </Animated.View>

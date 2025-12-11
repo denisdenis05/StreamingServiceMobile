@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
     width: '80%',
     height: 'auto',
     borderRadius: 10,
-    backgroundColor: colors.veryLowOpacityText,
+    backgroundColor: colors.secondaryBackground,
     padding: 20,
   },
   actionItem: {
