@@ -47,6 +47,13 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingHorizontal: 20,
   },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    marginTop: 20,
+    marginBottom: 10,
+  },
 });
 
 export const HeaderContainer = ({ children }: Props) => {
@@ -95,4 +102,8 @@ export const SearchResultContainer = ({ children }: Props) => {
   return (
     <ScrollView style={styles.searchResultContainer}>{children}</ScrollView>
   );
+};
+
+export const SectionTitle = ({ children }: Props) => {
+  return <DefaultText style={styles.sectionTitle}>{children}</DefaultText>;
 };
