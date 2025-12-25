@@ -11,6 +11,7 @@ import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
 import { colors } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -22,9 +23,9 @@ const styles = StyleSheet.create({
   mainContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    gap: verticalScale(20),
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(10),
     width: '100%',
   },
   cardContainer: {
@@ -32,24 +33,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    gap: 10,
+    gap: scale(10),
   },
   card: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: verticalScale(2),
   },
   cardTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: 5,
-    fontSize: 14,
+    marginTop: verticalScale(5),
+    fontSize: moderateScale(14),
     fontWeight: 'semibold',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: 12,
+    fontSize: moderateScale(12),
   },
 });
 

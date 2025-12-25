@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../DefaultText';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children?: React.ReactNode;
@@ -18,49 +19,49 @@ interface Props {
 const styles = StyleSheet.create({
   mainContainer: {
     width: '100%',
-    paddingVertical: 10,
-    paddingHorizontal: 30,
+    paddingVertical: verticalScale(10),
+    paddingHorizontal: scale(30),
   },
   progressContainer: {
     position: 'relative',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: verticalScale(8),
   },
   track: {
-    height: 8, // Increased for visibility
+    height: verticalScale(8), // Increased for visibility
     backgroundColor: colors.slightlyTransparentText,
-    borderRadius: 10,
+    borderRadius: moderateScale(10),
     overflow: 'hidden',
   },
   buffer: {
     position: 'absolute',
     left: 0,
     top: 0,
-    height: 12,
+    height: verticalScale(12),
     backgroundColor: colors.normalText,
-    borderRadius: 2,
+    borderRadius: moderateScale(2),
   },
   progress: {
-    height: 12,
+    height: verticalScale(12),
     backgroundColor: colors.normalText,
-    borderRadius: 2,
+    borderRadius: moderateScale(2),
   },
   loadingIndicator: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 0,
-    height: 12,
+    height: verticalScale(12),
     backgroundColor: '#666',
-    borderRadius: 2,
+    borderRadius: moderateScale(2),
     opacity: 0.6,
   },
   thumb: {
     position: 'absolute',
-    width: 12,
-    height: 12,
+    width: moderateScale(12),
+    height: moderateScale(12),
     backgroundColor: colors.normalText,
-    borderRadius: 10,
+    borderRadius: moderateScale(10),
     elevation: 5,
     zIndex: 10,
   },
@@ -68,8 +69,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: -20,
-    height: 52, // Large touch area for easier interaction
+    top: -verticalScale(20),
+    height: verticalScale(52), // Large touch area for easier interaction
   },
   timeContainer: {
     flexDirection: 'row',
@@ -77,7 +78,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: colors.slightlyTransparentText,
-    fontSize: 12,
+    fontSize: moderateScale(12),
     margin: 0,
   },
 });

@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -19,9 +20,9 @@ const styles = StyleSheet.create({
     height: '100%',
     display: 'flex',
     alignItems: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 50,
-    gap: 20,
+    paddingHorizontal: scale(30),
+    paddingVertical: verticalScale(50),
+    gap: verticalScale(20),
     backgroundColor: colors.background,
   },
   songDetailsContainer: {
@@ -30,38 +31,38 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    paddingHorizontal: 30,
-    gap: 20,
+    padding: moderateScale(20),
+    paddingHorizontal: scale(30),
+    gap: scale(20),
   },
   songDescriptorContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: verticalScale(2),
   },
   header: {
     position: 'absolute',
-    top: 50,
+    top: verticalScale(50),
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: verticalScale(30),
   },
-  songTitle: { fontWeight: 'bold', fontSize: 26 },
+  songTitle: { fontWeight: 'bold', fontSize: moderateScale(26) },
   songAuthor: {
     fontWeight: 'condensedBold',
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: colors.slightlyTransparentText,
   },
   albumCover: {
     width: '60%',
     aspectRatio: 1,
-    borderRadius: 30,
+    borderRadius: moderateScale(30),
   },
   recordingsContainer: {
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: scale(20),
   },
 });
 

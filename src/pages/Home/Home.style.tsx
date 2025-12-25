@@ -10,6 +10,7 @@ import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
 import { sizes } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -26,7 +27,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: scale(10),
   },
   contentContainer: {
     flexGrow: 1,
@@ -34,11 +35,11 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: '100%',
     flexDirection: 'column',
-    gap: 40,
+    gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
   },
-  image: { height: 40, width: 40, borderRadius: 20 },
-  title: { fontWeight: 'bold', fontSize: 24 },
+  image: { height: moderateScale(40), width: moderateScale(40), borderRadius: moderateScale(20) },
+  title: { fontWeight: 'bold', fontSize: moderateScale(24) },
 });
 
 export const HeaderContainer = ({ children }: Props) => {

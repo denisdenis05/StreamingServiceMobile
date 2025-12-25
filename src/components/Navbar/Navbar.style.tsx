@@ -10,6 +10,7 @@ import { ReactNode } from 'react';
 import { colors, sizes } from '../../constants/styling.tsx';
 import LinearGradient from 'react-native-linear-gradient';
 import DefaultText from '../DefaultText';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -23,8 +24,8 @@ const styles = StyleSheet.create({
     height: sizes.navbarHeight,
     width: '100%',
     bottom: 0,
-    paddingTop: 20,
-    paddingBottom: 10,
+    paddingTop: verticalScale(20),
+    paddingBottom: verticalScale(10),
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
@@ -33,7 +34,7 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-around',
-    gap: 20,
+    gap: scale(20),
     width: '100%',
     height: '100%',
   },
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   buttonText: {
-    fontSize: 10,
+    fontSize: moderateScale(10),
     fontWeight: 'bold',
   },
 });

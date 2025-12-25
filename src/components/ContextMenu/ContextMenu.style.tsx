@@ -1,5 +1,6 @@
 import { StyleSheet } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 export const styles = StyleSheet.create({
     modalOverlay: {
@@ -9,29 +10,29 @@ export const styles = StyleSheet.create({
     menuContainer: {
         position: 'absolute',
         backgroundColor: colors.secondaryBackground,
-        borderRadius: 12,
-        padding: 10,
-        paddingEnd: 20,
+        borderRadius: moderateScale(12),
+        padding: moderateScale(10),
+        paddingEnd: scale(20),
         shadowColor: '#000',
         shadowOffset: {
             width: 0,
-            height: 2,
+            height: verticalScale(2),
         },
         shadowOpacity: 0.25,
-        shadowRadius: 3.84,
+        shadowRadius: moderateScale(3.84),
         elevation: 5,
-        minWidth: 150,
+        minWidth: scale(150),
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 10,
-        paddingHorizontal: 10,
-        gap: 10,
+        paddingVertical: verticalScale(10),
+        paddingHorizontal: scale(10),
+        gap: scale(10),
     },
     menuText: {
         color: colors.normalText,
-        fontSize: 16,
+        fontSize: moderateScale(16),
         margin: 0,
         padding: 0,
     },
