@@ -18,5 +18,5 @@ export const opacities = {
 };
 
 export const sizes = {
-  navbarHeight: 100,
+  navbarHeight: 125,
 };

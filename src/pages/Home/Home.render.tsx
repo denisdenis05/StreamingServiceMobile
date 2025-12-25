@@ -16,37 +16,36 @@ import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import HorizontalCardCarouselRender from '../../components/HorizontalCardCarousel';
 import { Album } from '../../constants/types.tsx';
-import { cacheImage } from '../../services/CachingService.ts';
+import { cacheImage, isImageCached } from '../../services/CachingService.ts';
 import { useApi } from '../../hooks/useApi.ts';
+import { useData } from '../../services/DataProvider.tsx';
 
 const Home = ({ navigation, route }: { navigation: any; route: any }) => {
-  const [albums, setAlbums] = useState<Album[]>([]);
   const api = useApi();
+  const fetchAlbums = async () => {
+    const res = await api.get(`Metadata/get-available-albums`);
+    const fetchedAlbums: Album[] = res.data;
 
-  useEffect(() => {
-    const fetchAndCacheAlbums = async () => {
-      try {
-        const res = await api.get(`Metadata/get-available-albums`);
-        const fetchedAlbums: Album[] = res.data;
-
-        const processedAlbumsPromises = fetchedAlbums.map(async album => {
-          if (album.cover && album.cover !== PLACEHOLDER_ALBUM_COVER) {
-            const cachedCoverUri = await cacheImage(album.cover);
-            return { ...album, cover: cachedCoverUri };
-          }
+    const processedAlbumsPromises = fetchedAlbums.map(async album => {
+      if (album.cover && album.cover !== PLACEHOLDER_ALBUM_COVER) {
+        const isCached = await isImageCached(album.cover);
+        if (isCached) {
+          const cachedCoverUri = await cacheImage(album.cover);
+          return { ...album, cover: cachedCoverUri };
+        } else {
+          cacheImage(album.cover).catch(err =>
+            console.error('Background image cache failed:', err)
+          );
           return album;
-        });
-
-        const updatedAlbums = await Promise.all(processedAlbumsPromises);
-
-        setAlbums(updatedAlbums);
-      } catch (err) {
-        console.error('Failed to fetch and cache albums:', err);
+        }
       }
-    };
+      return album;
+    });
 
-    fetchAndCacheAlbums();
-  }, []);
+    return Promise.all(processedAlbumsPromises);
+  };
+
+  const { data: albums, loading } = useData<Album[]>('home_albums', fetchAlbums);
 
   return (
     <PageContainer>
@@ -65,7 +64,7 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
         <HorizontalCardCarouselRender
           navigation={navigation}
           sectionTitle={PLACEHOLDER_SECTION_NAME}
-          content={albums}
+          content={albums || []}
         />
       </ContentContainer>
       <Navbar navigation={navigation} route={route} />
