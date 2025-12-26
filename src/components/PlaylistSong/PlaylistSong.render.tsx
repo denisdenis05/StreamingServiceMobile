@@ -5,11 +5,13 @@ import {
   MainContainer,
   MusicCard,
 } from './PlaylistSong.style.tsx';
+import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 
 const PlaylistSong = ({
   songTitle,
   songAuthor,
   playAction,
+  onMorePress,
 }: {
   navigation: any;
   songId: any;
@@ -19,6 +21,7 @@ const PlaylistSong = ({
   albumTitle: any;
   albumCover: string;
   playAction: any;
+  onMorePress: (event: any) => void;
 }) => {
   return (
     <MainContainer>
@@ -31,6 +34,7 @@ const PlaylistSong = ({
           <CardTitle>{songTitle}</CardTitle>
           <CardAuthor>{songAuthor}</CardAuthor>
         </MusicCard>
+        <MoreIcon height={25} onPress={onMorePress} />
       </CardContainer>
     </MainContainer>
   );

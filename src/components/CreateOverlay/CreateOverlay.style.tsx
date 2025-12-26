@@ -9,6 +9,7 @@ import {
 import React, { FC, ReactNode } from 'react';
 import DefaultText from '../DefaultText';
 import { colors, sizes } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children?: ReactNode;
@@ -33,22 +34,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: '80%',
     height: 'auto',
-    borderRadius: 10,
+    borderRadius: moderateScale(10),
     backgroundColor: colors.secondaryBackground,
-    padding: 20,
+    padding: moderateScale(20),
   },
   actionItem: {
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    gap: 15,
+    gap: scale(15),
   },
   actionTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: 5,
-    fontSize: 18,
+    marginTop: verticalScale(5),
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
     textAlignVertical: 'center',
   },
@@ -56,9 +57,9 @@ const styles = StyleSheet.create({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 50,
-    height: 50,
-    borderRadius: 50,
+    width: moderateScale(50),
+    height: moderateScale(50),
+    borderRadius: moderateScale(50),
     backgroundColor: colors.lowOpacityText,
   },
 });
@@ -70,7 +71,7 @@ export const MainContainer = ({ children }: Props) => {
 export const ActionItem = ({ onPress, icon, text }: ActionProps) => {
   return (
     <Pressable style={[styles.actionItem]} onPress={onPress}>
-      <ActionIcon icon={icon} />
+      <ActionIcon icon={icon} text={text} />
       <ActionTitle>{text}</ActionTitle>
     </Pressable>
   );
@@ -81,6 +82,7 @@ export const ActionTitle = ({ children }: Props) => {
 };
 
 export const ActionIcon = ({ icon: Icon }: ActionProps) => {
+  if (!Icon) return null;
   return (
     <View style={[styles.actionIcon]}>
       <Icon height={30} />

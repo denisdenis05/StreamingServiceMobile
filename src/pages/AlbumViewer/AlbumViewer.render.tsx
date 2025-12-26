@@ -20,6 +20,9 @@ import { HeaderTitle } from '../Home/Home.style.tsx';
 import Config from 'react-native-config';
 import { useApi } from '../../hooks/useApi.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
+import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
+import { menuOptions } from '../../constants/navigation.tsx';
+import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover } = route.params;
@@ -30,6 +33,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const [fetched, setFetched] = useState(false);
   const api = useApi();
   const { token } = useAuth();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>([]);
 
   useEffect(() => {
     api
@@ -53,7 +59,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayAlbum = () => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `${Config.API_URL}/Stream?id=${recording.id}`,
+      url: `${Config.API_URL}Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -71,8 +77,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayFromRecording = (recordingIndex: number) => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      //url: `http://streaming.denisgreholea.com/Stream?id=${recording.id}`,
-      url: `http://192.168.100.121:80/Stream?id=${recording.id}`,
+      url: `${Config.API_URL}Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -100,6 +105,14 @@ const AlbumViewer = ({ navigation, route }: any) => {
           <SongAuthor>{albumArtist}</SongAuthor>
         </SongDescriptorContainer>
         <PlayIcon height={25} onPress={handlePlayAlbum} />
+        <MoreIcon
+          height={25}
+          onPress={(event: any) => {
+            setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+            setMenuVisible(true);
+            setSelectedRecordingIds(recordings.map(r => r.id));
+          }}
+        />
       </SongDetailsContainer>
       <RecordingsContainer>
         {recordings.length > 0 ? (
@@ -116,6 +129,11 @@ const AlbumViewer = ({ navigation, route }: any) => {
               playAction={() => {
                 handlePlayFromRecording(index);
               }}
+              onMorePress={(event: any) => {
+                setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+                setMenuVisible(true);
+                setSelectedRecordingIds([recording.id]);
+              }}
             />
           ))
         ) : fetched ? (
@@ -124,6 +142,16 @@ const AlbumViewer = ({ navigation, route }: any) => {
           </HeaderTitle>
         ) : null}
       </RecordingsContainer>
+      {menuVisible && (
+        <ContextMenu
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          options={menuOptions}
+          position={menuPosition}
+          navigation={navigation}
+          params={{ recordingIds: selectedRecordingIds }}
+        />
+      )}
     </ContentContainer>
   );
 };

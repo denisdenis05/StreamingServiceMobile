@@ -10,6 +10,7 @@ import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
 import { sizes } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -21,7 +22,7 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: scale(10),
   },
   contentContainer: {
     flexGrow: 1,
@@ -29,23 +30,30 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: '100%',
     flexDirection: 'column',
-    gap: 40,
+    gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
   },
-  image: { height: 40, width: 40, borderRadius: 20 },
-  title: { fontWeight: 'bold', fontSize: 24 },
+  image: { height: moderateScale(40), width: moderateScale(40), borderRadius: moderateScale(20) },
+  title: { fontWeight: 'bold', fontSize: moderateScale(24) },
   searchInput: {
-    height: 40,
+    height: verticalScale(40),
     borderColor: '#ccc',
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    marginTop: 10,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(10),
+    marginTop: verticalScale(10),
     color: 'white',
   },
   searchResultContainer: {
     width: '100%',
-    paddingHorizontal: 20,
+    paddingHorizontal: scale(20),
+  },
+  sectionTitle: {
+    fontSize: moderateScale(20),
+    fontWeight: 'bold',
+    color: 'white',
+    marginTop: verticalScale(20),
+    marginBottom: verticalScale(10),
   },
 });
 
@@ -95,4 +103,8 @@ export const SearchResultContainer = ({ children }: Props) => {
   return (
     <ScrollView style={styles.searchResultContainer}>{children}</ScrollView>
   );
+};
+
+export const SectionTitle = ({ children }: Props) => {
+  return <DefaultText style={styles.sectionTitle}>{children}</DefaultText>;
 };

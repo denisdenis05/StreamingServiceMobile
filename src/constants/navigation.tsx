@@ -15,7 +15,7 @@ export interface NavigationButton {
 export interface ActionItem {
   label: string;
   icon: React.ComponentType<{ height: number }>;
-  onClick: (navigation: any) => void;
+  onClick: (navigation: any, params?: any) => void;
 }
 
 export const navigationButtons: NavigationButton[] = [
@@ -31,6 +31,16 @@ export const createActionButtons: ActionItem[] = [
     icon: MusicNoteIcon,
     onClick: navigation => {
       navigation.navigate('CreatePlaylist');
+    },
+  },
+];
+
+export const menuOptions: ActionItem[] = [
+  {
+    label: 'Add to playlist',
+    icon: MusicNoteIcon,
+    onClick: (navigation, params) => {
+      navigation.navigate('AddToPlaylist', { recordingIds: params?.recordingIds || [] });
     },
   },
 ];

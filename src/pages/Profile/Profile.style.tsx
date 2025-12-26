@@ -9,6 +9,7 @@ import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
 import { sizes } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -21,24 +22,24 @@ const styles = StyleSheet.create({
     width: '100%',
     minHeight: '100%',
     flexDirection: 'column',
-    gap: 40,
+    gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
   },
   lastFmButton: {
-    height: 45,
-    borderRadius: 8,
-    paddingHorizontal: 20,
+    height: verticalScale(45),
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(20),
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: scale(8),
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: verticalScale(2),
     },
     shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowRadius: moderateScale(3.84),
     elevation: 5,
   },
   lastFmButtonConnected: {
@@ -53,7 +54,7 @@ const styles = StyleSheet.create({
   },
   lastFmButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: moderateScale(16),
     fontWeight: 'bold',
   },
 });

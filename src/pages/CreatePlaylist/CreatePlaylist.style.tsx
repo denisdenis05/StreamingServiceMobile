@@ -10,6 +10,7 @@ import {
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -23,22 +24,22 @@ const styles = StyleSheet.create({
   content: {
     display: 'flex',
     alignItems: 'center',
-    padding: 20,
-    gap: 20,
+    padding: moderateScale(20),
+    gap: verticalScale(20),
   },
   dragIndicator: {
-    width: 40,
-    height: 4,
+    width: scale(40),
+    height: verticalScale(4),
     backgroundColor: '#666',
-    borderRadius: 2,
+    borderRadius: moderateScale(2),
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: verticalScale(20),
   },
   actionTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: 5,
-    fontSize: 18,
+    marginTop: verticalScale(5),
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
     textAlignVertical: 'center',
   },
@@ -51,15 +52,15 @@ const styles = StyleSheet.create({
     gap: '10%',
   },
   styledInput: {
-    height: 60,
+    height: verticalScale(60),
     width: '80%',
-    minWidth: 250,
+    minWidth: scale(250),
     borderColor: colors.lowOpacityText,
     borderWidth: 3,
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(10),
     color: colors.slightlyColoredText,
-    fontSize: 26,
+    fontSize: moderateScale(26),
     fontWeight: 'bold',
     textAlign: 'center',
   },
@@ -67,8 +68,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     borderColor: colors.normalText,
     borderWidth: 3,
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(10),
     fontWeight: 'bold',
   },
 });

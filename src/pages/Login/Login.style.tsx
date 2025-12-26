@@ -9,6 +9,7 @@ import {
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import { REMEMBER_ME_TEXT } from '../../constants/texts.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -32,9 +33,9 @@ const styles = StyleSheet.create({
     height: '100%',
     display: 'flex',
     alignItems: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 50,
-    gap: 100,
+    paddingHorizontal: scale(30),
+    paddingVertical: verticalScale(50),
+    gap: verticalScale(100),
     backgroundColor: colors.background,
   },
   headerContainer: {
@@ -44,52 +45,53 @@ const styles = StyleSheet.create({
   },
   centeredContainer: {
     display: 'flex',
-    gap: 20,
+    gap: verticalScale(20),
     alignItems: 'center',
     width: '50%',
   },
   title: {
     color: colors.normalText,
-    fontSize: 28,
+    fontSize: moderateScale(28),
     fontWeight: 'bold',
+    textAlign: 'center',
   },
   subtitle: {
     color: colors.normalText,
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
   },
   styledInput: {
-    height: 60,
+    height: verticalScale(60),
     width: '100%',
-    minWidth: 250,
+    minWidth: scale(250),
     backgroundColor: colors.lowOpacityText,
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    borderRadius: moderateScale(8),
+    paddingHorizontal: scale(10),
     color: colors.slightlyColoredText,
   },
   loginButton: {
-    height: 60,
+    height: verticalScale(60),
     width: '100%',
-    minWidth: 250,
+    minWidth: scale(250),
     borderColor: colors.normalText,
     borderWidth: 2,
-    borderRadius: 8,
+    borderRadius: moderateScale(8),
 
     display: 'flex',
     flexDirection: 'row',
-    gap: 5,
+    gap: scale(5),
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonText: {
     color: colors.slightlyColoredText,
-    fontSize: 18,
+    fontSize: moderateScale(18),
     fontWeight: 'bold',
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: verticalScale(16),
   },
   line: {
     flex: 1,
@@ -97,31 +99,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slightlyTransparentText,
   },
   dividerText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: moderateScale(14),
     color: colors.slightlyTransparentText,
   },
   normalTransparentText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: moderateScale(14),
     color: colors.slightlyTransparentText,
     margin: 0,
     padding: 0,
   },
   normalText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: moderateScale(14),
     color: colors.normalText,
     margin: 0,
     padding: 0,
   },
   checkboxContainer: {
-    padding: 4,
+    padding: moderateScale(4),
   },
   checkbox: {
-    height: 16,
-    width: 16,
-    borderRadius: 8,
+    height: moderateScale(16),
+    width: moderateScale(16),
+    borderRadius: moderateScale(8),
     borderWidth: 2,
     borderColor: colors.normalText,
     backgroundColor: 'transparent',

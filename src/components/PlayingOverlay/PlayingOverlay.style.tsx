@@ -11,6 +11,7 @@ import {
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
 import { colors, sizes } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -27,33 +28,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '60%',
-    height: 60,
-    borderRadius: 10,
+    height: verticalScale(60),
+    borderRadius: moderateScale(10),
     backgroundColor: 'green',
-    padding: 5,
+    padding: moderateScale(5),
   },
   metadataContainer: {
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 15,
+    gap: scale(15),
   },
   cardImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 5,
+    width: moderateScale(50),
+    height: moderateScale(50),
+    borderRadius: moderateScale(5),
   },
   cardTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: 5,
-    fontSize: 12,
+    marginTop: verticalScale(5),
+    fontSize: moderateScale(12),
     fontWeight: 'bold',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: 9,
+    fontSize: moderateScale(9),
     fontWeight: 'semibold',
   },
   textContainer: {

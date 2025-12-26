@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -21,8 +22,8 @@ const styles = StyleSheet.create({
   content: {
     display: 'flex',
     alignItems: 'center',
-    padding: 20,
-    gap: 20,
+    padding: moderateScale(20),
+    gap: verticalScale(20),
   },
   songDetailsContainer: {
     display: 'flex',
@@ -30,49 +31,49 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 20,
-    paddingHorizontal: 30,
-    gap: 20,
+    paddingVertical: verticalScale(20),
+    paddingHorizontal: scale(30),
+    gap: scale(20),
   },
   songDescriptorContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: verticalScale(2),
   },
   dragIndicator: {
-    width: 40,
-    height: 4,
+    width: scale(40),
+    height: verticalScale(4),
     backgroundColor: '#666',
-    borderRadius: 2,
+    borderRadius: moderateScale(2),
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: verticalScale(20),
   },
   header: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: verticalScale(30),
   },
-  headerTitle: { fontWeight: 'bold', fontSize: 16 },
-  songTitle: { fontWeight: 'condensedBold', fontSize: 26 },
+  headerTitle: { fontWeight: 'bold', fontSize: moderateScale(16) },
+  songTitle: { fontWeight: 'condensedBold', fontSize: moderateScale(26) },
   songAuthor: {
     fontWeight: 'regular',
-    fontSize: 14,
+    fontSize: moderateScale(14),
     color: colors.slightlyTransparentText,
   },
   albumCover: {
     width: '80%',
     aspectRatio: 1,
-    borderRadius: 30,
+    borderRadius: moderateScale(30),
   },
   allPlayingControlsContainer: {
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 30,
-    marginBottom: 30,
+    padding: moderateScale(30),
+    marginBottom: verticalScale(30),
   },
 });
 
