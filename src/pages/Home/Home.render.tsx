@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import PageContainer from '../../components/PageContainer';
 import {
   ContentContainer,
@@ -7,9 +7,7 @@ import {
   StyledImage,
 } from './Home.style.tsx';
 import {
-  PLACEHOLDER_ALBUM_COVER,
   PLACEHOLDER_PROFILE_PIC,
-  PLACEHOLDER_SECTION_NAME,
   PLACEHOLDER_USERNAME,
 } from '../../constants/placeholders.tsx';
 import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
@@ -19,14 +17,39 @@ import { Album } from '../../constants/types.tsx';
 import { useApi } from '../../hooks/useApi.ts';
 import { useData } from '../../services/DataProvider.tsx';
 
-const Home = ({ navigation, route }: { navigation: any; route: any }) => {
+type RecommendationSection = {
+  id: string;
+  title: string;
+};
+
+const HomeSection = ({ section, navigation }: { section: RecommendationSection; navigation: any }) => {
   const api = useApi();
-  const fetchAlbums = async () => {
-    const res = await api.get(`Metadata/get-available-albums`);
+  const fetchSection = async () => {
+    const res = await api.get(`Recommendation/section/${section.id}`);
     return res.data;
   };
 
-  const { data: albums, loading } = useData<Album[]>('home_albums', fetchAlbums);
+  const { data: albums } = useData<Album[]>(`section_${section.id}`, fetchSection);
+
+  if (!albums || albums.length === 0) return null;
+
+  return (
+    <HorizontalCardCarouselRender
+      navigation={navigation}
+      sectionTitle={section.title}
+      content={albums}
+    />
+  );
+};
+
+const Home = ({ navigation, route }: { navigation: any; route: any }) => {
+  const api = useApi();
+  const fetchSections = async () => {
+    const res = await api.get(`Recommendation/sections`);
+    return res.data;
+  };
+
+  const { data: sections } = useData<RecommendationSection[]>('home_sections', fetchSections);
 
   return (
     <PageContainer>
@@ -42,11 +65,9 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
             {PLACEHOLDER_USERNAME}
           </HeaderTitle>
         </HeaderContainer>
-        <HorizontalCardCarouselRender
-          navigation={navigation}
-          sectionTitle={PLACEHOLDER_SECTION_NAME}
-          content={albums || []}
-        />
+        {sections?.map((section) => (
+          <HomeSection key={section.id} section={section} navigation={navigation} />
+        ))}
       </ContentContainer>
       <Navbar navigation={navigation} route={route} />
     </PageContainer>

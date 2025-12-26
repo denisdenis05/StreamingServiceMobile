@@ -62,11 +62,8 @@ const InnerApp = () => {
   // Deep link listener
   useEffect(() => {
     const unsubscribe = DeepLinkHandler.addListener(async (type, data) => {
-      console.log('baaaaaaaaaaaaaaaaaaaaaaaa');
-      console.log(type);
       if (type === 'lastfm_callback') {
         const { token } = data;
-        console.log('Last.fm callback token:', token);
 
         try {
           await api.post('lastfm/connect', { token });
