@@ -11,6 +11,7 @@ import {
 import {
   PLACEHOLDER_ALBUM_COVER,
   PLACEHOLDER_PROFILE_PIC,
+  TEMPORARY_API_URL,
 } from '../../constants/placeholders.tsx';
 import { SEARCH_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
@@ -58,7 +59,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
   const playTrack = (recording: any) => {
     const track: Track = {
       id: recording.id,
-      url: `${Config.API_URL}Stream?id=${recording.id}`,
+      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -81,43 +82,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       return;
     }
 
-    // Avoid refetching if we just restored data that matches query
-    // But how do we distinguish "typing" vs "restore"?
-    // The "query" is from global state. If we type, we update global state.
-    // So this effect runs. We need to check if results match query? No, results might be stale.
-    // The issue: if I navigate away and back, query is "Rock", results are "Rock results".
-    // This effect runs. It will trigger a fetch.
-    // We can check if searchResults are already populated? But what if user wants to refresh?
-    // For now, let's assume if searchResults is present, we don't re-fetch unless query changed.
-    // But useEffect runs on query change.
-    // We can store "lastFetchedQuery" in state?
-    // Actually, simple debounce logic is fine, but we should skip if results needed for this query are already there?
-    // Hard to map query->results validity 1:1 without extra field.
-    // However, if we navigate back, query is same, effect runs?
-    // useEffect runs on MOUNT. Query is "Rock".
-    // We want to avoid fetching if we already have results for "Rock".
-    // But we don't know if results are for "Rock".
-    // Let's rely on standard debounce. It's better than nothing, but we specifically want to avoid reload on nav back.
-    // On nav back, 'query' is 'Rock'. 'searchResults' is '...'.
-    // If we assume results correspond to query, we can skip?
-
-    // Better approach: only trigger fetch if query changed FROM what we have.
-    // But here query comes from searchState.
-    // Let's leave it as is for now - the debounce will run, but if we want to avoid network call:
-    // We can add a "fetchedFor" field to state?
-
     const delayDebounce = setTimeout(() => {
-      // Only fetch if we don't think we have valid results? 
-      // Or just let it refresh? The user emphasized "Home loads heavy data once", "Search reuses same dataset (keeps previously searched item)".
-      // Keeping item means not losing state. If it refreshes in background that's maybe OK, but ideally no flash.
-      // Given the constraints, just keeping the state is the big win. 
-      // I'll keep the effect but maybe add a check.
-
-      // Actually, the previous implementation had logic inside effect.
-      // Accessing 'searchResults' inside effect (via closure or dep) is tricky.
-      // Let's just keep the logic. The key requirement is that the STATE persists so UI doesn't blank out.
-      // Even if it refetches, the UI shows the old results until new ones arrive (since we don't clear results before fetch).
-
       const fetchData = async () => {
         try {
           const response = await api.get(`Metadata/search`, {
@@ -133,25 +98,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     }, 500);
 
     return () => clearTimeout(delayDebounce);
-  }, [query]); // Only run when query changes.
-
-  // WAIT: if query is restored on mount, this effect runs.
-  // And it will fetch again.
-  // To avoid this, we can track a local ref of "initial mount done"?
-  // Or compare with previous query?
-
-  // Correct logic:
-  // When component mounts, query is "Rock". useEffect runs. 
-  // We want to avoid fetch if searchResults are already populated?
-  // But maybe the user *wants* to search for Rock.
-  // The only case to skip is "Restoration".
-  // If (query && searchResults), maybe skip?
-  // But what if user types "Roc" -> "Rock". Results for "Roc". Query "Rock". We need fetch.
-
-  // Let's modify the effect to simpler logic for now: rely on the fact that UI is preserved. 
-  // Refetching is acceptable if silent.
-
-
+  }, [query]);
 
   const handleSearchEntryClick = (
     albumId: any,
@@ -243,7 +190,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
                         songTitle={artist.name}
                         songAuthor="Artist"
                         albumCover={artist.image || ''}
-                        onPressAction={() => { }}
+                        onPressAction={() => {}}
                       />
                     ))}
                 </>

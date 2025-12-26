@@ -16,7 +16,6 @@ import { HOME_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import HorizontalCardCarouselRender from '../../components/HorizontalCardCarousel';
 import { Album } from '../../constants/types.tsx';
-import { cacheImage, isImageCached } from '../../services/CachingService.ts';
 import { useApi } from '../../hooks/useApi.ts';
 import { useData } from '../../services/DataProvider.tsx';
 
@@ -24,25 +23,7 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
   const api = useApi();
   const fetchAlbums = async () => {
     const res = await api.get(`Metadata/get-available-albums`);
-    const fetchedAlbums: Album[] = res.data;
-
-    const processedAlbumsPromises = fetchedAlbums.map(async album => {
-      if (album.cover && album.cover !== PLACEHOLDER_ALBUM_COVER) {
-        const isCached = await isImageCached(album.cover);
-        if (isCached) {
-          const cachedCoverUri = await cacheImage(album.cover);
-          return { ...album, cover: cachedCoverUri };
-        } else {
-          cacheImage(album.cover).catch(err =>
-            console.error('Background image cache failed:', err)
-          );
-          return album;
-        }
-      }
-      return album;
-    });
-
-    return Promise.all(processedAlbumsPromises);
+    return res.data;
   };
 
   const { data: albums, loading } = useData<Album[]>('home_albums', fetchAlbums);

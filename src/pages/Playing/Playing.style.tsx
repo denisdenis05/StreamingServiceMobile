@@ -9,6 +9,7 @@ import {
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../../components/CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -98,7 +99,7 @@ export const HeaderTitle = ({ children }: Props) => {
 };
 
 export const AlbumCover = ({ source }: ImageProps) => {
-  return <Image source={source} style={styles.albumCover} resizeMode="cover" />;
+  return <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />;
 };
 
 export const SongDetailsContainer = ({ children }: Props) => {
