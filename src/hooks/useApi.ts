@@ -4,13 +4,14 @@ import { useAuth } from './AuthContext.tsx';
 import CookieManager from '@react-native-cookies/cookies';
 import Config from 'react-native-config';
 import { Platform } from 'react-native';
+import { TEMPORARY_API_URL } from '../constants/placeholders.tsx';
 
 export const useApi = () => {
   const { getToken, login, logout } = useAuth();
 
   const api = useMemo(() => {
     const instance = axios.create({
-      baseURL: Config.API_URL,
+      baseURL: TEMPORARY_API_URL,
       withCredentials: true,
     });
 

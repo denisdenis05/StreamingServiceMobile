@@ -11,3 +11,5 @@ export const PLACEHOLDER_SECTION_NAME = 'Available albums';
 export const PLACEHOLDER_CREATE_PLAYLIST_TITLE = 'Give your playlist a name';
 export const PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT = 'Create your playlist';
 export const PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE = 'Cool playlist123';
+
+export const TEMPORARY_API_URL = 'http://192.168.1.16:80/';

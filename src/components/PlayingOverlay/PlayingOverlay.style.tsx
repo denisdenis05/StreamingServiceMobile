@@ -12,6 +12,7 @@ import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
 import { colors, sizes } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -81,7 +82,7 @@ export const MetadataContainer = ({ children }: Props) => {
 };
 
 export const CardImage = ({ source }: ImageProps) => {
-  return <Image source={source} style={styles.cardImage} resizeMode="cover" />;
+  return <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />;
 };
 
 export const CardTitle = ({ children }: Props) => {

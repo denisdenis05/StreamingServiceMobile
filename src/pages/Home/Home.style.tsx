@@ -11,6 +11,7 @@ import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
 import { sizes } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../../components/CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -64,7 +65,7 @@ export const StyledImage = ({
 }: StyledImageProps) => {
   return (
     <TouchableOpacity onPress={() => navigation.navigate(redirect)}>
-      <Image source={source} style={styles.image} resizeMode="cover" />
+      <CachedImage source={source} style={styles.image} resizeMode="cover" />
     </TouchableOpacity>
   );
 };

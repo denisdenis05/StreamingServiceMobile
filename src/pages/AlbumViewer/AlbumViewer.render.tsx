@@ -10,7 +10,10 @@ import {
 } from './AlbumViewer.style.tsx';
 import ArrowLeftIcon from '../../../assets/icons/arrowLeftIcon.tsx';
 import PlayIcon from '../../../assets/icons/playIcon.tsx';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
+import {
+  PLACEHOLDER_ALBUM_COVER,
+  TEMPORARY_API_URL,
+} from '../../constants/placeholders.tsx';
 import PlaylistSong from '../../components/PlaylistSong';
 import { useEffect, useState } from 'react';
 import { Recording } from '../../constants/types.tsx';
@@ -35,7 +38,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const { token } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
-  const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>([]);
+  const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>(
+    []
+  );
 
   useEffect(() => {
     api
@@ -59,7 +64,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayAlbum = () => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `${Config.API_URL}Stream?id=${recording.id}`,
+      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -77,7 +82,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const handlePlayFromRecording = (recordingIndex: number) => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
-      url: `${Config.API_URL}Stream?id=${recording.id}`,
+      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
@@ -98,7 +103,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
       <HeaderContainer>
         <ArrowLeftIcon height={25} onPress={navigation.goBack} />
       </HeaderContainer>
-      <AlbumCover source={{ uri: albumCover || PLACEHOLDER_ALBUM_COVER }} />
+      <AlbumCover
+        source={{ uri: albumCover || PLACEHOLDER_ALBUM_COVER }}
+      />
       <SongDetailsContainer>
         <SongDescriptorContainer>
           <SongTitle>{albumTitle}</SongTitle>
@@ -108,7 +115,10 @@ const AlbumViewer = ({ navigation, route }: any) => {
         <MoreIcon
           height={25}
           onPress={(event: any) => {
-            setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+            setMenuPosition({
+              x: event.nativeEvent.pageX,
+              y: event.nativeEvent.pageY,
+            });
             setMenuVisible(true);
             setSelectedRecordingIds(recordings.map(r => r.id));
           }}
@@ -130,7 +140,10 @@ const AlbumViewer = ({ navigation, route }: any) => {
                 handlePlayFromRecording(index);
               }}
               onMorePress={(event: any) => {
-                setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+                setMenuPosition({
+                  x: event.nativeEvent.pageX,
+                  y: event.nativeEvent.pageY,
+                });
                 setMenuVisible(true);
                 setSelectedRecordingIds([recording.id]);
               }}
