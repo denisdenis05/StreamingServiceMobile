@@ -37,6 +37,7 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
     gap: verticalScale(2),
+    width: moderateScale(100),
   },
   cardImage: {
     width: moderateScale(100),
@@ -86,9 +87,17 @@ export const CardImage = ({ source }: ImageProps) => {
 };
 
 export const CardTitle = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardTitle]}>{children}</DefaultText>;
+  return (
+    <DefaultText style={[styles.cardTitle]} numberOfLines={1}>
+      {children}
+    </DefaultText>
+  );
 };
 
 export const CardAuthor = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardAuthor]}>{children}</DefaultText>;
+  return (
+    <DefaultText style={[styles.cardAuthor]} numberOfLines={1}>
+      {children}
+    </DefaultText>
+  );
 };

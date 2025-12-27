@@ -1,42 +1,35 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-// Singleton cache storage
 const globalCache: Record<string, any> = {};
 const subscribers: Record<string, Set<(data: any) => void>> = {};
 const activePromises: Record<string, Promise<any> | undefined> = {};
 
-/**
- * Hook to access and manage cached data.
- *
- * @param key Unique key for the data.
- * @param fetcher Optional function to fetch data if not found in cache.
- * @param initialData Optional initial data to populate cache if empty.
- * @returns Object containing data, loading state, error, and update function.
- */
 export const useData = <T,>(
     key: string,
     fetcher?: () => Promise<T>,
     initialData?: T
 ) => {
-    // Initialize cache with initialData if provided and cache is empty
-    if (initialData !== undefined && !(key in globalCache)) {
+    // Ensure key is valid
+    const isValidKey = !!(key && typeof key === 'string' && key.trim().length > 0);
+
+    if (isValidKey && initialData !== undefined && !(key in globalCache)) {
         globalCache[key] = initialData;
     }
 
-    const [data, setData] = useState<T | null>(globalCache[key] ?? null);
+    const [data, setData] = useState<T | null>(isValidKey ? (globalCache[key] ?? null) : null);
     const [loading, setLoading] = useState<boolean>(
-        !(key in globalCache) && !!fetcher
+        isValidKey && !(key in globalCache) && !!fetcher
     );
     const [error, setError] = useState<Error | null>(null);
 
-    // Use ref for fetcher to avoid re-triggering effect on render if fetcher is unstable
     const fetcherRef = useRef(fetcher);
     useEffect(() => {
         fetcherRef.current = fetcher;
     }, [fetcher]);
 
-    // Subscribe to updates
     useEffect(() => {
+        if (!isValidKey) return;
+
         if (!subscribers[key]) {
             subscribers[key] = new Set();
         }
@@ -49,32 +42,28 @@ export const useData = <T,>(
         return () => {
             subscribers[key]?.delete(callback);
         };
-    }, [key]);
+    }, [key, isValidKey]);
 
-    // Fetch data if needed
     useEffect(() => {
+        if (!isValidKey) return;
+
         const loadData = async () => {
-            // If we have data, we are done
             if (globalCache[key] !== undefined && globalCache[key] !== null) {
                 setLoading(false);
                 setData(globalCache[key]);
                 return;
             }
 
-            // If no fetcher, nothing to do (waiting for manual update)
             if (!fetcherRef.current) {
                 setLoading(false);
                 return;
             }
 
-            // If already fetching, wait for it
             if (activePromises[key]) {
                 try {
                     setLoading(true);
                     const result = await activePromises[key];
-                    // Subscription will handle setData, but we ensure consistency here
                     if (globalCache[key] !== result) {
-                        // In case promise resolved but somehow cache differed (unlikely in this flow)
                     }
                 } catch (err) {
                     setError(err as Error);
@@ -84,7 +73,6 @@ export const useData = <T,>(
                 return;
             }
 
-            // Start new fetch
             setLoading(true);
             const promise = fetcherRef.current();
             activePromises[key] = promise;
@@ -93,12 +81,9 @@ export const useData = <T,>(
                 const result = await promise;
                 globalCache[key] = result;
 
-                // Notify all subscribers
                 if (subscribers[key]) {
                     subscribers[key].forEach(cb => cb(result));
                 }
-
-                // Also set local state in case subscription missed (run before subscribe? unlikely due to effect order but safe)
                 setData(result);
             } catch (err) {
                 console.error(`DataProvider fetch error for key "${key}":`, err);
@@ -110,17 +95,18 @@ export const useData = <T,>(
         };
 
         loadData();
-    }, [key]); // Only key. If fetcher changes, we don't re-fetch unless key changes or manual reload.
+    }, [key, isValidKey]);
 
     const updateData = useCallback(
         (newData: T) => {
+            if (!isValidKey) return;
             globalCache[key] = newData;
             if (subscribers[key]) {
                 subscribers[key].forEach(cb => cb(newData));
             }
             setData(newData);
         },
-        [key]
+        [key, isValidKey]
     );
 
     return { data, loading, error, updateData };
