@@ -35,11 +35,16 @@ const styles = StyleSheet.create({
     display: 'flex',
     width: '100%',
     minHeight: '100%',
+    minWidth: '100%',
     flexDirection: 'column',
     gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
   },
-  image: { height: moderateScale(40), width: moderateScale(40), borderRadius: moderateScale(20) },
+  image: {
+    height: moderateScale(40),
+    width: moderateScale(40),
+    borderRadius: moderateScale(20),
+  },
   title: { fontWeight: 'bold', fontSize: moderateScale(24) },
 });
 
