@@ -29,7 +29,18 @@ const HomeSection = ({ section, navigation }: { section: RecommendationSection; 
     return res.data;
   };
 
-  const { data: albums } = useData<Album[]>(`section_${section.id}`, fetchSection);
+  const { data: albums, loading } = useData<Album[]>(`section_${section.id}`, fetchSection);
+
+  if (loading) {
+    return (
+      <HorizontalCardCarouselRender
+        navigation={navigation}
+        sectionTitle={section.title}
+        content={[]}
+        isLoading={true}
+      />
+    );
+  }
 
   if (!albums || albums.length === 0) return null;
 
@@ -49,7 +60,7 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
     return res.data;
   };
 
-  const { data: sections } = useData<RecommendationSection[]>('home_sections', fetchSections);
+  const { data: sections, loading } = useData<RecommendationSection[]>('home_sections', fetchSections);
 
   return (
     <PageContainer>
@@ -65,6 +76,28 @@ const Home = ({ navigation, route }: { navigation: any; route: any }) => {
             {PLACEHOLDER_USERNAME}
           </HeaderTitle>
         </HeaderContainer>
+        {loading && (
+          <>
+            <HorizontalCardCarouselRender
+              navigation={navigation}
+              sectionTitle=""
+              content={[]}
+              isLoading={true}
+            />
+            <HorizontalCardCarouselRender
+              navigation={navigation}
+              sectionTitle=""
+              content={[]}
+              isLoading={true}
+            />
+            <HorizontalCardCarouselRender
+              navigation={navigation}
+              sectionTitle=""
+              content={[]}
+              isLoading={true}
+            />
+          </>
+        )}
         {sections?.map((section) => (
           <HomeSection key={section.id} section={section} navigation={navigation} />
         ))}

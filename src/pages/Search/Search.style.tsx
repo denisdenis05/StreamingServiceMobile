@@ -29,11 +29,16 @@ const styles = StyleSheet.create({
     display: 'flex',
     width: '100%',
     minHeight: '100%',
+    minWidth: '100%',
     flexDirection: 'column',
     gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
   },
-  image: { height: moderateScale(40), width: moderateScale(40), borderRadius: moderateScale(20) },
+  image: {
+    height: moderateScale(40),
+    width: moderateScale(40),
+    borderRadius: moderateScale(20),
+  },
   title: { fontWeight: 'bold', fontSize: moderateScale(24) },
   searchInput: {
     height: verticalScale(40),
@@ -41,7 +46,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: moderateScale(8),
     paddingHorizontal: scale(10),
-    marginTop: verticalScale(10),
+    marginHorizontal: verticalScale(15),
     color: 'white',
   },
   searchResultContainer: {

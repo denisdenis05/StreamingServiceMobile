@@ -12,7 +12,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.background,
     paddingHorizontal: 30,
-    paddingTop: 100,
+    paddingTop: 50,
+    width: '100%',
+    minWidth: '100%',
+    minHeight: '100%',
   },
 });
 
