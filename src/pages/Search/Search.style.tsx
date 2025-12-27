@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: moderateScale(8),
     paddingHorizontal: scale(10),
-    margin: verticalScale(15),
+    marginHorizontal: verticalScale(15),
     color: 'white',
   },
   searchResultContainer: {

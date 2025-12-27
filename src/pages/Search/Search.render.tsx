@@ -19,10 +19,12 @@ import { useEffect, useState } from 'react';
 import { Album, Artist, SearchResults } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import SearchEntry from '../../components/SearchEntry';
+import { SearchEntrySkeleton } from '../../components/SearchEntry/SearchEntry.render.tsx';
 import { useApi } from '../../hooks/useApi.ts';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 import { useData } from '../../services/DataProvider.tsx';
+import { View } from 'react-native';
 
 const MAX_ITEMS_PER_CATEGORY = 5;
 
@@ -74,6 +76,8 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     navigation.navigate('Playing', {});
   };
 
+  const [loading, setLoading] = useState(false);
+
   useEffect(() => {
     if (query.length <= 3) {
       if (searchResults !== null) {
@@ -85,12 +89,15 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     const delayDebounce = setTimeout(() => {
       const fetchData = async () => {
         try {
+          setLoading(true);
           const response = await api.get(`Metadata/search`, {
             params: { query, limit },
           });
           setSearchResults(response.data);
         } catch (error) {
           console.error('Error fetching search results:', error);
+        } finally {
+          setLoading(false);
         }
       };
 
@@ -130,7 +137,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       cover = artist.image;
       id = artist.id;
     } else if (type === 'track') {
-      const track = data as Track;
+      const track = data as unknown as Track;
       title = track.title;
       subtitle = track.artistName;
       cover = track.cover;
@@ -175,7 +182,14 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
         />
 
         <SearchResultContainer>
-          {searchResults && (
+          {loading && (
+            <View style={{ gap: 10, width: '100%' }}>
+              {Array.from({ length: 5 }).map((_, index) => (
+                <SearchEntrySkeleton key={index} />
+              ))}
+            </View>
+          )}
+          {!loading && searchResults && (
             <>
               {renderBestMatch()}
 
@@ -190,7 +204,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
                         songTitle={artist.name}
                         songAuthor="Artist"
                         albumCover={artist.image || ''}
-                        onPressAction={() => {}}
+                        onPressAction={() => { }}
                       />
                     ))}
                 </>
