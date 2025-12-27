@@ -54,6 +54,7 @@ export const GradientContainer = ({ children }: Props) => {
   return (
     <LinearGradient
       colors={colors.navbarGradient}
+      locations={[0, 0.1, 0.2, 1]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
       style={styles.gradientContainer}
