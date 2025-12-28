@@ -1,5 +1,6 @@
 export const HOME_HEADER_TEXT = 'Hello, ';
 export const SEARCH_HEADER_TEXT = 'Search ';
+export const LIBRARY_HEADER_TEXT = 'Library';
 export const LOGINPAGE_HEADER_TITLE = 'Welcome to Music Streaming';
 export const LOGINPAGE_HEADER_SUBTITLE = 'Take control of your music';
 
