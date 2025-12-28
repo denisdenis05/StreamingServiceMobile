@@ -8,9 +8,9 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
-import DefaultText from '../../components/DefaultText';
+import DefaultText from '../DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
-import CachedImage from '../../components/CachedImage.tsx';
+import CachedImage from '../CachedImage.tsx';
 
 interface Props {
   children: ReactNode;

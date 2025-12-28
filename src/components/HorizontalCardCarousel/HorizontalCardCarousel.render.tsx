@@ -25,18 +25,23 @@ const HorizontalCardCarousel = ({
   if (isLoading) {
     return <HorizontalCardSkeleton />;
   }
-  const handleCardClick = (
-    albumId: any,
-    albumTitle: any,
-    albumArtist: any,
-    albumCover: any
-  ) => {
-    navigation.navigate('AlbumViewer', {
-      albumId,
-      albumTitle,
-      albumArtist,
-      albumCover,
-    });
+  const handleCardClick = (card: any) => {
+    if (card.type === 'Playlist') {
+      navigation.navigate('PlaylistViewer', {
+        playlistId: card.id,
+        playlistTitle: card.title,
+        playlistOwner: card.artistName,
+        playlistCover: card.cover,
+        isOwner: false // Can't determine ownership easily here without user context, assume false or fetch
+      });
+    } else {
+      navigation.navigate('AlbumViewer', {
+        albumId: card.id,
+        albumTitle: card.title,
+        albumArtist: card.artistName,
+        albumCover: card.cover,
+      });
+    }
   };
 
   return (
@@ -47,11 +52,11 @@ const HorizontalCardCarousel = ({
           <MusicCard
             key={index}
             onPress={() => {
-              handleCardClick(card.id, card.title, card.artistName, card.cover);
+              handleCardClick(card);
             }}
           >
             <CardImage
-              source={{ uri: card.cover || PLACEHOLDER_ALBUM_COVER }}
+              source={{ uri: card.smallCover || PLACEHOLDER_ALBUM_COVER }}
             />
             <CardTitle>{card.title}</CardTitle>
             <CardAuthor>{card.artistName}</CardAuthor>

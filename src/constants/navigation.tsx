@@ -40,7 +40,10 @@ export const menuOptions: ActionItem[] = [
     label: 'Add to playlist',
     icon: MusicNoteIcon,
     onClick: (navigation, params) => {
-      navigation.navigate('AddToPlaylist', { recordingIds: params?.recordingIds || [] });
+      navigation.navigate('AddToPlaylist', {
+        recordingIds: params?.recordingIds || [],
+        songs: params?.songs || []
+      });
     },
   },
 ];
