@@ -37,12 +37,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    height: verticalScale(12),
+    height: verticalScale(8),
     backgroundColor: colors.normalText,
     borderRadius: moderateScale(2),
   },
   progress: {
-    height: verticalScale(12),
+    height: verticalScale(8),
     backgroundColor: colors.normalText,
     borderRadius: moderateScale(2),
   },
@@ -51,15 +51,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    height: verticalScale(12),
+    height: verticalScale(8),
     backgroundColor: '#666',
     borderRadius: moderateScale(2),
     opacity: 0.6,
   },
   thumb: {
     position: 'absolute',
-    width: moderateScale(12),
-    height: moderateScale(12),
+    width: moderateScale(10),
+    height: moderateScale(10),
     backgroundColor: colors.normalText,
     borderRadius: moderateScale(10),
     elevation: 5,
@@ -70,7 +70,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: -verticalScale(20),
-    height: verticalScale(52), // Large touch area for easier interaction
+    height: verticalScale(52),
   },
   timeContainer: {
     flexDirection: 'row',
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: colors.slightlyTransparentText,
-    fontSize: moderateScale(12),
+    fontSize: moderateScale(10),
     margin: 0,
   },
 });

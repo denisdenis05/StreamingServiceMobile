@@ -59,6 +59,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
       playlistId: playlistId,
+      isLiked: recording.isLiked,
     }));
     setStartIndex(0);
     replaceQueue(tracks);
@@ -78,6 +79,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
       playlistId: playlistId,
+      isLiked: recording.isLiked,
     }));
 
     setStartIndex(recordingIndex);

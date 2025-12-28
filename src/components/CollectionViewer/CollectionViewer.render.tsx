@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   AlbumCover,
   ContentContainer,
+  ControlsContainer,
   HeaderContainer,
   RecordingsContainer,
   SongAuthor,
@@ -55,8 +56,10 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
           <SongTitle>{title}</SongTitle>
           <SongAuthor>{subtitle}</SongAuthor>
         </SongDescriptorContainer>
-        <PlayIcon height={25} onPress={onPlay} />
-        {onMorePress && <MoreIcon height={25} onPress={onMorePress} />}
+        <ControlsContainer>
+          {onMorePress && <MoreIcon height={25} onPress={onMorePress} />}
+          <PlayIcon height={25} onPress={onPlay} />
+        </ControlsContainer>
       </SongDetailsContainer>
       <RecordingsContainer>
         {songs.length > 0 ? (

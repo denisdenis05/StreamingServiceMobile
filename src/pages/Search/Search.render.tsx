@@ -69,6 +69,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
+      isLiked: recording.isLiked,
     };
 
     replaceQueue([track]);

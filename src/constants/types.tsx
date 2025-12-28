@@ -4,6 +4,7 @@ export interface Recording {
   artistName: string;
   releaseTitle: string;
   cover: string;
+  isLiked?: boolean;
 }
 
 export interface Album {
@@ -31,6 +32,7 @@ export interface Track {
   verySmallCover: string;
   positionInAlbum: number;
   url?: string;
+  isLiked?: boolean;
 }
 
 export interface SearchResults {

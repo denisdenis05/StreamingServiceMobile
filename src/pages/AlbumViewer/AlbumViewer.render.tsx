@@ -56,6 +56,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
+      isLiked: recording.isLiked,
     }));
     setStartIndex(0);
     replaceQueue(tracks);
@@ -74,6 +75,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
+      isLiked: recording.isLiked,
     }));
 
     setStartIndex(recordingIndex);
