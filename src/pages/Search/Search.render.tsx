@@ -16,8 +16,7 @@ import {
 import { SEARCH_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
 import { useEffect, useState } from 'react';
-import { Album, Artist, SearchResults } from '../../constants/types.tsx';
-import { Track } from 'react-native-track-player';
+import { Album, Track, Artist, SearchResults } from '../../constants/types.tsx';
 import SearchEntry from '../../components/SearchEntry';
 import { SearchEntrySkeleton } from '../../components/SearchEntry/SearchEntry.render.tsx';
 import { useApi } from '../../hooks/useApi.ts';
@@ -25,6 +24,8 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 import { useData } from '../../services/DataProvider.tsx';
 import { View } from 'react-native';
+import ContextMenu from '../../components/ContextMenu/ContextMenu.render';
+import { menuOptions } from '../../constants/navigation.tsx';
 
 const MAX_ITEMS_PER_CATEGORY = 5;
 
@@ -59,7 +60,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
   }, [queue]);
 
   const playTrack = (recording: any) => {
-    const track: Track = {
+    const track = {
       id: recording.id,
       url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
       title: recording.title,
@@ -68,12 +69,26 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
+      isLiked: recording.isLiked,
     };
 
     replaceQueue([track]);
     setShouldPlayFromStart(true);
 
     navigation.navigate('Playing', {});
+  };
+
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
+  const [selectedTrack, setSelectedTrack] = useState<any>(null);
+
+  const handleMorePress = (event: any, track: any) => {
+    setMenuPosition({
+      x: event.nativeEvent.pageX,
+      y: event.nativeEvent.pageY,
+    });
+    setSelectedTrack(track);
+    setMenuVisible(true);
   };
 
   const [loading, setLoading] = useState(false);
@@ -140,13 +155,13 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       const track = data as unknown as Track;
       title = track.title;
       subtitle = track.artistName;
-      cover = track.cover;
+      cover = track.verySmallCover;
       id = track.id;
     } else if (type === 'album') {
       const album = data as Album;
       title = album.title;
       subtitle = album.artistName;
-      cover = album.cover;
+      cover = album.verySmallCover;
       id = album.id;
     }
 
@@ -224,6 +239,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
                         onPressAction={() => {
                           playTrack(track);
                         }}
+                        onMorePress={(e: any) => handleMorePress(e, track)}
                       />
                     ))}
                 </>
@@ -259,6 +275,19 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
         </SearchResultContainer>
       </ContentContainer>
       <Navbar navigation={navigation} route={route} />
+      {menuVisible && (
+        <ContextMenu
+          visible={menuVisible}
+          onClose={() => setMenuVisible(false)}
+          options={menuOptions}
+          position={menuPosition}
+          navigation={navigation}
+          params={{
+            recordingIds: [selectedTrack?.id],
+            songs: [selectedTrack]
+          }}
+        />
+      )}
     </PageContainer>
   );
 };

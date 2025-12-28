@@ -28,7 +28,9 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    width: '60%',
+    gap: 10,
+    width: '85%',
+    maxWidth: '85%',
     height: verticalScale(60),
     borderRadius: moderateScale(10),
     backgroundColor: 'green',
@@ -38,6 +40,7 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
+    maxWidth: '75%',
     gap: scale(15),
   },
   cardImage: {
@@ -51,6 +54,8 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(5),
     fontSize: moderateScale(12),
     fontWeight: 'bold',
+    maxWidth: '100%',
+    maxHeight: '100%',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
@@ -82,7 +87,9 @@ export const MetadataContainer = ({ children }: Props) => {
 };
 
 export const CardImage = ({ source }: ImageProps) => {
-  return <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />;
+  return (
+    <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />
+  );
 };
 
 export const CardTitle = ({ children }: Props) => {

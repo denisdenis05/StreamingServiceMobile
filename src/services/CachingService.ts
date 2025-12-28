@@ -124,19 +124,19 @@ async function cacheImageInternal(imageUrl: string): Promise<string> {
       console.warn(
         `Failed to cache image from ${imageUrl}. Status code: ${result.statusCode}`
       );
-      await RNFS.unlink(tempPath).catch(() => {});
+      await RNFS.unlink(tempPath).catch(() => { });
       return imageUrl;
     }
   } catch (error) {
     console.error(`Error caching image ${imageUrl}:`, error);
-    await RNFS.unlink(tempPath).catch(() => {});
+    await RNFS.unlink(tempPath).catch(() => { });
     return imageUrl;
   }
 }
 
 export async function cacheImageWithApi(
   imageUrl: string,
-  api: AxiosInstance
+  api?: AxiosInstance
 ): Promise<string> {
   if (!imageUrl || imageUrl === PLACEHOLDER_ALBUM_COVER) {
     return imageUrl;
@@ -148,6 +148,10 @@ export async function cacheImageWithApi(
   const existingPath = await findCachedImageFile(fileName);
   if (existingPath) {
     return `file://${existingPath}`;
+  }
+
+  if (!api) {
+    return cacheImageInternal(imageUrl);
   }
 
   try {
@@ -172,7 +176,6 @@ export async function cacheImageWithApi(
 
     const finalPath = `${IMAGE_CACHE_DIR}/${fileName}.${extension}`;
 
-    // Convert arraybuffer to base64
     const base64Data = Buffer.from(response.data, 'binary').toString('base64');
 
     await RNFS.writeFile(finalPath, base64Data, 'base64');

@@ -26,13 +26,9 @@ const PlaylistSong = ({
   return (
     <MainContainer>
       <CardContainer>
-        <MusicCard
-          onPress={() => {
-            playAction();
-          }}
-        >
-          <CardTitle>{songTitle}</CardTitle>
-          <CardAuthor>{songAuthor}</CardAuthor>
+        <MusicCard onPress={playAction}>
+          <CardTitle numberOfLines={1}>{songTitle}</CardTitle>
+          <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>
         </MusicCard>
         <MoreIcon height={25} onPress={onMorePress} />
       </CardContainer>

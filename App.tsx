@@ -19,6 +19,8 @@ import { colors } from './src/constants/styling.tsx';
 import Profile from './src/pages/Profile';
 import CreatePlaylist from './src/pages/CreatePlaylist';
 import AddToPlaylist from './src/pages/AddToPlaylist';
+import Library from './src/pages/Library/Library.render.tsx';
+import PlaylistViewer from './src/pages/PlaylistViewer/PlaylistViewer.render.tsx';
 
 const Stack = createNativeStackNavigator();
 
@@ -135,6 +137,12 @@ const InnerApp = () => {
         component={AlbumViewer}
         options={{ animation: 'slide_from_bottom' }}
       />
+      <Stack.Screen
+        name="PlaylistViewer"
+        component={PlaylistViewer}
+        options={{ animation: 'slide_from_bottom' }}
+      />
+      <Stack.Screen name="Library" component={Library} />
       <Stack.Screen
         name="Profile"
         component={Profile}

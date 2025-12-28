@@ -18,8 +18,9 @@ import {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const CreatePlaylist = ({ navigation }: any) => {
-  const [playlistName, setPlaylistName] = useState('');
+const CreatePlaylist = ({ navigation, route }: any) => {
+  const { playlistId, initialName } = route.params || {};
+  const [playlistName, setPlaylistName] = useState(initialName || '');
   const [isLoading, setIsLoading] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const api = useApi();
@@ -62,8 +63,12 @@ const CreatePlaylist = ({ navigation }: any) => {
 
     setIsLoading(true);
 
-    var body = { name: playlistName, recordingIds: [] };
-    await api.post('library/playlists', body);
+    if (playlistId) {
+      await api.put(`library/playlists/${playlistId}`, { name: playlistName });
+    } else {
+      var body = { name: playlistName, recordingIds: [] };
+      await api.post('library/playlists', body);
+    }
 
     setIsLoading(false);
     navigation.goBack();
@@ -78,14 +83,14 @@ const CreatePlaylist = ({ navigation }: any) => {
         <ContentContainer>
           <DragIndicator />
           <CenteredContainer>
-            <CardTitle>{PLACEHOLDER_CREATE_PLAYLIST_TITLE}</CardTitle>
+            <CardTitle>{playlistId ? 'Edit Playlist' : PLACEHOLDER_CREATE_PLAYLIST_TITLE}</CardTitle>
             <StyledInput
               value={playlistName}
               onChangeText={setPlaylistName}
               placeholder={PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE}
             />
             <StyledButton
-              title={PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT}
+              title={playlistId ? 'Save Changes' : PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT}
               onPress={createPlaylist}
               disabled={isLoading}
             />

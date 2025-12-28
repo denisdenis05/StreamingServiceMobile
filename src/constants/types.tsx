@@ -4,6 +4,7 @@ export interface Recording {
   artistName: string;
   releaseTitle: string;
   cover: string;
+  isLiked?: boolean;
 }
 
 export interface Album {
@@ -11,6 +12,8 @@ export interface Album {
   title: string;
   artistName: string;
   cover: string;
+  smallCover: string;
+  verySmallCover: string;
 }
 
 export interface Artist {
@@ -25,7 +28,11 @@ export interface Track {
   artistName: string;
   releaseTitle: string;
   cover: string;
+  smallCover: string;
+  verySmallCover: string;
   positionInAlbum: number;
+  url?: string;
+  isLiked?: boolean;
 }
 
 export interface SearchResults {

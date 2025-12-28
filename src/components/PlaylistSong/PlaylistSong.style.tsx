@@ -13,10 +13,11 @@ import { colors } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
-interface Props {
+interface Props extends React.ComponentProps<typeof View> {
   children: ReactNode;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
+  numberOfLines?: number;
 }
 
 const styles = StyleSheet.create({
@@ -27,18 +28,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: scale(20),
     paddingVertical: verticalScale(10),
     width: '100%',
+    maxWidth: '100%',
   },
   cardContainer: {
     display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     width: '100%',
+    maxWidth: '100%',
     gap: scale(10),
   },
   card: {
     display: 'flex',
     flexDirection: 'column',
     gap: verticalScale(2),
+    flex: 1,
   },
   cardTitle: {
     color: colors.normalText,
@@ -46,6 +51,7 @@ const styles = StyleSheet.create({
     marginTop: verticalScale(5),
     fontSize: moderateScale(14),
     fontWeight: 'semibold',
+    maxWidth: '100%',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
@@ -60,13 +66,9 @@ export const MainContainer = ({ children }: Props) => {
 
 export const CardContainer = ({ children }: Props) => {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.cardContainer}
-    >
+    <View style={styles.cardContainer}>
       {children}
-    </ScrollView>
+    </View>
   );
 };
 
@@ -78,10 +80,18 @@ export const MusicCard = ({ children, onPress }: Props) => {
   );
 };
 
-export const CardTitle = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardTitle]}>{children}</DefaultText>;
+export const CardTitle = ({ children, numberOfLines }: Props) => {
+  return (
+    <DefaultText style={[styles.cardTitle]} numberOfLines={numberOfLines}>
+      {children}
+    </DefaultText>
+  );
 };
 
-export const CardAuthor = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardAuthor]}>{children}</DefaultText>;
+export const CardAuthor = ({ children, numberOfLines }: Props) => {
+  return (
+    <DefaultText style={[styles.cardAuthor]} numberOfLines={numberOfLines}>
+      {children}
+    </DefaultText>
+  );
 };

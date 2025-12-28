@@ -289,6 +289,7 @@ export function useQueue() {
         album: track.album || 'Unknown Album',
         durationSeconds: Math.floor(duration),
         isLocalCached,
+        playlistId: (track as any).playlistId,
       });
 
       if (response.data.success) {

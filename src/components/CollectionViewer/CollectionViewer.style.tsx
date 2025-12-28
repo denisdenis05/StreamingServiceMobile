@@ -8,9 +8,9 @@ import {
   View,
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
-import DefaultText from '../../components/DefaultText';
+import DefaultText from '../DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
-import CachedImage from '../../components/CachedImage.tsx';
+import CachedImage from '../CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -19,9 +19,11 @@ interface Props {
 const styles = StyleSheet.create({
   content: {
     height: '100%',
+    width: '100%',
+    maxWidth: '100%',
     display: 'flex',
     alignItems: 'center',
-    paddingHorizontal: scale(30),
+    paddingHorizontal: scale(10),
     paddingVertical: verticalScale(50),
     gap: verticalScale(20),
     backgroundColor: colors.background,
@@ -29,6 +31,7 @@ const styles = StyleSheet.create({
   songDetailsContainer: {
     display: 'flex',
     width: '100%',
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -39,6 +42,7 @@ const styles = StyleSheet.create({
   songDescriptorContainer: {
     display: 'flex',
     flexDirection: 'column',
+    maxWidth: '60%',
     gap: verticalScale(2),
   },
   header: {
@@ -50,10 +54,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: verticalScale(30),
   },
-  songTitle: { fontWeight: 'bold', fontSize: moderateScale(26) },
+  songTitle: { fontWeight: 'bold', fontSize: moderateScale(18) },
   songAuthor: {
     fontWeight: 'condensedBold',
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(12),
     color: colors.slightlyTransparentText,
   },
   albumCover: {
@@ -63,6 +67,7 @@ const styles = StyleSheet.create({
   },
   recordingsContainer: {
     width: '100%',
+    maxWidth: '100%',
     paddingHorizontal: scale(20),
   },
 });
@@ -76,7 +81,9 @@ export const HeaderContainer = ({ children }: Props) => {
 };
 
 export const AlbumCover = ({ source }: ImageProps) => {
-  return <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />;
+  return (
+    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+  );
 };
 
 export const SongDetailsContainer = ({ children }: Props) => {
@@ -96,4 +103,8 @@ export const SongAuthor = ({ children }: Props) => {
 
 export const RecordingsContainer = ({ children }: Props) => {
   return <ScrollView style={styles.recordingsContainer}>{children}</ScrollView>;
+};
+
+export const ControlsContainer = ({ children }: Props) => {
+  return <View style={{ flexDirection: 'row', gap: 10 }}>{children}</View>;
 };

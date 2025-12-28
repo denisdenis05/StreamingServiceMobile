@@ -24,7 +24,7 @@ const styles = StyleSheet.create({
     display: 'flex',
     alignItems: 'center',
     padding: moderateScale(20),
-    gap: verticalScale(20),
+    gap: verticalScale(10),
   },
   songDetailsContainer: {
     display: 'flex',
@@ -51,16 +51,26 @@ const styles = StyleSheet.create({
   },
   header: {
     width: '100%',
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: verticalScale(30),
   },
-  headerTitle: { fontWeight: 'bold', fontSize: moderateScale(16) },
-  songTitle: { fontWeight: 'condensedBold', fontSize: moderateScale(26) },
+  headerTitle: {
+    fontWeight: 'bold',
+    fontSize: moderateScale(12),
+    textAlign: 'center',
+    maxWidth: '50%',
+  },
+  songTitle: {
+    fontWeight: 'condensedBold',
+    fontSize: moderateScale(18),
+    maxWidth: '80%',
+  },
   songAuthor: {
     fontWeight: 'regular',
-    fontSize: moderateScale(14),
+    fontSize: moderateScale(12),
     color: colors.slightlyTransparentText,
   },
   albumCover: {
@@ -73,7 +83,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: moderateScale(30),
+    paddingHorizontal: moderateScale(30),
     marginBottom: verticalScale(30),
   },
 });
@@ -99,7 +109,9 @@ export const HeaderTitle = ({ children }: Props) => {
 };
 
 export const AlbumCover = ({ source }: ImageProps) => {
-  return <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />;
+  return (
+    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+  );
 };
 
 export const SongDetailsContainer = ({ children }: Props) => {

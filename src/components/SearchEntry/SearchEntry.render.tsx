@@ -9,16 +9,20 @@ import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
 import { View } from 'react-native';
 
+import MoreIcon from '../../../assets/icons/moreIcon.tsx';
+
 const SearchEntry = ({
   songTitle,
   songAuthor,
   albumCover,
   onPressAction,
+  onMorePress,
 }: {
   songTitle: any;
   songAuthor: any;
   albumCover: string;
   onPressAction: any;
+  onMorePress?: (event: any) => void;
 }) => {
   return (
     <MainContainer>
@@ -31,6 +35,7 @@ const SearchEntry = ({
         <CardTitle>{songTitle}</CardTitle>
         <CardAuthor>{songAuthor}</CardAuthor>
       </MusicCard>
+      {onMorePress && <MoreIcon height={25} onPress={onMorePress} />}
     </MainContainer>
   );
 };
