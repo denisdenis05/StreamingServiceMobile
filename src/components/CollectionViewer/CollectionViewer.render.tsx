@@ -34,6 +34,7 @@ interface CollectionViewerProps {
   onSongMorePress: (event: any, song: Recording) => void;
   isLoading?: boolean;
   emptyMessage?: string;
+  onEndReached?: () => void;
 }
 
 const CollectionViewer: React.FC<CollectionViewerProps> = ({
@@ -48,10 +49,25 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   onSongMorePress,
   isLoading,
   emptyMessage = 'Collection temporarily unavailable',
+  onEndReached,
 }) => {
+  const handleScroll = ({ nativeEvent }: any) => {
+    if (!onEndReached) return;
+
+    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+    const paddingToBottom = 200;
+
+    if (
+      layoutMeasurement.height + contentOffset.y >=
+      contentSize.height - paddingToBottom
+    ) {
+      onEndReached();
+    }
+  };
+
   return (
     <ContentContainer>
-      <MainScrollContainer>
+      <MainScrollContainer onScroll={handleScroll} scrollEventThrottle={400}>
         <HeaderContainer>
           <ArrowLeftIcon height={15} onPress={navigation.goBack} />
         </HeaderContainer>
@@ -88,8 +104,11 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
               />
             ))
           ) : !isLoading ? (
-            <HeaderTitle>{emptyMessage}</HeaderTitle>
+            <SongTitle>{emptyMessage}</SongTitle>
           ) : null}
+          {isLoading && songs.length > 0 && (
+            <SongTitle>Loading more...</SongTitle>
+          )}
         </RecordingsContainer>
       </MainScrollContainer>
     </ContentContainer>

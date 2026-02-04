@@ -98,11 +98,19 @@ export const ContentContainer = ({ children }: Props) => {
   return <SafeAreaView style={styles.content}>{children}</SafeAreaView>;
 };
 
-export const MainScrollContainer = ({ children }: Props) => {
+interface MainScrollContainerProps {
+  children: ReactNode;
+  onScroll?: (event: any) => void;
+  scrollEventThrottle?: number;
+}
+
+export const MainScrollContainer = ({ children, onScroll, scrollEventThrottle }: MainScrollContainerProps) => {
   return (
     <ScrollView
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
+      onScroll={onScroll}
+      scrollEventThrottle={scrollEventThrottle}
     >
       {children}
     </ScrollView>
