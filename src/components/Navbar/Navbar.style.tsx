@@ -26,6 +26,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     paddingTop: verticalScale(20),
     paddingBottom: verticalScale(10),
+    paddingHorizontal: verticalScale(10),
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',

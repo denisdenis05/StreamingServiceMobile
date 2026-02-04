@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors } from '../../constants/styling.tsx';
+import { colors, sizes } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
@@ -37,11 +37,11 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'column',
     gap: verticalScale(2),
-    width: moderateScale(100),
+    width: moderateScale(sizes.albumCoverHomeHeight),
   },
   cardImage: {
-    width: moderateScale(100),
-    height: moderateScale(100),
+    width: moderateScale(sizes.albumCoverHomeHeight),
+    height: moderateScale(sizes.albumCoverHomeHeight),
     borderRadius: moderateScale(10),
   },
   cardTitle: {

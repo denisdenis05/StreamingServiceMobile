@@ -1,7 +1,7 @@
 export const colors = {
   background: '#121212',
   secondaryBackground: '#262626',
-  navbarGradient: ['#12121200', '#12121230', '#121212EE', '#121212FF'],
+  navbarGradient: ['#121212EE', '#121212EE', '#121212FF', '#121212FF'],
   normalText: '#FFFFFF',
   slightlyTransparentText: '#FFFFFFCC',
   lowOpacityText: '#FFFFFF33',
@@ -18,5 +18,6 @@ export const opacities = {
 };
 
 export const sizes = {
-  navbarHeight: 125,
+  navbarHeight: 75,
+  albumCoverHomeHeight: 120,
 };

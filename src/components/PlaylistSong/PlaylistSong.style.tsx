@@ -12,6 +12,8 @@ import DefaultText from '../DefaultText';
 import { colors } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../CachedImage.tsx';
+import { ImageProps } from 'react-native';
 
 interface Props extends React.ComponentProps<typeof View> {
   children: ReactNode;
@@ -41,9 +43,21 @@ const styles = StyleSheet.create({
   },
   card: {
     display: 'flex',
+    flexDirection: 'row',
+    gap: scale(10),
+    flex: 1,
+    alignItems: 'center',
+  },
+  textContainer: {
+    display: 'flex',
     flexDirection: 'column',
     gap: verticalScale(2),
     flex: 1,
+  },
+  albumCover: {
+    width: verticalScale(45),
+    height: verticalScale(45),
+    borderRadius: moderateScale(4),
   },
   cardTitle: {
     color: colors.normalText,
@@ -78,6 +92,16 @@ export const MusicCard = ({ children, onPress }: Props) => {
       {children}
     </Pressable>
   );
+};
+
+export const AlbumCover = ({ source }: ImageProps) => {
+  return (
+    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+  );
+};
+
+export const TextContainer = ({ children }: Props) => {
+  return <View style={styles.textContainer}>{children}</View>;
 };
 
 export const CardTitle = ({ children, numberOfLines }: Props) => {

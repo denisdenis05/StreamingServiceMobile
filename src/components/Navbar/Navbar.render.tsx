@@ -38,7 +38,7 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
               onPress={() => handleTabClick(button.label)}
               style={{ opacity }}
             >
-              <button.icon height={30} />
+              <button.icon height={25} />
               <ButtonText>{button.label}</ButtonText>
             </ButtonContainer>
           );

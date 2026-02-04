@@ -1,4 +1,5 @@
 import {
+  Animated,
   GestureResponderEvent,
   Image,
   ImageProps,
@@ -29,8 +30,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    width: '85%',
-    maxWidth: '85%',
+    width: '100%',
     height: verticalScale(60),
     borderRadius: moderateScale(10),
     backgroundColor: 'green',
@@ -44,9 +44,9 @@ const styles = StyleSheet.create({
     gap: scale(15),
   },
   cardImage: {
-    width: moderateScale(50),
-    height: moderateScale(50),
-    borderRadius: moderateScale(5),
+    width: moderateScale(45),
+    height: moderateScale(45),
+    borderRadius: moderateScale(7),
   },
   cardTitle: {
     color: colors.normalText,
@@ -70,11 +70,14 @@ const styles = StyleSheet.create({
   },
 });
 
-export const MainContainer = ({ children, onPress }: Props) => {
+
+
+export const MainContainer = ({ children, onPress, style }: Props) => {
+  const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
   return (
-    <Pressable style={[styles.mainContainer]} onPress={onPress}>
+    <AnimatedPressable style={[styles.mainContainer, style]} onPress={onPress}>
       {children}
-    </Pressable>
+    </AnimatedPressable>
   );
 };
 

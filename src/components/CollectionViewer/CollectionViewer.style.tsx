@@ -22,11 +22,14 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
     display: 'flex',
+    backgroundColor: colors.background,
+  },
+  scrollContent: {
     alignItems: 'center',
     paddingHorizontal: scale(10),
-    paddingVertical: verticalScale(50),
+    paddingTop: verticalScale(50),
+    paddingBottom: verticalScale(10),
     gap: verticalScale(20),
-    backgroundColor: colors.background,
   },
   songDetailsContainer: {
     display: 'flex',
@@ -35,8 +38,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: moderateScale(20),
-    paddingHorizontal: scale(30),
+    paddingVertical: moderateScale(5),
+    paddingHorizontal: scale(15),
     gap: scale(20),
   },
   songDescriptorContainer: {
@@ -53,6 +56,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: verticalScale(30),
+    zIndex: 10,
+    paddingHorizontal: scale(20),
   },
   songTitle: { fontWeight: 'bold', fontSize: moderateScale(18) },
   songAuthor: {
@@ -63,17 +68,45 @@ const styles = StyleSheet.create({
   albumCover: {
     width: '60%',
     aspectRatio: 1,
-    borderRadius: moderateScale(30),
+    borderRadius: moderateScale(15),
   },
   recordingsContainer: {
     width: '100%',
     maxWidth: '100%',
-    paddingHorizontal: scale(20),
+    paddingHorizontal: scale(0),
+  },
+  controlsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    gap: 10,
+  },
+  lineContainer: {
+    display: 'flex',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: scale(15),
   },
 });
 
 export const ContentContainer = ({ children }: Props) => {
   return <SafeAreaView style={styles.content}>{children}</SafeAreaView>;
+};
+
+export const MainScrollContainer = ({ children }: Props) => {
+  return (
+    <ScrollView
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      {children}
+    </ScrollView>
+  );
 };
 
 export const HeaderContainer = ({ children }: Props) => {
@@ -102,9 +135,17 @@ export const SongAuthor = ({ children }: Props) => {
 };
 
 export const RecordingsContainer = ({ children }: Props) => {
-  return <ScrollView style={styles.recordingsContainer}>{children}</ScrollView>;
+  return <View style={styles.recordingsContainer}>{children}</View>;
 };
 
 export const ControlsContainer = ({ children }: Props) => {
-  return <View style={{ flexDirection: 'row', gap: 10 }}>{children}</View>;
+  return <View style={styles.controlsContainer}>{children}</View>;
+};
+
+export const ActionsContainer = ({ children }: Props) => {
+  return <View style={styles.actionsContainer}>{children}</View>;
+};
+
+export const LineContainer = ({ children }: Props) => {
+  return <View style={styles.lineContainer}>{children}</View>;
 };
