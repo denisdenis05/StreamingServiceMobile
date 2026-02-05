@@ -10,6 +10,7 @@ import SectionTitle from '../SectionTitle';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
 import { View } from 'react-native';
+import { sizes } from '../../constants/styling.tsx';
 
 const HorizontalCardCarousel = ({
   navigation,
@@ -32,7 +33,7 @@ const HorizontalCardCarousel = ({
         playlistTitle: card.title,
         playlistOwner: card.artistName,
         playlistCover: card.cover,
-        isOwner: false // Can't determine ownership easily here without user context, assume false or fetch
+        isOwner: false,
       });
     } else {
       navigation.navigate('AlbumViewer', {
@@ -77,8 +78,15 @@ export const HorizontalCardSkeleton = () => {
       <SkeletonLoader width={150} height={20} style={{ marginBottom: 10 }} />
       <CardContainer>
         {skeletonItems.map((_, index) => (
-          <View key={index} style={{ gap: 5, width: 100 }}>
-            <SkeletonLoader width={100} height={100} borderRadius={10} />
+          <View
+            key={index}
+            style={{ gap: 5, width: sizes.albumCoverHomeHeight }}
+          >
+            <SkeletonLoader
+              width={sizes.albumCoverHomeHeight}
+              height={sizes.albumCoverHomeHeight}
+              borderRadius={10}
+            />
             <SkeletonLoader width={80} height={14} />
             <SkeletonLoader width={60} height={12} />
           </View>

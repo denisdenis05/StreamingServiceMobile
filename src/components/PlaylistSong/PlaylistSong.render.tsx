@@ -1,17 +1,21 @@
 import {
+  AlbumCover,
   CardAuthor,
   CardContainer,
   CardTitle,
   MainContainer,
   MusicCard,
+  TextContainer,
 } from './PlaylistSong.style.tsx';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
+import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 
 const PlaylistSong = ({
   songTitle,
   songAuthor,
   playAction,
   onMorePress,
+  albumCover,
 }: {
   navigation: any;
   songId: any;
@@ -27,10 +31,13 @@ const PlaylistSong = ({
     <MainContainer>
       <CardContainer>
         <MusicCard onPress={playAction}>
-          <CardTitle numberOfLines={1}>{songTitle}</CardTitle>
-          <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>
+          <AlbumCover source={{ uri: albumCover || PLACEHOLDER_ALBUM_COVER }} />
+          <TextContainer>
+            <CardTitle numberOfLines={1}>{songTitle}</CardTitle>
+            <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>
+          </TextContainer>
         </MusicCard>
-        <MoreIcon height={25} onPress={onMorePress} />
+        <MoreIcon height={15} onPress={onMorePress} />
       </CardContainer>
     </MainContainer>
   );

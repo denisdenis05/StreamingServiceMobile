@@ -29,17 +29,49 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   );
   const [contextMenuOptions, setContextMenuOptions] = useState(menuOptions);
 
-  useEffect(() => {
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const PAGE_SIZE = 20;
+
+  const fetchRecordings = (pageNum: number) => {
+    if (pageNum === 1) setFetched(false);
+    else setIsLoadingMore(true);
+
     api
-      .get(`Library/playlists/${playlistId}/recordings`)
+      .get(`Library/playlists/${playlistId}/recordings?page=${pageNum}&pageSize=${PAGE_SIZE}`)
       .then(res => {
-        setRecordings(res.data);
+        const newRecordings = res.data;
+        if (pageNum === 1) {
+          setRecordings(newRecordings);
+        } else {
+          setRecordings(prev => [...prev, ...newRecordings]);
+        }
+
+        if (newRecordings.length < PAGE_SIZE) {
+          setHasMore(false);
+        }
+
         setFetched(true);
+        setIsLoadingMore(false);
       })
       .catch(err => {
         console.error('Failed to fetch playlist recordings:', err);
+        setFetched(true);
+        setIsLoadingMore(false);
       });
+  };
+
+  useEffect(() => {
+    fetchRecordings(1);
   }, []);
+
+  const handleLoadMore = () => {
+    if (!hasMore || isLoadingMore) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchRecordings(nextPage);
+  };
 
   useEffect(() => {
     if (shouldPlayFromStart) {
@@ -164,7 +196,8 @@ const PlaylistViewer = ({ navigation, route }: any) => {
           setMenuVisible(true);
           setSelectedRecordingIds([recording.id]);
         }}
-        isLoading={!fetched}
+        isLoading={!fetched || isLoadingMore}
+        onEndReached={handleLoadMore}
         emptyMessage="Playlist is empty"
       />
       {menuVisible && (

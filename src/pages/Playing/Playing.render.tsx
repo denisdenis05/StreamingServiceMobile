@@ -3,7 +3,13 @@ import { useData } from '../../services/DataProvider.tsx';
 import HeartEmptyIcon from '../../../assets/icons/heartEmptyIcon.tsx';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, PanResponder, StyleSheet } from 'react-native';
+import {
+  Animated,
+  Dimensions,
+  PanResponder,
+  Platform,
+  StyleSheet,
+} from 'react-native';
 import {
   AlbumCover,
   AllPlayingControlsContainer,
@@ -34,6 +40,8 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { RepeatingType } from '../../constants/types.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
+import ImageColors from 'react-native-image-colors';
+import { ensureContrastWithWhite } from '../../utils/colorUtils.ts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -123,10 +131,10 @@ const Playing = ({ navigation }: any) => {
         <ContentContainer>
           <DragIndicator />
           <HeaderContainer>
-            <ArrowDownIcon height={25} onPress={navigation.goBack} />
+            <ArrowDownIcon height={20} onPress={navigation.goBack} />
             <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
             <MoreIcon
-              height={25}
+              height={20}
               onPress={(event: any) => {
                 setMenuPosition({
                   x: event.nativeEvent.pageX,

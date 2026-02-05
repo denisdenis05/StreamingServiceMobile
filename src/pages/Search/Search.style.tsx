@@ -33,6 +33,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
+    paddingHorizontal: scale(20),
   },
   image: {
     height: moderateScale(40),

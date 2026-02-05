@@ -33,7 +33,7 @@ const styles = StyleSheet.create({
     height: '100%',
     display: 'flex',
     alignItems: 'center',
-    paddingHorizontal: scale(30),
+    paddingHorizontal: scale(20),
     paddingVertical: verticalScale(50),
     gap: verticalScale(100),
     backgroundColor: colors.background,
@@ -41,13 +41,13 @@ const styles = StyleSheet.create({
   headerContainer: {
     display: 'flex',
     alignItems: 'center',
-    width: '50%',
+    width: '90%',
   },
   centeredContainer: {
     display: 'flex',
     gap: verticalScale(20),
     alignItems: 'center',
-    width: '50%',
+    width: '90%',
   },
   title: {
     color: colors.normalText,

@@ -1,10 +1,11 @@
 import { ReactNode } from 'react';
 import {
-  Image,
   ImageProps,
   SafeAreaView,
+  StyleProp,
   StyleSheet,
   View,
+  ViewStyle,
 } from 'react-native';
 import { colors } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
@@ -13,6 +14,7 @@ import CachedImage from '../../components/CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
+  style?: StyleProp<ViewStyle>;
 }
 
 const styles = StyleSheet.create({
@@ -23,8 +25,11 @@ const styles = StyleSheet.create({
   content: {
     display: 'flex',
     alignItems: 'center',
-    padding: moderateScale(20),
+    paddingTop: moderateScale(20),
     gap: verticalScale(10),
+    height: '100%',
+    borderTopLeftRadius: moderateScale(15),
+    borderTopRightRadius: moderateScale(15),
   },
   songDetailsContainer: {
     display: 'flex',
@@ -61,12 +66,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: moderateScale(12),
     textAlign: 'center',
-    maxWidth: '50%',
   },
   songTitle: {
     fontWeight: 'condensedBold',
     fontSize: moderateScale(18),
-    maxWidth: '80%',
   },
   songAuthor: {
     fontWeight: 'regular',
@@ -88,12 +91,14 @@ const styles = StyleSheet.create({
   },
 });
 
-export const BackdropContainer = ({ children }: Props) => {
-  return <View style={styles.backdrop}>{children}</View>;
+export const BackdropContainer = ({ children, style }: Props) => {
+  return <View style={[styles.backdrop, style]}>{children}</View>;
 };
 
-export const ContentContainer = ({ children }: Props) => {
-  return <SafeAreaView style={styles.content}>{children}</SafeAreaView>;
+export const ContentContainer = ({ children, style }: Props) => {
+  return (
+    <SafeAreaView style={[styles.content, style]}>{children}</SafeAreaView>
+  );
 };
 
 export const DragIndicator = () => {
