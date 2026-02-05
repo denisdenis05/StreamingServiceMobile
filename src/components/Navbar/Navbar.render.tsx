@@ -25,28 +25,30 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
   };
 
   return (
-    <GradientContainer>
-      <MainContainer>
-        {navigationButtons.map(button => {
-          const isCurrent = currentScreen === button.label;
-          const opacity = isCurrent
-            ? opacities.full
-            : opacities.slightlyTransparent;
-          return (
-            <ButtonContainer
-              key={button.label}
-              onPress={() => handleTabClick(button.label)}
-              style={{ opacity }}
-            >
-              <button.icon height={30} />
-              <ButtonText>{button.label}</ButtonText>
-            </ButtonContainer>
-          );
-        })}
-      </MainContainer>
+    <>
+      <GradientContainer>
+        <MainContainer>
+          {navigationButtons.map(button => {
+            const isCurrent = currentScreen === button.label;
+            const opacity = isCurrent
+              ? opacities.full
+              : opacities.slightlyTransparent;
+            return (
+              <ButtonContainer
+                key={button.label}
+                onPress={() => handleTabClick(button.label)}
+                style={{ opacity }}
+              >
+                <button.icon height={30} />
+                <ButtonText>{button.label}</ButtonText>
+              </ButtonContainer>
+            );
+          })}
+        </MainContainer>
+      </GradientContainer>
       {queueLength > 0 && <PlayingOverlay navigation={navigation} />}
       {pressedCreate && <CreateOverlay navigation={navigation} />}
-    </GradientContainer>
+    </>
   );
 };
 
