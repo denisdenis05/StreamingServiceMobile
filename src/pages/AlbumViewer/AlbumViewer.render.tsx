@@ -29,7 +29,8 @@ function recordingListsAreEqual(
       listA[index].id !== listB[index].id ||
       listA[index].title !== listB[index].title ||
       listA[index].cover !== listB[index].cover ||
-      listA[index].isLiked !== listB[index].isLiked
+      listA[index].isLiked !== listB[index].isLiked ||
+      listA[index].releaseId !== listB[index].releaseId
     ) {
       return false;
     }
@@ -56,6 +57,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
     const cachedEntry = getRecordingList(albumId, 'album');
     if (cachedEntry && cachedEntry.recordings.length > 0) {
       setRecordings(cachedEntry.recordings);
+      console.log(cachedEntry.recordings);
       setFetched(true);
     }
 
@@ -97,6 +99,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
+      releaseId: recording.releaseId || albumId,
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
@@ -116,6 +119,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
+      releaseId: recording.releaseId || albumId,
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
@@ -167,7 +171,11 @@ const AlbumViewer = ({ navigation, route }: any) => {
           navigation={navigation}
           params={{
             recordingIds: selectedRecordingIds,
-            songs: recordings.filter(r => selectedRecordingIds.includes(r.id))
+            songs: recordings.filter(r => selectedRecordingIds.includes(r.id)),
+            albumId: albumId,
+            albumTitle: albumTitle,
+            albumCover: albumCover,
+            albumArtist: albumArtist,
           }}
         />
       )}

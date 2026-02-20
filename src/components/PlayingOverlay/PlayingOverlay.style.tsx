@@ -78,7 +78,11 @@ export const MainContainer = ({ children, onPress, style }: Props) => {
 
   return (
     <AnimatedPressable
-      style={[styles.mainContainer, { bottom: sizes.navbarHeight + insets.bottom }, style]}
+      style={[
+        styles.mainContainer,
+        { bottom: sizes.navbarHeight + insets.bottom, alignSelf: 'center' },
+        style,
+      ]}
       onPress={onPress}
     >
       {children}

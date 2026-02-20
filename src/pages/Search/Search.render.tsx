@@ -66,6 +66,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
+      releaseId: recording.releaseId || '',
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
@@ -284,7 +285,11 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
           navigation={navigation}
           params={{
             recordingIds: [selectedTrack?.id],
-            songs: [selectedTrack]
+            songs: [selectedTrack],
+            albumId: selectedTrack?.releaseId || '',
+            albumTitle: selectedTrack?.releaseTitle || '',
+            albumCover: selectedTrack?.cover || '',
+            albumArtist: selectedTrack?.artistName || '',
           }}
         />
       )}

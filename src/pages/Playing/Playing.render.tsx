@@ -81,7 +81,7 @@ const Playing = ({ navigation }: any) => {
       });
     } catch (error) {
       console.error('Failed to toggle like:', error);
-      updateData(!newLikedState); // Revert on error
+      updateData(!newLikedState);
     }
   };
 
@@ -211,7 +211,13 @@ const Playing = ({ navigation }: any) => {
           options={menuOptions}
           position={menuPosition}
           navigation={navigation}
-          params={{ recordingIds: [currentTrack?.id] }}
+          params={{
+            recordingIds: [currentTrack?.id],
+            albumId: currentTrack?.releaseId || '',
+            albumTitle: currentTrack?.album || '',
+            albumCover: currentTrack?.artwork || '',
+            albumArtist: currentTrack?.artist || '',
+          }}
         />
       )}
     </BackdropContainer>

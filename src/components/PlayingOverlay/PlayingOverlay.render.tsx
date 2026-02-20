@@ -16,7 +16,7 @@ import ImageColors from 'react-native-image-colors';
 import { ensureContrastWithWhite } from '../../utils/colorUtils';
 import { Animated, Platform } from 'react-native';
 
-const PlayingOverlay = ({ navigation }: { navigation: any }) => {
+const PlayingOverlay = ({ navigation, bottomOffset }: { navigation: any; bottomOffset?: number }) => {
   const playbackState = usePlaybackState();
   const { currentTrack, play, pause } = useMusicQueue();
 
@@ -75,7 +75,13 @@ const PlayingOverlay = ({ navigation }: { navigation: any }) => {
   };
 
   return (
-    <MainContainer onPress={handleClick} style={{ backgroundColor: backgroundColor as any }}>
+    <MainContainer
+      onPress={handleClick}
+      style={{
+        backgroundColor: backgroundColor as any,
+        ...(bottomOffset !== undefined ? { bottom: bottomOffset } : {}),
+      }}
+    >
       <MetadataContainer>
         <CardImage
           source={{ uri: currentTrack?.artwork || PLACEHOLDER_ALBUM_COVER }}

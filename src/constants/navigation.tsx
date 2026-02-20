@@ -46,4 +46,24 @@ export const menuOptions: ActionItem[] = [
       });
     },
   },
+  {
+    label: 'Go to album',
+    icon: LibraryIcon,
+    onClick: (navigation, params) => {
+      if (params?.albumId) {
+        const albumParams = {
+          albumId: params.albumId,
+          albumTitle: params?.albumTitle || '',
+          albumCover: params?.albumCover || '',
+          albumArtist: params?.albumArtist || '',
+        };
+        const currentRoute = navigation.getState()?.routes?.slice(-1)[0];
+        if (currentRoute?.name === 'AlbumViewer') {
+          navigation.replace('AlbumViewer', albumParams);
+        } else {
+          navigation.navigate('AlbumViewer', albumParams);
+        }
+      }
+    },
+  },
 ];

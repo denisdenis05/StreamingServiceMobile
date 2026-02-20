@@ -11,6 +11,8 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import CreateOverlay from '../CreateOverlay';
 import { useState } from 'react';
 
+import { CommonActions } from '@react-navigation/native';
+
 const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
   const currentScreen = route.name;
   const { queueLength } = useMusicQueue();
@@ -21,7 +23,15 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
       setPressedCreate(!pressedCreate);
       return;
     }
-    navigation.navigate(screenName);
+    if (screenName === currentScreen) {
+      return;
+    }
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: screenName }],
+      })
+    );
   };
 
   return (

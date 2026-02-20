@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { View } from 'react-native';
 import {
   ActionsContainer,
   AlbumCover,
@@ -21,6 +22,8 @@ import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import DownloadIcon from '../../../assets/icons/downloadIcon.tsx';
 import { HeaderTitle } from '../../pages/Home/Home.style.tsx';
 import { Recording } from '../../constants/types.tsx';
+import PlayingOverlay from '../PlayingOverlay';
+import { useMusicQueue } from '../../../MusicProvider.tsx';
 
 interface CollectionViewerProps {
   navigation: any;
@@ -51,6 +54,9 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   emptyMessage = 'Collection temporarily unavailable',
   onEndReached,
 }) => {
+  const { queueLength } = useMusicQueue();
+  const hasPlayingOverlay = queueLength > 0;
+
   const handleScroll = ({ nativeEvent }: any) => {
     if (!onEndReached) return;
 
@@ -110,7 +116,9 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
             <SongTitle>Loading more...</SongTitle>
           )}
         </RecordingsContainer>
+        {hasPlayingOverlay && <View style={{ height: 90 }} />}
       </MainScrollContainer>
+      {hasPlayingOverlay && <PlayingOverlay navigation={navigation} bottomOffset={20} />}
     </ContentContainer>
   );
 };

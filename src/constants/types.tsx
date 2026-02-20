@@ -2,6 +2,7 @@ export interface Recording {
   id: string;
   title: string;
   artistName: string;
+  releaseId?: string;
   releaseTitle: string;
   cover: string;
   verySmallCover?: string;

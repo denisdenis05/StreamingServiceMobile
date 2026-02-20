@@ -29,7 +29,8 @@ function recordingListsAreEqual(
       listA[index].id !== listB[index].id ||
       listA[index].title !== listB[index].title ||
       listA[index].cover !== listB[index].cover ||
-      listA[index].isLiked !== listB[index].isLiked
+      listA[index].isLiked !== listB[index].isLiked ||
+      listA[index].releaseId !== listB[index].releaseId
     ) {
       return false;
     }
@@ -52,6 +53,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>(
     []
   );
+  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
   const [contextMenuOptions, setContextMenuOptions] = useState(menuOptions);
 
   const [page, setPage] = useState(1);
@@ -138,6 +140,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
+      releaseId: recording.releaseId || '',
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
@@ -158,6 +161,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       title: recording.title,
       artist: recording.artistName,
       album: recording.releaseTitle,
+      releaseId: recording.releaseId || '',
       mediaId: recording.id,
       artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
       headers: { Authorization: `Bearer ${token}` },
@@ -248,6 +252,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
           setContextMenuOptions(options);
           setMenuVisible(true);
           setSelectedRecordingIds([recording.id]);
+          setSelectedRecording(recording);
         }}
         isLoading={!fetched || isLoadingMore}
         onEndReached={handleLoadMore}
@@ -262,7 +267,11 @@ const PlaylistViewer = ({ navigation, route }: any) => {
           navigation={navigation}
           params={{
             recordingIds: selectedRecordingIds,
-            songs: recordings.filter(r => selectedRecordingIds.includes(r.id))
+            songs: recordings.filter(r => selectedRecordingIds.includes(r.id)),
+            albumId: selectedRecording?.releaseId || '',
+            albumTitle: selectedRecording?.releaseTitle || '',
+            albumCover: selectedRecording?.cover || '',
+            albumArtist: selectedRecording?.artistName || '',
           }}
         />
       )}
