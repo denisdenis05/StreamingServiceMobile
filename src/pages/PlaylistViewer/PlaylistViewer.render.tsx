@@ -11,6 +11,31 @@ import {
 import CollectionViewer from '../../components/CollectionViewer';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
+import {
+  getRecordingList,
+  setRecordingList,
+} from '../../services/cache/CacheDatabase';
+import { cacheTrack } from '../../services/cache/AudioCacheService';
+
+function recordingListsAreEqual(
+  listA: Recording[],
+  listB: Recording[]
+): boolean {
+  if (listA.length !== listB.length) {
+    return false;
+  }
+  for (let index = 0; index < listA.length; index++) {
+    if (
+      listA[index].id !== listB[index].id ||
+      listA[index].title !== listB[index].title ||
+      listA[index].cover !== listB[index].cover ||
+      listA[index].isLiked !== listB[index].isLiked
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 const PlaylistViewer = ({ navigation, route }: any) => {
   const { playlistId, playlistTitle, playlistOwner, playlistCover, isOwner } =
@@ -34,21 +59,51 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const PAGE_SIZE = 20;
 
-  const fetchRecordings = (pageNum: number) => {
-    if (pageNum === 1) setFetched(false);
-    else setIsLoadingMore(true);
+  useEffect(() => {
+    const cachedEntry = getRecordingList(playlistId, 'playlist');
+    if (cachedEntry && cachedEntry.recordings.length > 0) {
+      setRecordings(cachedEntry.recordings);
+      setFetched(true);
+    }
+
+    fetchRecordingsFromServer(1);
+  }, []);
+
+  useEffect(() => {
+    if (recordings.length > 0 && token) {
+      const firstRecording = recordings[0];
+      const streamUrl = `${TEMPORARY_API_URL}Stream?id=${firstRecording.id}`;
+      cacheTrack(streamUrl, { Authorization: `Bearer ${token}` }).catch(() => { });
+    }
+  }, [recordings, token]);
+
+  const fetchRecordingsFromServer = (pageNumber: number) => {
+    if (pageNumber === 1 && !fetched) {
+      setFetched(false);
+    } else if (pageNumber > 1) {
+      setIsLoadingMore(true);
+    }
 
     api
-      .get(`Library/playlists/${playlistId}/recordings?page=${pageNum}&pageSize=${PAGE_SIZE}`)
+      .get(`Library/playlists/${playlistId}/recordings?page=${pageNumber}&pageSize=${PAGE_SIZE}`)
       .then(res => {
-        const newRecordings = res.data;
-        if (pageNum === 1) {
-          setRecordings(newRecordings);
+        const freshRecordings: Recording[] = res.data;
+
+        if (pageNumber === 1) {
+          const cachedEntry = getRecordingList(playlistId, 'playlist');
+          if (!cachedEntry || !recordingListsAreEqual(cachedEntry.recordings, freshRecordings)) {
+            setRecordings(freshRecordings);
+            setRecordingList(playlistId, 'playlist', freshRecordings);
+          }
         } else {
-          setRecordings(prev => [...prev, ...newRecordings]);
+          setRecordings(previous => {
+            const combined = [...previous, ...freshRecordings];
+            setRecordingList(playlistId, 'playlist', combined);
+            return combined;
+          });
         }
 
-        if (newRecordings.length < PAGE_SIZE) {
+        if (freshRecordings.length < PAGE_SIZE) {
           setHasMore(false);
         }
 
@@ -62,15 +117,11 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       });
   };
 
-  useEffect(() => {
-    fetchRecordings(1);
-  }, []);
-
   const handleLoadMore = () => {
     if (!hasMore || isLoadingMore) return;
     const nextPage = page + 1;
     setPage(nextPage);
-    fetchRecordings(nextPage);
+    fetchRecordingsFromServer(nextPage);
   };
 
   useEffect(() => {
@@ -183,9 +234,11 @@ const PlaylistViewer = ({ navigation, route }: any) => {
                   await api.delete(
                     `library/playlists/${playlistId}/recordings/${recording.id}`
                   );
-                  setRecordings(prev =>
-                    prev.filter(r => r.id !== recording.id)
-                  );
+                  setRecordings(previous => {
+                    const updated = previous.filter(r => r.id !== recording.id);
+                    setRecordingList(playlistId, 'playlist', updated);
+                    return updated;
+                  });
                 } catch (err) {
                   console.error('Failed to remove song from playlist:', err);
                 }

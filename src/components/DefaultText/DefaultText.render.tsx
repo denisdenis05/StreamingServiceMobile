@@ -6,7 +6,7 @@ type DefaultTextProps = TextProps & {
 
 const styles = StyleSheet.create({
   text: {
-    fontFamily: 'Outfit-Regular',
+    fontFamily: 'Outfit-Regular', //manrope
     fontSize: 16,
     color: '#fff',
   },

@@ -35,7 +35,7 @@ import PauseIcon from '../../../assets/icons/pauseIcon.tsx';
 import ForwardIcon from '../../../assets/icons/forwardIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
-import { State, usePlaybackState } from 'react-native-track-player';
+
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { RepeatingType } from '../../constants/types.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
@@ -46,9 +46,9 @@ import { ensureContrastWithWhite } from '../../utils/colorUtils.ts';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const Playing = ({ navigation }: any) => {
-  const playbackState = usePlaybackState();
   const {
     currentTrack,
+    isPlaying,
     isLoading,
     play,
     pause,
@@ -164,14 +164,14 @@ const Playing = ({ navigation }: any) => {
             onSeek={seekToPosition}
             showThumb
             showTimeLabels
-            onSeekStart={() => {}}
-            onSeekEnd={() => {}}
+            onSeekStart={() => { }}
+            onSeekEnd={() => { }}
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer>
             <ShufflIcon height={25} />
             <BackwardIcon height={25} onPress={playPrevious} />
-            {playbackState.state === State.Playing ? (
+            {isPlaying ? (
               <PauseIcon height={25} onPress={pause} />
             ) : (
               <PlayIcon height={25} onPress={play} />

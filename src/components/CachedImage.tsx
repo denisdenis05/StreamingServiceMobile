@@ -1,89 +1,97 @@
 import React, { useEffect, useState } from 'react';
 import { Image, ImageProps, ImageStyle, StyleProp } from 'react-native';
-import { cacheImageWithApi, getCachedImage } from '../services/CachingService';
 import { PLACEHOLDER_ALBUM_COVER } from '../constants/placeholders';
+import {
+    getLocalImagePath,
+    getVerySmallCoverPath,
+    getOrDownloadImage,
+} from '../services/cache/ImageDownloadService';
 
 interface CachedImageProps extends Omit<ImageProps, 'source'> {
     source: ImageProps['source'];
     style?: StyleProp<ImageStyle>;
     placeholder?: ImageProps['source'];
+    releaseId?: string;
+    verySmallCoverUrl?: string;
 }
 
 const CachedImage: React.FC<CachedImageProps> = ({
     source,
     style,
     placeholder = { uri: PLACEHOLDER_ALBUM_COVER },
-    ...props
+    releaseId,
+    verySmallCoverUrl,
+    ...remainingProps
 }) => {
-    const [imageUri, setImageUri] = useState<string | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(false);
+    const [displayUri, setDisplayUri] = useState<string | null>(null);
+    const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
-        setError(false);
+        setHasError(false);
 
-        const loadImage = async () => {
-            if (typeof source === 'number') {
-                setLoading(false);
+        if (typeof source === 'number') {
+            return;
+        }
+
+        const sourceUri = Array.isArray(source)
+            ? source[0]?.uri
+            : (source as any)?.uri;
+
+        if (!sourceUri) {
+            return;
+        }
+
+        if (sourceUri === PLACEHOLDER_ALBUM_COVER) {
+            setDisplayUri(sourceUri);
+            return;
+        }
+
+        if (releaseId) {
+            const cachedFullPath = getLocalImagePath(releaseId);
+            if (cachedFullPath) {
+                setDisplayUri(cachedFullPath);
                 return;
             }
 
-            const sourceUri = Array.isArray(source)
-                ? source[0]?.uri
-                : (source as any)?.uri;
-
-            if (!sourceUri) {
-                setLoading(false);
-                return;
+            const cachedSmallPath = getVerySmallCoverPath(releaseId);
+            if (cachedSmallPath) {
+                setDisplayUri(cachedSmallPath);
             }
 
-            if (sourceUri === PLACEHOLDER_ALBUM_COVER) {
-                setLoading(false);
-                setImageUri(sourceUri);
-                return;
-            }
-
-            try {
-                const cachedPath = await getCachedImage(sourceUri);
-                if (cachedPath && isMounted) {
-                    setImageUri(cachedPath);
-                    setLoading(false);
-                    return;
-                }
-
-                const path = await cacheImageWithApi(sourceUri);
-                if (isMounted) {
-                    setImageUri(path);
-                    setLoading(false);
-                }
-            } catch (error) {
-                if (isMounted) {
-                    setImageUri(sourceUri);
-                    setLoading(false);
-                }
-            }
-        };
-
-        loadImage();
+            getOrDownloadImage(releaseId, sourceUri, verySmallCoverUrl)
+                .then(localPath => {
+                    if (isMounted) {
+                        setDisplayUri(localPath);
+                    }
+                })
+                .catch(() => {
+                    if (isMounted) {
+                        setDisplayUri(sourceUri);
+                    }
+                });
+        } else {
+            setDisplayUri(sourceUri);
+        }
 
         return () => {
             isMounted = false;
         };
-    }, [source]);
+    }, [source, releaseId, verySmallCoverUrl]);
 
     if (typeof source === 'number') {
-        return <Image source={source} style={style} {...props} />;
+        return <Image source={source} style={style} {...remainingProps} />;
     }
 
-    const finalSource = !error && imageUri ? { uri: imageUri } : placeholder;
+    const finalSource =
+        !hasError && displayUri ? { uri: displayUri } : placeholder;
 
     return (
         <Image
             source={finalSource as any}
             style={style}
-            onError={() => setError(true)}
-            {...props}
+            onError={() => setHasError(true)}
+            {...remainingProps}
         />
     );
 };

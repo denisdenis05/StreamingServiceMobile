@@ -1,8 +1,17 @@
 import TrackPlayer, { Event } from 'react-native-track-player';
 
-module.exports = async function () {
-  // This service needs to be registered for the module to work
-  // but it will be used to handle remote events
+let emitNextFn = () => { };
+let emitPreviousFn = () => { };
+
+try {
+  const QueueEventEmitter = require('./src/services/QueueEventEmitter');
+  emitNextFn = QueueEventEmitter.emitNext;
+  emitPreviousFn = QueueEventEmitter.emitPrevious;
+} catch (e) {
+  console.warn('[PlaybackService] Failed to load QueueEventEmitter:', e);
+}
+
+async function playbackService() {
   TrackPlayer.addEventListener(Event.RemotePlay, () => {
     TrackPlayer.play();
   });
@@ -15,13 +24,13 @@ module.exports = async function () {
     TrackPlayer.stop();
   });
 
-  TrackPlayer.addEventListener(Event.RemoteNext, () =>
-    TrackPlayer.skipToNext()
-  );
+  TrackPlayer.addEventListener(Event.RemoteNext, () => {
+    emitNextFn();
+  });
 
-  TrackPlayer.addEventListener(Event.RemotePrevious, () =>
-    TrackPlayer.skipToPrevious()
-  );
+  TrackPlayer.addEventListener(Event.RemotePrevious, () => {
+    emitPreviousFn();
+  });
 
   TrackPlayer.addEventListener(Event.RemoteJumpForward, async event => {
     const position = await TrackPlayer.getPosition();
@@ -36,20 +45,6 @@ module.exports = async function () {
   TrackPlayer.addEventListener(Event.RemoteSeek, event => {
     TrackPlayer.seekTo(event.position);
   });
+}
 
-  TrackPlayer.addEventListener(Event.PlaybackQueueEnded, event => {
-    console.log('Queue ended', event);
-  });
-
-  TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, event => {
-    console.log('Track changed', event);
-  });
-
-  TrackPlayer.addEventListener('remote-play', () => TrackPlayer.play());
-  TrackPlayer.addEventListener('remote-pause', () => TrackPlayer.pause());
-  TrackPlayer.addEventListener('remote-next', () => TrackPlayer.skipToNext());
-  TrackPlayer.addEventListener('remote-previous', () =>
-    TrackPlayer.skipToPrevious()
-  );
-  TrackPlayer.addEventListener('remote-stop', () => TrackPlayer.destroy());
-};
+export default playbackService;

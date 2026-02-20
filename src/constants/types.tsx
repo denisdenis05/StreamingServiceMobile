@@ -4,6 +4,7 @@ export interface Recording {
   artistName: string;
   releaseTitle: string;
   cover: string;
+  verySmallCover?: string;
   isLiked?: boolean;
 }
 

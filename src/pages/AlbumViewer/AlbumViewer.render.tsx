@@ -11,6 +11,31 @@ import { useApi } from '../../hooks/useApi.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
+import {
+  getRecordingList,
+  setRecordingList,
+} from '../../services/cache/CacheDatabase';
+import { cacheTrack } from '../../services/cache/AudioCacheService';
+
+function recordingListsAreEqual(
+  listA: Recording[],
+  listB: Recording[]
+): boolean {
+  if (listA.length !== listB.length) {
+    return false;
+  }
+  for (let index = 0; index < listA.length; index++) {
+    if (
+      listA[index].id !== listB[index].id ||
+      listA[index].title !== listB[index].title ||
+      listA[index].cover !== listB[index].cover ||
+      listA[index].isLiked !== listB[index].isLiked
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover } = route.params;
@@ -28,16 +53,35 @@ const AlbumViewer = ({ navigation, route }: any) => {
   );
 
   useEffect(() => {
+    const cachedEntry = getRecordingList(albumId, 'album');
+    if (cachedEntry && cachedEntry.recordings.length > 0) {
+      setRecordings(cachedEntry.recordings);
+      setFetched(true);
+    }
+
     api
       .get(`Metadata/get-recordings?albumId=${albumId}`)
       .then(res => {
-        setRecordings(res.data);
+        const freshRecordings: Recording[] = res.data;
+        if (!cachedEntry || !recordingListsAreEqual(cachedEntry.recordings, freshRecordings)) {
+          setRecordings(freshRecordings);
+          setRecordingList(albumId, 'album', freshRecordings);
+        }
         setFetched(true);
       })
       .catch(err => {
         console.error('Failed to fetch recordings:', err);
+        setFetched(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (recordings.length > 0 && token) {
+      const firstRecording = recordings[0];
+      const streamUrl = `${TEMPORARY_API_URL}Stream?id=${firstRecording.id}`;
+      cacheTrack(streamUrl, { Authorization: `Bearer ${token}` }).catch(() => { });
+    }
+  }, [recordings, token]);
 
   useEffect(() => {
     if (shouldPlayFromStart) {

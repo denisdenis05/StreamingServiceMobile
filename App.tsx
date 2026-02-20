@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useEffect, useRef } from 'react';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, View } from 'react-native';
 import Toast from 'react-native-toast-message';
@@ -58,8 +58,9 @@ export const CustomToast = ({ text1, text2 }: any) => (
 
 // --- Inner app component, hooks safe here ---
 const InnerApp = () => {
-  const api = useApi(); // ✅ safe, inside provider tree
+  const api = useApi();
   const { isLoggedIn } = useAuth();
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   // Deep link listener
   useEffect(() => {
@@ -71,6 +72,10 @@ const InnerApp = () => {
           await api.post('lastfm/connect', { token });
         } catch (err) {
           console.error('Failed to register Last.fm account', err);
+        }
+      } else if (type === 'notification_click') {
+        if (navigationRef.current) {
+          navigationRef.current.navigate('Playing' as never);
         }
       }
     });
@@ -152,7 +157,7 @@ const InnerApp = () => {
   );
 
   return (
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       {isLoggedIn ? <MainStack /> : <AuthStack />}
       <Toast config={{ message: CustomToast }} />
     </NavigationContainer>

@@ -6,11 +6,12 @@ import TrackPlayer, {
   State,
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
-import { useState, useCallback, useRef } from 'react';
-import { cacheTrack, getCacheFilePath, isTrackCached } from './CachingService';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { cacheTrack, getCacheFilePath, isTrackCached } from './cache/AudioCacheService';
 import RNFS from 'react-native-fs';
 import { RepeatingType } from '../constants/types.tsx';
 import { useApi } from '../hooks/useApi.ts';
+import { onNext, onPrevious } from './QueueEventEmitter';
 
 let isSetup = false;
 
@@ -36,7 +37,6 @@ export class PlaybackTracker {
   }
 
   start(): void {
-    console.log('Starting playback tracking for session:', this.sessionId);
     this.lastUpdateTime = Date.now();
 
     this.updateInterval = setInterval(async () => {
@@ -60,10 +60,6 @@ export class PlaybackTracker {
         deltaListenedSeconds: deltaSeconds,
         totalListenedSeconds: this.totalListenedTime,
       });
-
-      console.log(
-        `Progress reported: +${deltaSeconds}s (total: ${this.totalListenedTime}s) for session ${this.sessionId}`
-      );
     } catch (error) {
       console.error('Failed to report progress:', error);
     }
@@ -87,7 +83,6 @@ export class PlaybackTracker {
         deltaListenedSeconds: deltaSeconds,
         totalListenedSeconds: this.totalListenedTime,
       });
-      console.log(`Pause reported for session ${this.sessionId}`);
     } catch (error) {
       console.error('Failed to report pause:', error);
     }
@@ -104,7 +99,6 @@ export class PlaybackTracker {
       await this.api.post('/lastfm/resume', {
         sessionId: this.sessionId,
       });
-      console.log(`Resume reported for session ${this.sessionId}`);
     } catch (error) {
       console.error('Failed to report resume:', error);
     }
@@ -119,10 +113,6 @@ export class PlaybackTracker {
       });
 
       this.lastUpdateTime = Date.now();
-
-      console.log(
-        `Seek reported: ${fromSeconds}s -> ${toSeconds}s for session ${this.sessionId}`
-      );
     } catch (error) {
       console.error('Failed to report seek:', error);
     }
@@ -147,9 +137,6 @@ export class PlaybackTracker {
         sessionId: this.sessionId,
         totalListenedSeconds: this.totalListenedTime,
       });
-      console.log(
-        `Playback stopped for session ${this.sessionId}, total listened: ${this.totalListenedTime}s`
-      );
     } catch (error) {
       console.error('Failed to report playback stop:', error);
     }
@@ -183,63 +170,27 @@ export async function setupPlayer() {
   isSetup = true;
 }
 
-async function processTrack(track: Track): Promise<Track> {
-  if (track.url && track.url.startsWith('http')) {
-    const cached = await isTrackCached(track.url);
-
-    if (cached) {
-      let localPath = getCacheFilePath(track.url);
-
-      try {
-        const stat = await RNFS.stat(localPath);
-        if (stat.size > 0) {
-          return {
-            ...track,
-            url: `file://${localPath}`,
-          };
-        } else {
-          console.warn(
-            'Cached file is empty or invalid, falling back to streaming:',
-            localPath
-          );
-        }
-      } catch (error) {
-        console.warn(
-          'Error reading cached file, falling back to streaming:',
-          localPath,
-          error
-        );
-      }
-    } else {
-      cacheTrack(track.url, track.headers).catch(e => {
-        console.error(`Error while caching track ${track.id}:`, e);
-      });
-    }
+async function resolveTrackUrl(track: Track): Promise<Track> {
+  if (!track.url || !track.url.startsWith('http')) {
+    return track;
   }
+
+  const cached = await isTrackCached(track.url);
+  if (!cached) {
+    return track;
+  }
+
+  const localPath = getCacheFilePath(track.url);
+  try {
+    const stat = await RNFS.stat(localPath);
+    if (stat.size > 0) {
+      return { ...track, url: `file://${localPath}` };
+    }
+  } catch {
+    return track;
+  }
+
   return track;
-}
-
-export async function playTrack(track: Track) {
-  await setupPlayer();
-  await TrackPlayer.stop();
-  await TrackPlayer.reset();
-
-  const processedTrack = await processTrack(track);
-
-  await TrackPlayer.add(processedTrack);
-  await TrackPlayer.play();
-}
-
-export async function pauseTrack() {
-  await TrackPlayer.pause();
-}
-
-export async function resumeTrack() {
-  await TrackPlayer.play();
-}
-
-export async function seekTo(position: number) {
-  await TrackPlayer.seekTo(position);
 }
 
 export async function getPosition(): Promise<number> {
@@ -264,12 +215,15 @@ export function useQueue() {
   const isStoppingRef = useRef(false);
   const queueRef = useRef(queue);
   const currentIndexRef = useRef(currentIndex);
+  const repeatingStateRef = useRef(repeatingState);
 
   const playbackTrackerRef = useRef<PlaybackTracker | null>(null);
+  const prefetchingRef = useRef<string | null>(null);
 
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
   queueRef.current = queue;
   currentIndexRef.current = currentIndex;
+  repeatingStateRef.current = repeatingState;
 
   const startPlaybackTracking = async (track: Track) => {
     try {
@@ -279,7 +233,6 @@ export function useQueue() {
       }
 
       const isLocalCached = track.url?.startsWith('file://') || false;
-
       const duration = await getDuration();
 
       const response = await api.post('/lastfm/start-playback', {
@@ -298,15 +251,191 @@ export function useQueue() {
           api
         );
         playbackTrackerRef.current.start();
-
-        console.log(
-          `Started tracking for "${track.title}" with session ${response.data.sessionId}`
-        );
       }
     } catch (error) {
       console.error('Failed to start playback tracking:', error);
     }
   };
+
+  const prefetchTrackAtIndex = useCallback(
+    async (index: number) => {
+      const currentQueue = queueRef.current;
+      if (index < 0 || index >= currentQueue.length) {
+        return;
+      }
+
+      const track = currentQueue[index];
+      if (!track.url || !track.url.startsWith('http')) {
+        return;
+      }
+
+      if (prefetchingRef.current === track.id) {
+        return;
+      }
+
+      const alreadyCached = await isTrackCached(track.url);
+      if (alreadyCached) {
+        const localPath = getCacheFilePath(track.url);
+        try {
+          const stat = await RNFS.stat(localPath);
+          if (stat.size > 0) {
+            setQueue(previousQueue =>
+              previousQueue.map((queueTrack, queueIndex) =>
+                queueIndex === index
+                  ? { ...queueTrack, url: `file://${localPath}` }
+                  : queueTrack
+              )
+            );
+            return;
+          }
+        } catch {
+          // fall through to download
+        }
+      }
+
+      prefetchingRef.current = track.id;
+      try {
+        const localPath = await cacheTrack(track.url, track.headers);
+        setQueue(previousQueue =>
+          previousQueue.map((queueTrack, queueIndex) =>
+            queueIndex === index
+              ? { ...queueTrack, url: `file://${localPath}` }
+              : queueTrack
+          )
+        );
+      } catch (error) {
+        console.error(`Failed to prefetch track ${track.id}:`, error);
+      } finally {
+        prefetchingRef.current = null;
+      }
+    },
+    []
+  );
+
+  const playTrackAtIndex = useCallback(
+    async (index: number) => {
+      const currentQueue = queueRef.current;
+      if (index < 0 || index >= currentQueue.length) {
+        return;
+      }
+      try {
+        setIsLoading(true);
+        setCurrentIndex(index);
+
+        if (playbackTrackerRef.current) {
+          await playbackTrackerRef.current.stop();
+          playbackTrackerRef.current = null;
+        }
+
+        isStoppingRef.current = true;
+        await setupPlayer();
+        await TrackPlayer.reset();
+        isStoppingRef.current = false;
+
+        const track = currentQueue[index];
+        const resolvedTrack = await resolveTrackUrl(track);
+
+        if (resolvedTrack.url !== track.url) {
+          setQueue(previousQueue =>
+            previousQueue.map((queueTrack, queueIndex) =>
+              queueIndex === index
+                ? { ...queueTrack, url: resolvedTrack.url }
+                : queueTrack
+            )
+          );
+        }
+
+        console.log(`[AudioPlayer] Playing track "${resolvedTrack.title}" with URL: ${resolvedTrack.url}`);
+        await TrackPlayer.add(resolvedTrack);
+        await TrackPlayer.play();
+
+        setTimeout(() => {
+          startPlaybackTracking(resolvedTrack);
+        }, 1000);
+
+        if (track.url.startsWith('http')) {
+          cacheTrack(track.url, track.headers).catch(() => { });
+        }
+
+        const nextIndex = index + 1;
+        if (nextIndex < currentQueue.length) {
+          prefetchTrackAtIndex(nextIndex);
+        }
+      } catch (error) {
+        console.error('Error playing track:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [api, prefetchTrackAtIndex]
+  );
+
+  const playNext = useCallback(async () => {
+    const currentQueue = queueRef.current;
+    const index = currentIndexRef.current;
+    const repeating = repeatingStateRef.current;
+
+    if (repeating === RepeatingType.Song) {
+      await playTrackAtIndex(index);
+      return;
+    }
+
+    const nextIndex = index + 1;
+    if (nextIndex < currentQueue.length) {
+      await playTrackAtIndex(nextIndex);
+    } else if (repeating === RepeatingType.Album) {
+      await playTrackAtIndex(0);
+    } else {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.stop();
+        playbackTrackerRef.current = null;
+      }
+      setIsPlaying(false);
+      await TrackPlayer.reset();
+    }
+  }, [playTrackAtIndex]);
+
+  const playPrevious = useCallback(async () => {
+    const progress = await TrackPlayer.getProgress();
+
+    if (progress.position > 5) {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.seek(progress.position, 0);
+      }
+      await TrackPlayer.seekTo(0);
+    } else {
+      const previousIndex = currentIndexRef.current - 1;
+      if (previousIndex >= 0) {
+        await playTrackAtIndex(previousIndex);
+      } else {
+        if (playbackTrackerRef.current) {
+          await playbackTrackerRef.current.seek(progress.position, 0);
+        }
+        await TrackPlayer.seekTo(0);
+      }
+    }
+  }, [playTrackAtIndex]);
+
+  const playNextRef = useRef(playNext);
+  const playPreviousRef = useRef(playPrevious);
+  playNextRef.current = playNext;
+  playPreviousRef.current = playPrevious;
+
+  useEffect(() => {
+    const unsubscribeNext = onNext(() => {
+      playNextRef.current();
+    });
+    const unsubscribePrevious = onPrevious(() => {
+      playPreviousRef.current();
+    });
+
+    return () => {
+      unsubscribeNext();
+      unsubscribePrevious();
+    };
+  }, []);
+
+  const isAdvancingRef = useRef(false);
 
   useTrackPlayerEvents(
     [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek],
@@ -326,38 +455,25 @@ export function useQueue() {
           if (playbackTrackerRef.current) {
             await playbackTrackerRef.current.pause();
           }
-        } else if (event.state === State.Stopped) {
-          if (playbackTrackerRef.current && !isStoppingRef.current) {
-            await playbackTrackerRef.current.stop();
-            playbackTrackerRef.current = null;
-          }
-        }
-
-        if (event.state === State.Ended) {
-          console.log('Track ended, attempting to play next');
-
+        } else if (event.state === State.Stopped && !isStoppingRef.current) {
           if (playbackTrackerRef.current) {
             await playbackTrackerRef.current.stop();
             playbackTrackerRef.current = null;
           }
-
-          if (repeatingState === RepeatingType.Song) {
-            await playTrackAtIndex(currentIndexRef.current);
-          } else {
-            if (currentIndex < queue.length - 1) {
-              const nextIndex = currentIndexRef.current + 1;
-              await playTrackAtIndex(nextIndex);
-            } else {
-              if (repeatingState === RepeatingType.Album) {
-                const nextIndex = 0;
-                await playTrackAtIndex(nextIndex);
-              }
-            }
-          }
         }
-
-        if (event.state === State.Stopped && !isStoppingRef.current) {
-          playNext();
+      } else if (event.type === Event.PlaybackQueueEnded) {
+        if (isAdvancingRef.current || isStoppingRef.current) {
+          return;
+        }
+        isAdvancingRef.current = true;
+        try {
+          if (playbackTrackerRef.current) {
+            await playbackTrackerRef.current.stop();
+            playbackTrackerRef.current = null;
+          }
+          await playNextRef.current();
+        } finally {
+          isAdvancingRef.current = false;
         }
       } else if (event.type === Event.RemoteSeek) {
         if (playbackTrackerRef.current) {
@@ -371,54 +487,35 @@ export function useQueue() {
     }
   );
 
-  const playTrackAtIndex = useCallback(
-    async (index: number) => {
-      if (index < 0 || index >= queue.length) {
-        return;
-      }
-      try {
-        setIsLoading(true);
-        setCurrentIndex(index);
-
-        const track = queue[index];
-
-        if (playbackTrackerRef.current) {
-          await playbackTrackerRef.current.stop();
-          playbackTrackerRef.current = null;
-        }
-
-        isStoppingRef.current = true;
-        await setupPlayer();
-        await TrackPlayer.stop();
-        await TrackPlayer.reset();
-        isStoppingRef.current = false;
-
-        const processedTrack = track;
-
-        await TrackPlayer.add(processedTrack);
-        await TrackPlayer.play();
-
-        setTimeout(() => {
-          startPlaybackTracking(processedTrack);
-        }, 1000);
-      } catch (error) {
-        console.error('Error playing track:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [queue, api]
-  );
-
   const addToQueue = useCallback((tracks: Track | Track[]) => {
     const tracksArray = Array.isArray(tracks) ? tracks : [tracks];
-    setQueue(prev => [...prev, ...tracksArray]);
+    setQueue(previous => [...previous, ...tracksArray]);
   }, []);
 
-  const replaceQueue = useCallback((tracks: Track[]) => {
-    setQueue(tracks);
-    setCurrentIndex(-1);
-  }, []);
+  const replaceQueue = useCallback(
+    (tracks: Track[]) => {
+      setQueue(tracks);
+      setCurrentIndex(-1);
+
+      if (tracks.length > 0) {
+        const firstTrack = tracks[0];
+        if (firstTrack.url && firstTrack.url.startsWith('http')) {
+          cacheTrack(firstTrack.url, firstTrack.headers)
+            .then(localPath => {
+              setQueue(previousQueue =>
+                previousQueue.map((queueTrack, queueIndex) =>
+                  queueIndex === 0
+                    ? { ...queueTrack, url: `file://${localPath}` }
+                    : queueTrack
+                )
+              );
+            })
+            .catch(() => { });
+        }
+      }
+    },
+    []
+  );
 
   const clearQueue = useCallback(async () => {
     if (playbackTrackerRef.current) {
@@ -428,46 +525,9 @@ export function useQueue() {
 
     setQueue([]);
     setCurrentIndex(-1);
-    TrackPlayer.stop();
-    TrackPlayer.reset();
+    await TrackPlayer.stop();
+    await TrackPlayer.reset();
   }, []);
-
-  const playNext = useCallback(async () => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex < queue.length) {
-      await playTrackAtIndex(nextIndex);
-    } else {
-      if (playbackTrackerRef.current) {
-        await playbackTrackerRef.current.stop();
-        playbackTrackerRef.current = null;
-      }
-
-      setIsPlaying(false);
-      await TrackPlayer.stop();
-      await TrackPlayer.reset();
-    }
-  }, [currentIndex, queue.length, playTrackAtIndex]);
-
-  const playPrevious = useCallback(async () => {
-    const progress = await TrackPlayer.getProgress();
-
-    if (progress.position > 5) {
-      if (playbackTrackerRef.current) {
-        await playbackTrackerRef.current.seek(progress.position, 0);
-      }
-      await TrackPlayer.seekTo(0);
-    } else {
-      const prevIndex = currentIndex - 1;
-      if (prevIndex >= 0) {
-        await playTrackAtIndex(prevIndex);
-      } else {
-        if (playbackTrackerRef.current) {
-          await playbackTrackerRef.current.seek(progress.position, 0);
-        }
-        await TrackPlayer.seekTo(0);
-      }
-    }
-  }, [currentIndex, playTrackAtIndex]);
 
   const play = useCallback(async () => {
     if (currentTrack) {
@@ -489,12 +549,12 @@ export function useQueue() {
 
   const removeFromQueue = useCallback(
     async (index: number) => {
-      setQueue(prev => {
-        const newQueue = [...prev];
+      setQueue(previous => {
+        const newQueue = [...previous];
         newQueue.splice(index, 1);
 
         if (index < currentIndex) {
-          setCurrentIndex(prev => prev - 1);
+          setCurrentIndex(previousIndex => previousIndex - 1);
         } else if (index === currentIndex) {
           if (playbackTrackerRef.current) {
             playbackTrackerRef.current.stop();
@@ -541,6 +601,7 @@ export function useQueue() {
     seekToPosition,
     repeatingState,
     setRepeatingState,
+    prefetchTrackAtIndex,
 
     hasNext: currentIndex < queue.length - 1,
     hasPrevious: currentIndex > 0,
