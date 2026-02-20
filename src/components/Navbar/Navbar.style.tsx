@@ -11,6 +11,7 @@ import { colors, sizes } from '../../constants/styling.tsx';
 import LinearGradient from 'react-native-linear-gradient';
 import DefaultText from '../DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   children: ReactNode;
@@ -52,13 +53,18 @@ const styles = StyleSheet.create({
 });
 
 export const GradientContainer = ({ children }: Props) => {
+  const insets = useSafeAreaInsets();
+
   return (
     <LinearGradient
       colors={colors.navbarGradient}
       locations={[0, 0.1, 0.2, 1]}
       start={{ x: 0.5, y: 0 }}
       end={{ x: 0.5, y: 1 }}
-      style={styles.gradientContainer}
+      style={[
+        styles.gradientContainer,
+        { height: sizes.navbarHeight + insets.bottom, paddingBottom: verticalScale(10) + insets.bottom },
+      ]}
     >
       {children}
     </LinearGradient>

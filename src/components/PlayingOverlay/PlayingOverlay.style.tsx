@@ -14,6 +14,7 @@ import DefaultText from '../DefaultText';
 import { colors, sizes } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../CachedImage.tsx';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   children: ReactNode;
@@ -24,7 +25,6 @@ interface Props {
 const styles = StyleSheet.create({
   mainContainer: {
     position: 'absolute',
-    bottom: sizes.navbarHeight,
     justifyContent: 'space-between',
     display: 'flex',
     flexDirection: 'row',
@@ -74,8 +74,13 @@ const styles = StyleSheet.create({
 
 export const MainContainer = ({ children, onPress, style }: Props) => {
   const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+  const insets = useSafeAreaInsets();
+
   return (
-    <AnimatedPressable style={[styles.mainContainer, style]} onPress={onPress}>
+    <AnimatedPressable
+      style={[styles.mainContainer, { bottom: sizes.navbarHeight + insets.bottom }, style]}
+      onPress={onPress}
+    >
       {children}
     </AnimatedPressable>
   );

@@ -1,4 +1,5 @@
 import { StyleSheet, View, ViewProps } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../constants/styling.tsx';
 
 type DefaultViewProps = ViewProps & {
@@ -11,7 +12,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     backgroundColor: colors.background,
-    paddingTop: 80,
     width: '100%',
     minWidth: '100%',
     minHeight: '100%',
@@ -19,8 +19,13 @@ const styles = StyleSheet.create({
 });
 
 const PageContainer = ({ children, style, ...props }: DefaultViewProps) => {
+  const insets = useSafeAreaInsets();
+
   return (
-    <View style={[styles.container, style]} {...props}>
+    <View
+      style={[styles.container, { paddingTop: insets.top + 25 }, style]}
+      {...props}
+    >
       {children}
     </View>
   );
