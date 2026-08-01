@@ -1,7 +1,6 @@
 import {
   Animated,
   GestureResponderEvent,
-  Image,
   ImageProps,
   Pressable,
   StyleProp,
@@ -11,9 +10,10 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors, sizes } from '../../constants/styling.tsx';
+import { colors, sizes, typography } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -21,40 +21,48 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
+export const cardImageSize = moderateScale(sizes.albumCoverHomeHeight);
+export const cardImageRadius = moderateScale(10);
+
 const styles = StyleSheet.create({
   mainContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: verticalScale(20),
+    gap: verticalScale(14),
     width: '100%',
   },
   cardContainer: {
     display: 'flex',
     flexDirection: 'row',
-    gap: scale(10),
+    gap: scale(14),
+    paddingRight: scale(20),
   },
   card: {
     display: 'flex',
     flexDirection: 'column',
-    gap: verticalScale(2),
-    width: moderateScale(sizes.albumCoverHomeHeight),
+    gap: verticalScale(3),
+    width: cardImageSize,
   },
   cardImage: {
-    width: moderateScale(sizes.albumCoverHomeHeight),
-    height: moderateScale(sizes.albumCoverHomeHeight),
-    borderRadius: moderateScale(10),
+    width: cardImageSize,
+    height: cardImageSize,
+    borderRadius: cardImageRadius,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
   cardTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: verticalScale(5),
-    fontSize: moderateScale(14),
-    fontWeight: 'semibold',
+    marginTop: verticalScale(6),
+    fontSize: typography.itemTitle,
+    fontWeight: '600',
+    lineHeight: moderateScale(18),
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: moderateScale(12),
+    fontSize: typography.secondary,
+    fontWeight: '400',
   },
 });
 
@@ -76,14 +84,14 @@ export const CardContainer = ({ children }: Props) => {
 
 export const MusicCard = ({ children, onPress }: Props) => {
   return (
-    <Pressable style={[styles.card]} onPress={onPress}>
+    <Pressable style={({ pressed }) => [styles.card, { opacity: pressed ? 0.75 : 1 }]} onPress={onPress}>
       {children}
     </Pressable>
   );
 };
 
 export const CardImage = ({ source }: ImageProps) => {
-  return <Image source={source} style={styles.cardImage} resizeMode="cover" />;
+  return <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />;
 };
 
 export const CardTitle = ({ children }: Props) => {
@@ -101,3 +109,4 @@ export const CardAuthor = ({ children }: Props) => {
     </DefaultText>
   );
 };
+

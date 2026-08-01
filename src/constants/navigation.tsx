@@ -9,7 +9,7 @@ type NavLabel = 'Home' | 'Search' | 'Library' | 'Create';
 
 export interface NavigationButton {
   label: NavLabel;
-  icon: React.ComponentType<{ height: number }>;
+  icon: React.ComponentType<{ height: number; fill?: string }>;
 }
 
 export interface ActionItem {

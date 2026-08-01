@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, StyleSheet } from 'react-native';
+import { colors } from '../../constants/styling.tsx';
 import {
   BackdropContainer,
   CardTitle,
@@ -106,7 +107,7 @@ export default CreatePlaylist;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     marginTop: 60,

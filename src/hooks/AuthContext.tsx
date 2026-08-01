@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CookieManager from '@react-native-cookies/cookies';
 
@@ -46,8 +46,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     loadAuthState();
   }, []);
 
-  // Save login
-  const login = async (newToken: string) => {
+  const login = useCallback(async (newToken: string) => {
     setIsLoggedIn(true);
     setToken(newToken);
     try {
@@ -56,10 +55,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (e) {
       console.error('Failed to persist login:', e);
     }
-  };
+  }, []);
 
-  // Clear everything
-  const logout = async () => {
+  const logout = useCallback(async () => {
     setIsLoggedIn(false);
     setToken(null);
     try {
@@ -69,10 +67,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     } catch (e) {
       console.error('Failed to clear auth state:', e);
     }
-  };
+  }, []);
 
-  // Safe getters
-  const getToken = async (): Promise<string | null> => {
+  const getToken = useCallback(async (): Promise<string | null> => {
     if (token) return token;
     try {
       return await AsyncStorage.getItem(STORAGE_KEYS.token);
@@ -80,9 +77,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error('Failed to get token:', e);
       return null;
     }
-  };
+  }, [token]);
 
-  const getIsLoggedIn = async (): Promise<boolean> => {
+  const getIsLoggedIn = useCallback(async (): Promise<boolean> => {
     if (isLoggedIn) return true;
     try {
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.isLoggedIn);
@@ -91,7 +88,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       console.error('Failed to get isLoggedIn:', e);
       return false;
     }
-  };
+  }, [isLoggedIn]);
 
   return (
     <AuthContext.Provider

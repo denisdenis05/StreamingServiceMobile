@@ -5,12 +5,16 @@ import {
   CardTitle,
   MainContainer,
   MusicCard,
+  cardImageRadius,
+  cardImageSize,
 } from './HorizontalCardCarousel.style.tsx';
 import SectionTitle from '../SectionTitle';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
 import { View } from 'react-native';
-import { sizes } from '../../constants/styling.tsx';
+import { typography } from '../../constants/styling.tsx';
+
+const SKELETON_ITEMS = Array.from({ length: 5 });
 
 const HorizontalCardCarousel = ({
   navigation,
@@ -49,12 +53,10 @@ const HorizontalCardCarousel = ({
     <MainContainer>
       <SectionTitle>{sectionTitle}</SectionTitle>
       <CardContainer>
-        {content.map((card: any, index: number) => (
+        {content.map((card: any) => (
           <MusicCard
-            key={index}
-            onPress={() => {
-              handleCardClick(card);
-            }}
+            key={card.id}
+            onPress={() => handleCardClick(card)}
           >
             <CardImage
               source={{ uri: card.smallCover || PLACEHOLDER_ALBUM_COVER }}
@@ -71,24 +73,22 @@ const HorizontalCardCarousel = ({
 export default HorizontalCardCarousel;
 
 export const HorizontalCardSkeleton = () => {
-  const skeletonItems = Array.from({ length: 5 }); // Show 5 skeleton items
-
   return (
     <MainContainer>
       <SkeletonLoader width={150} height={20} style={{ marginBottom: 10 }} />
       <CardContainer>
-        {skeletonItems.map((_, index) => (
+        {SKELETON_ITEMS.map((_, index) => (
           <View
             key={index}
-            style={{ gap: 5, width: sizes.albumCoverHomeHeight }}
+            style={{ gap: 5, width: cardImageSize }}
           >
             <SkeletonLoader
-              width={sizes.albumCoverHomeHeight}
-              height={sizes.albumCoverHomeHeight}
-              borderRadius={10}
+              width={cardImageSize}
+              height={cardImageSize}
+              borderRadius={cardImageRadius}
             />
-            <SkeletonLoader width={80} height={14} />
-            <SkeletonLoader width={60} height={12} />
+            <SkeletonLoader width={80} height={typography.itemTitle} />
+            <SkeletonLoader width={60} height={typography.secondary} />
           </View>
         ))}
       </CardContainer>

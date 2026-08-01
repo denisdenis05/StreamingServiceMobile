@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
@@ -79,12 +79,9 @@ const PlaylistViewer = ({ navigation, route }: any) => {
     }
   }, [recordings, token]);
 
-  const fetchRecordingsFromServer = (pageNumber: number) => {
-    if (pageNumber === 1 && !fetched) {
-      setFetched(false);
-    } else if (pageNumber > 1) {
-      setIsLoadingMore(true);
-    }
+  const fetchRecordingsFromServer = useCallback((pageNumber: number) => {
+    if (pageNumber === 1) setFetched(false);
+    else setIsLoadingMore(true);
 
     api
       .get(`Library/playlists/${playlistId}/recordings?page=${pageNumber}&pageSize=${PAGE_SIZE}`)
@@ -105,10 +102,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
           });
         }
 
-        if (freshRecordings.length < PAGE_SIZE) {
-          setHasMore(false);
-        }
-
+        if (freshRecordings.length < PAGE_SIZE) setHasMore(false);
         setFetched(true);
         setIsLoadingMore(false);
       })
@@ -117,14 +111,14 @@ const PlaylistViewer = ({ navigation, route }: any) => {
         setFetched(true);
         setIsLoadingMore(false);
       });
-  };
+  }, [api, playlistId]);
 
-  const handleLoadMore = () => {
+  const handleLoadMore = useCallback(() => {
     if (!hasMore || isLoadingMore) return;
     const nextPage = page + 1;
     setPage(nextPage);
     fetchRecordingsFromServer(nextPage);
-  };
+  }, [hasMore, isLoadingMore, page, fetchRecordingsFromServer]);
 
   useEffect(() => {
     if (shouldPlayFromStart) {
@@ -133,7 +127,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
     }
   }, [queue]);
 
-  const handlePlayPlaylist = () => {
+  const handlePlayPlaylist = useCallback(() => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
       url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
@@ -150,11 +144,10 @@ const PlaylistViewer = ({ navigation, route }: any) => {
     setStartIndex(0);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
-
     navigation.navigate('Playing', {});
-  };
+  }, [recordings, token, playlistId, replaceQueue, navigation]);
 
-  const handlePlayFromRecording = (recordingIndex: number) => {
+  const handlePlayFromRecording = useCallback((recordingIndex: number) => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
       url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
@@ -168,36 +161,58 @@ const PlaylistViewer = ({ navigation, route }: any) => {
       playlistId: playlistId,
       isLiked: recording.isLiked,
     }));
-
     setStartIndex(recordingIndex);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
-
     navigation.navigate('Playing', {});
-  };
+  }, [recordings, token, playlistId, replaceQueue, navigation]);
 
-  const handlePlaylistMore = (event: any) => {
+  const handlePlaylistMore = useCallback((event: any) => {
+    if (!isOwner) return;
+    setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    setContextMenuOptions([{
+      label: 'Edit Playlist',
+      icon: () => null,
+      onClick: () => navigation.navigate('CreatePlaylist', { playlistId, initialName: playlistTitle }),
+    }] as any);
+    setMenuVisible(true);
+  }, [isOwner, navigation, playlistId, playlistTitle]);
+
+  const handleSongMorePress = useCallback((event: any, recording: Recording) => {
+    setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+
+    let options = [...menuOptions];
     if (isOwner) {
-      setMenuPosition({
-        x: event.nativeEvent.pageX,
-        y: event.nativeEvent.pageY,
-      });
-
-      const options = [
-        {
-          label: 'Edit Playlist',
-          icon: () => null,
-          onClick: () =>
-            navigation.navigate('CreatePlaylist', {
-              playlistId,
-              initialName: playlistTitle,
-            }),
+      options = options.filter(o => o.label !== 'Add to playlist');
+      options.push({
+        label: 'Add to another playlist',
+        icon: menuOptions.find(o => o.label === 'Add to playlist')?.icon || (() => null),
+        onClick: (nav: any, params: any) => {
+          menuOptions.find(o => o.label === 'Add to playlist')?.onClick(nav, params);
         },
-      ];
-      setContextMenuOptions(options as any);
-      setMenuVisible(true);
+      });
+      options.push({
+        label: 'Remove from playlist',
+        icon: () => null,
+        onClick: async () => {
+          try {
+            await api.delete(`library/playlists/${playlistId}/recordings/${recording.id}`);
+            setRecordings(previous => {
+              const updated = previous.filter(r => r.id !== recording.id);
+              setRecordingList(playlistId, 'playlist', updated);
+              return updated;
+            });
+          } catch (err) {
+            console.error('Failed to remove song from playlist:', err);
+          }
+        },
+      });
     }
-  };
+    setContextMenuOptions(options);
+    setMenuVisible(true);
+    setSelectedRecordingIds([recording.id]);
+    setSelectedRecording(recording);
+  }, [isOwner, api, playlistId]);
 
   return (
     <>
@@ -210,50 +225,7 @@ const PlaylistViewer = ({ navigation, route }: any) => {
         onPlay={handlePlayPlaylist}
         onMorePress={isOwner ? handlePlaylistMore : undefined}
         onSongPlay={handlePlayFromRecording}
-        onSongMorePress={(event: any, recording: Recording) => {
-          setMenuPosition({
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          });
-
-          let options = [...menuOptions];
-          if (isOwner) {
-            options = options.filter(o => o.label !== 'Add to playlist');
-            options.push({
-              label: 'Add to another playlist',
-              icon:
-                menuOptions.find(o => o.label === 'Add to playlist')?.icon ||
-                (() => null),
-              onClick: (nav, params) => {
-                menuOptions
-                  .find(o => o.label === 'Add to playlist')
-                  ?.onClick(nav, params);
-              },
-            });
-            options.push({
-              label: 'Remove from playlist',
-              icon: () => null,
-              onClick: async () => {
-                try {
-                  await api.delete(
-                    `library/playlists/${playlistId}/recordings/${recording.id}`
-                  );
-                  setRecordings(previous => {
-                    const updated = previous.filter(r => r.id !== recording.id);
-                    setRecordingList(playlistId, 'playlist', updated);
-                    return updated;
-                  });
-                } catch (err) {
-                  console.error('Failed to remove song from playlist:', err);
-                }
-              },
-            });
-          }
-          setContextMenuOptions(options);
-          setMenuVisible(true);
-          setSelectedRecordingIds([recording.id]);
-          setSelectedRecording(recording);
-        }}
+        onSongMorePress={handleSongMorePress}
         isLoading={!fetched || isLoadingMore}
         onEndReached={handleLoadMore}
         emptyMessage="Playlist is empty"

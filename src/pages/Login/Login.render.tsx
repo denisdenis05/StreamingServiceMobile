@@ -146,7 +146,6 @@ const Login = () => {
       password: password,
       keepMeLoggedIn: rememberMe,
     };
-console.log("here boy")
     try {
       const response = await api.post(url, data);
       if (response.status === 200 || response.status === 201) {
@@ -157,7 +156,6 @@ console.log("here boy")
         type: 'message',
         text1: 'Incorrect username/email or password',
       });
-      console.log(error)
     }
 
     setIsLoading(false);

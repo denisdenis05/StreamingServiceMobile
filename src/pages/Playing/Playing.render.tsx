@@ -1,8 +1,9 @@
 import { useApi } from '../../hooks/useApi.ts';
 import { useData } from '../../services/DataProvider.tsx';
+import { colors, iconSizes } from '../../constants/styling.tsx';
 import HeartEmptyIcon from '../../../assets/icons/heartEmptyIcon.tsx';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -40,8 +41,6 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { RepeatingType } from '../../constants/types.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
-import ImageColors from 'react-native-image-colors';
-import { ensureContrastWithWhite } from '../../utils/colorUtils.ts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -66,12 +65,10 @@ const Playing = ({ navigation }: any) => {
     currentTrack?.isLiked
   );
 
-  const toggleLike = async () => {
+  const toggleLike = useCallback(async () => {
     if (!currentTrack) return;
-
     const newLikedState = !isLiked;
     updateData(newLikedState);
-
     try {
       await api.post(`Library/likes/${currentTrack.id}`, {
         title: currentTrack.title,
@@ -83,36 +80,44 @@ const Playing = ({ navigation }: any) => {
       console.error('Failed to toggle like:', error);
       updateData(!newLikedState);
     }
-  };
+  }, [currentTrack, isLiked, updateData, api]);
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const translateY = useRef(new Animated.Value(0)).current;
 
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gestureState) =>
-      gestureState.dy > 0 &&
-      Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-    onPanResponderMove: (_, gestureState) => {
-      if (gestureState.dy > 0) {
-        translateY.setValue(gestureState.dy);
-      }
-    },
-    onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dy > 100 || gestureState.vy > 0.5) {
-        Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
-          duration: 300,
-          useNativeDriver: true,
-        }).start(() => navigation.goBack());
-      } else {
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
-      }
-    },
-  });
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 0 &&
+        Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) translateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.5) {
+          Animated.timing(translateY, {
+            toValue: SCREEN_HEIGHT,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => navigation.goBack());
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  const handleMorePress = useCallback((event: any) => {
+    setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    setMenuVisible(true);
+  }, []);
+
+  const handleRepeatCycle = useCallback(() => {
+    if (repeatingState === RepeatingType.None) setRepeatingState(RepeatingType.Song);
+    else if (repeatingState === RepeatingType.Song) setRepeatingState(RepeatingType.Album);
+    else setRepeatingState(RepeatingType.None);
+  }, [repeatingState, setRepeatingState]);
 
   useEffect(() => {
     translateY.setValue(SCREEN_HEIGHT);
@@ -131,17 +136,12 @@ const Playing = ({ navigation }: any) => {
         <ContentContainer>
           <DragIndicator />
           <HeaderContainer>
-            <ArrowDownIcon height={20} onPress={navigation.goBack} />
+            <ArrowDownIcon height={iconSizes.md} onPress={navigation.goBack} fill={colors.normalText} />
             <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
             <MoreIcon
-              height={20}
-              onPress={(event: any) => {
-                setMenuPosition({
-                  x: event.nativeEvent.pageX,
-                  y: event.nativeEvent.pageY,
-                });
-                setMenuVisible(true);
-              }}
+              height={iconSizes.md}
+              fill={colors.normalText}
+              onPress={handleMorePress}
             />
           </HeaderContainer>
           <AlbumCover
@@ -153,9 +153,9 @@ const Playing = ({ navigation }: any) => {
               <SongAuthor>{currentTrack?.artist}</SongAuthor>
             </SongDescriptorContainer>
             {isLiked ? (
-              <HeartIcon height={25} onPress={toggleLike} />
+              <HeartIcon height={iconSizes.md} onPress={toggleLike} fill={colors.accentPrimary} />
             ) : (
-              <HeartEmptyIcon height={25} onPress={toggleLike} />
+              <HeartEmptyIcon height={iconSizes.md} onPress={toggleLike} fill={colors.normalText} />
             )}
           </SongDetailsContainer>
           <AudioProgressBar
@@ -164,42 +164,23 @@ const Playing = ({ navigation }: any) => {
             onSeek={seekToPosition}
             showThumb
             showTimeLabels
-            onSeekStart={() => { }}
-            onSeekEnd={() => { }}
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer>
-            <ShufflIcon height={25} />
-            <BackwardIcon height={25} onPress={playPrevious} />
+            <ShufflIcon height={iconSizes.lg} fill={colors.normalText} />
+            <BackwardIcon height={iconSizes.lg} onPress={playPrevious} fill={colors.normalText} />
             {isPlaying ? (
-              <PauseIcon height={25} onPress={pause} />
+              <PauseIcon height={iconSizes.lg} onPress={pause} fill={colors.normalText} />
             ) : (
-              <PlayIcon height={25} onPress={play} />
+              <PlayIcon height={iconSizes.lg} onPress={play} fill={colors.normalText} />
             )}
-            <ForwardIcon height={25} onPress={playNext} />
+            <ForwardIcon height={iconSizes.lg} onPress={playNext} fill={colors.normalText} />
             {repeatingState === RepeatingType.None ? (
-              <RepeatIcon
-                height={25}
-                onPress={() => {
-                  setRepeatingState(RepeatingType.Song);
-                }}
-              />
+              <RepeatIcon height={iconSizes.lg} fill={colors.normalText} onPress={handleRepeatCycle} />
             ) : repeatingState === RepeatingType.Song ? (
-              <RepeatOnceIcon
-                height={25}
-                fill={'green'}
-                onPress={() => {
-                  setRepeatingState(RepeatingType.Album);
-                }}
-              />
+              <RepeatOnceIcon height={iconSizes.lg} fill={colors.accentPrimary} onPress={handleRepeatCycle} />
             ) : (
-              <RepeatIcon
-                height={25}
-                fill={'green'}
-                onPress={() => {
-                  setRepeatingState(RepeatingType.None);
-                }}
-              />
+              <RepeatIcon height={iconSizes.lg} fill={colors.accentPrimary} onPress={handleRepeatCycle} />
             )}
           </AllPlayingControlsContainer>
         </ContentContainer>
@@ -229,7 +210,7 @@ export default Playing;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     marginTop: 30,

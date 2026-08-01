@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 export const styles = StyleSheet.create({
@@ -32,7 +32,7 @@ export const styles = StyleSheet.create({
     },
     menuText: {
         color: colors.normalText,
-        fontSize: moderateScale(16),
+        fontSize: typography.body,
         margin: 0,
         padding: 0,
     },

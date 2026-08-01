@@ -6,7 +6,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import DefaultText from '../DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
@@ -28,8 +28,8 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(8),
   },
   track: {
-    height: verticalScale(8), // Increased for visibility
-    backgroundColor: colors.slightlyTransparentText,
+    height: verticalScale(6),
+    backgroundColor: colors.lowOpacityText,
     borderRadius: moderateScale(10),
     overflow: 'hidden',
   },
@@ -37,13 +37,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     top: 0,
-    height: verticalScale(8),
-    backgroundColor: colors.normalText,
+    height: verticalScale(6),
+    backgroundColor: colors.borderLight,
     borderRadius: moderateScale(2),
   },
   progress: {
-    height: verticalScale(8),
-    backgroundColor: colors.normalText,
+    height: verticalScale(6),
+    backgroundColor: colors.accentPrimary,
     borderRadius: moderateScale(2),
   },
   loadingIndicator: {
@@ -51,17 +51,17 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    height: verticalScale(8),
-    backgroundColor: '#666',
+    height: verticalScale(6),
+    backgroundColor: colors.secondaryBackground,
     borderRadius: moderateScale(2),
-    opacity: 0.6,
+    opacity: 0.8,
   },
   thumb: {
     position: 'absolute',
-    width: moderateScale(10),
-    height: moderateScale(10),
-    backgroundColor: colors.normalText,
-    borderRadius: moderateScale(10),
+    width: moderateScale(12),
+    height: moderateScale(12),
+    backgroundColor: colors.accentPrimary,
+    borderRadius: moderateScale(12),
     elevation: 5,
     zIndex: 10,
   },
@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     color: colors.slightlyTransparentText,
-    fontSize: moderateScale(10),
+    fontSize: typography.caption,
     margin: 0,
   },
 });

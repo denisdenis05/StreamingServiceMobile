@@ -3,6 +3,7 @@ import { NavigationContainer, NavigationContainerRef } from '@react-navigation/n
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, View } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import Home from './src/pages/Home';
 import Playing from './src/pages/Playing';
@@ -26,26 +27,31 @@ const Stack = createNativeStackNavigator();
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: colors.background,
-    padding: 20,
-    borderRadius: 12,
-    marginRight: 12,
-    alignSelf: 'flex-end',
-    maxWidth: '80%',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
+    backgroundColor: colors.surfaceElevated,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    alignSelf: 'center',
+    maxWidth: '85%',
+    shadowColor: '#2A2420',
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 4,
-    borderColor: colors.normalText,
-    borderWidth: 2,
+    borderColor: colors.borderSubtle,
+    borderWidth: 1,
   },
   title: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: colors.normalText,
+    fontWeight: '700',
+    fontSize: 14,
+    textAlign: 'center',
   },
   message: {
-    color: '#fff',
+    color: colors.slightlyTransparentText,
     marginTop: 2,
+    fontSize: 12,
+    textAlign: 'center',
   },
 });
 
@@ -165,11 +171,13 @@ const InnerApp = () => {
 };
 
 const App = () => (
-  <AuthProvider>
-    <MusicProvider>
-      <InnerApp />
-    </MusicProvider>
-  </AuthProvider>
+  <SafeAreaProvider>
+    <AuthProvider>
+      <MusicProvider>
+        <InnerApp />
+      </MusicProvider>
+    </AuthProvider>
+  </SafeAreaProvider>
 );
 
 export default App;

@@ -7,7 +7,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../../components/CachedImage.tsx';
@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   dragIndicator: {
     width: scale(40),
     height: verticalScale(4),
-    backgroundColor: '#666',
+    backgroundColor: 'rgba(42, 36, 32, 0.2)',
     borderRadius: moderateScale(2),
     alignSelf: 'center',
     marginBottom: verticalScale(20),
@@ -63,23 +63,25 @@ const styles = StyleSheet.create({
     marginBottom: verticalScale(30),
   },
   headerTitle: {
-    fontWeight: 'bold',
-    fontSize: moderateScale(12),
+    fontWeight: '500',
+    fontSize: typography.secondary,
     textAlign: 'center',
+    color: colors.slightlyTransparentText,
   },
   songTitle: {
-    fontWeight: 'condensedBold',
-    fontSize: moderateScale(18),
+    fontFamily: fonts.serif,
+    fontSize: typography.dialogTitle,
+    letterSpacing: -0.3,
   },
   songAuthor: {
-    fontWeight: 'regular',
-    fontSize: moderateScale(12),
+    fontWeight: '400',
+    fontSize: typography.secondary,
     color: colors.slightlyTransparentText,
   },
   albumCover: {
     width: '80%',
     aspectRatio: 1,
-    borderRadius: moderateScale(30),
+    borderRadius: moderateScale(20),
   },
   allPlayingControlsContainer: {
     width: '100%',

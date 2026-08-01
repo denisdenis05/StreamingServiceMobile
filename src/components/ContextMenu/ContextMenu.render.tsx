@@ -1,7 +1,9 @@
 import React from 'react';
-import { Modal, TouchableOpacity, View, Text, TouchableWithoutFeedback, Dimensions } from 'react-native';
+import { Modal, TouchableOpacity, View, TouchableWithoutFeedback, Dimensions } from 'react-native';
 import { styles } from './ContextMenu.style.tsx';
 import { ActionItem } from '../../constants/navigation.tsx';
+import DefaultText from '../DefaultText';
+import { colors, iconSizes } from '../../constants/styling.tsx';
 
 interface ContextMenuProps {
     visible: boolean;
@@ -41,12 +43,7 @@ const ContextMenu = ({
         <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
             <TouchableWithoutFeedback onPress={onClose}>
                 <View style={styles.modalOverlay}>
-                    <View
-                        style={[
-                            styles.menuContainer,
-                            menuStyle,
-                        ]}
-                    >
+                    <View style={[styles.menuContainer, menuStyle]}>
                         {options.map((option, index) => {
                             const Icon = option.icon;
                             return (
@@ -58,8 +55,8 @@ const ContextMenu = ({
                                         option.onClick(navigation, params);
                                     }}
                                 >
-                                    <Icon height={20} />
-                                    <Text style={styles.menuText}>{option.label}</Text>
+                                    <Icon height={iconSizes.sm} fill={colors.normalText} />
+                                    <DefaultText style={styles.menuText}>{option.label}</DefaultText>
                                 </TouchableOpacity>
                             );
                         })}

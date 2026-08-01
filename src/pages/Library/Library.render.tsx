@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import PageContainer from '../../components/PageContainer';
 import {
   ContentContainer,
@@ -22,8 +23,22 @@ import {
   LibraryItemImage,
   LibraryItemInfo,
   LibraryItemTitle,
+  libraryItemImageSize,
+  libraryItemImageRadius,
 } from './Library.style.tsx';
 import { Album } from '../../constants/types.tsx';
+import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader.tsx';
+import { typography } from '../../constants/styling.tsx';
+
+const LibraryItemSkeleton = () => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 10, marginBottom: 10 }}>
+    <SkeletonLoader width={libraryItemImageSize} height={libraryItemImageSize} borderRadius={libraryItemImageRadius} style={{ marginRight: 15 }} />
+    <View style={{ gap: 6, justifyContent: 'center' }}>
+      <SkeletonLoader width={160} height={typography.itemTitle} />
+      <SkeletonLoader width={100} height={typography.secondary} />
+    </View>
+  </View>
+);
 
 const Library = ({ navigation, route }: { navigation: any; route: any }) => {
   const api = useApi();
@@ -70,7 +85,7 @@ const Library = ({ navigation, route }: { navigation: any; route: any }) => {
 
         <LibraryContainer>
           {loading ? (
-            <HeaderTitle>Loading...</HeaderTitle>
+            Array.from({ length: 8 }).map((_, i) => <LibraryItemSkeleton key={i} />)
           ) : (
             libraryItems?.map((item: any) => (
               <LibraryItemContainer

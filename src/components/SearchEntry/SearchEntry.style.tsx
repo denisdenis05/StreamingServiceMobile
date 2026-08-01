@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
@@ -21,12 +21,15 @@ interface Props {
   style?: StyleProp<ViewStyle>;
 }
 
+export const albumCoverSize = moderateScale(50);
+export const albumCoverRadius = moderateScale(5);
+
 const styles = StyleSheet.create({
   mainContainer: {
     display: 'flex',
     flexDirection: 'row',
+    alignItems: 'center',
     gap: scale(20),
-    paddingHorizontal: scale(20),
     paddingVertical: verticalScale(10),
     width: '100%',
   },
@@ -36,6 +39,7 @@ const styles = StyleSheet.create({
     gap: scale(10),
   },
   card: {
+    flex: 1,
     display: 'flex',
     flexDirection: 'column',
     gap: verticalScale(2),
@@ -44,18 +48,18 @@ const styles = StyleSheet.create({
     color: colors.normalText,
     margin: 0,
     marginTop: verticalScale(5),
-    fontSize: moderateScale(14),
-    fontWeight: 'semibold',
+    fontSize: typography.itemTitle,
+    fontWeight: '600',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: moderateScale(12),
+    fontSize: typography.secondary,
   },
   albumCover: {
-    width: moderateScale(50),
+    width: albumCoverSize,
     aspectRatio: 1,
-    borderRadius: moderateScale(5),
+    borderRadius: albumCoverRadius,
   },
 });
 

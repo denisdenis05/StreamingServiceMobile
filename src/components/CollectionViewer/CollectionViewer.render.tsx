@@ -1,5 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
+import { colors, iconSizes } from '../../constants/styling.tsx';
 import {
   ActionsContainer,
   AlbumCover,
@@ -75,7 +76,7 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
     <ContentContainer>
       <MainScrollContainer onScroll={handleScroll} scrollEventThrottle={400}>
         <HeaderContainer>
-          <ArrowLeftIcon height={15} onPress={navigation.goBack} />
+          <ArrowLeftIcon height={iconSizes.md} onPress={navigation.goBack} fill={colors.normalText} />
         </HeaderContainer>
         <AlbumCover source={{ uri: cover || PLACEHOLDER_ALBUM_COVER }} />
         <SongDetailsContainer>
@@ -86,11 +87,11 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
         </SongDetailsContainer>
         <LineContainer>
           <ActionsContainer>
-            <DownloadIcon height={15} />
+            <DownloadIcon height={iconSizes.sm} fill={colors.normalText} />
           </ActionsContainer>
           <ControlsContainer>
-            {onMorePress && <MoreIcon height={15} onPress={onMorePress} />}
-            <PlayIcon height={15} onPress={onPlay} />
+            {onMorePress && <MoreIcon height={iconSizes.sm} onPress={onMorePress} fill={colors.normalText} />}
+            <PlayIcon height={iconSizes.sm} onPress={onPlay} fill={colors.accentPrimary} />
           </ControlsContainer>
         </LineContainer>
         <RecordingsContainer>

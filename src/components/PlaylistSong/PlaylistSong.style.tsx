@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../CachedImage.tsx';
@@ -63,14 +63,14 @@ const styles = StyleSheet.create({
     color: colors.normalText,
     margin: 0,
     marginTop: verticalScale(5),
-    fontSize: moderateScale(14),
-    fontWeight: 'semibold',
+    fontSize: typography.itemTitle,
+    fontWeight: '600',
     maxWidth: '100%',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: moderateScale(12),
+    fontSize: typography.secondary,
   },
 });
 

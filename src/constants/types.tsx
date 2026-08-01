@@ -28,6 +28,7 @@ export interface Track {
   id: string;
   title: string;
   artistName: string;
+  releaseId?: string;
   releaseTitle: string;
   cover: string;
   smallCover: string;

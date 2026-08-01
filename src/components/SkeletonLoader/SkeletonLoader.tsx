@@ -15,19 +15,19 @@ const SkeletonLoader = ({
     borderRadius = 4,
     style,
 }: SkeletonLoaderProps) => {
-    const opacity = useRef(new Animated.Value(0.3)).current;
+    const opacity = useRef(new Animated.Value(0.4)).current;
 
     useEffect(() => {
         const animation = Animated.loop(
             Animated.sequence([
                 Animated.timing(opacity, {
-                    toValue: 0.7,
-                    duration: 800,
+                    toValue: 1,
+                    duration: 700,
                     useNativeDriver: true,
                 }),
                 Animated.timing(opacity, {
-                    toValue: 0.3,
-                    duration: 800,
+                    toValue: 0.4,
+                    duration: 700,
                     useNativeDriver: true,
                 }),
             ])
@@ -56,7 +56,7 @@ const SkeletonLoader = ({
 
 const styles = StyleSheet.create({
     skeleton: {
-        backgroundColor: colors.slightlyTransparentText, // Using a color that contrasts well
+        backgroundColor: '#C4BAB1',
     },
 });
 

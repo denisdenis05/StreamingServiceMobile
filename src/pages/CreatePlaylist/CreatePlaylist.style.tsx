@@ -7,7 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
@@ -30,18 +30,19 @@ const styles = StyleSheet.create({
   dragIndicator: {
     width: scale(40),
     height: verticalScale(4),
-    backgroundColor: '#666',
+    backgroundColor: 'rgba(42, 36, 32, 0.2)',
     borderRadius: moderateScale(2),
     alignSelf: 'center',
     marginBottom: verticalScale(20),
   },
   actionTitle: {
     color: colors.normalText,
+    fontFamily: fonts.serif,
     margin: 0,
     marginTop: verticalScale(5),
-    fontSize: moderateScale(18),
-    fontWeight: 'bold',
+    fontSize: typography.dialogTitle,
     textAlignVertical: 'center',
+    letterSpacing: -0.3,
   },
   centeredContainer: {
     display: 'flex',
@@ -52,23 +53,22 @@ const styles = StyleSheet.create({
     gap: '10%',
   },
   styledInput: {
-    height: verticalScale(60),
+    height: verticalScale(56),
     width: '80%',
     minWidth: scale(250),
-    borderColor: colors.lowOpacityText,
-    borderWidth: 3,
-    borderRadius: moderateScale(8),
-    paddingHorizontal: scale(10),
-    color: colors.slightlyColoredText,
-    fontSize: moderateScale(26),
-    fontWeight: 'bold',
+    borderColor: colors.borderLight,
+    borderWidth: 1,
+    borderRadius: moderateScale(12),
+    paddingHorizontal: scale(14),
+    color: colors.normalText,
+    backgroundColor: colors.surfaceCard,
+    fontSize: typography.inputText,
+    fontWeight: '400',
     textAlign: 'center',
   },
   button: {
-    backgroundColor: 'transparent',
-    borderColor: colors.normalText,
-    borderWidth: 3,
-    borderRadius: moderateScale(8),
+    backgroundColor: colors.accentPrimary,
+    borderRadius: moderateScale(12),
     paddingHorizontal: scale(10),
     fontWeight: 'bold',
   },
@@ -107,6 +107,7 @@ export const StyledInput = ({
     <TextInput
       style={styles.styledInput}
       placeholder={placeholder || '...'}
+      placeholderTextColor={colors.slightlyTransparentText}
       value={value}
       onChangeText={onChangeText}
     />

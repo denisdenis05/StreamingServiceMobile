@@ -40,7 +40,12 @@ export const useData = <T,>(
         subscribers[key].add(callback);
 
         return () => {
-            subscribers[key]?.delete(callback);
+            if (subscribers[key]) {
+                subscribers[key].delete(callback);
+                if (subscribers[key].size === 0) {
+                    delete subscribers[key];
+                }
+            }
         };
     }, [key, isValidKey]);
 
@@ -62,9 +67,9 @@ export const useData = <T,>(
             if (activePromises[key]) {
                 try {
                     setLoading(true);
-                    const result = await activePromises[key];
-                    if (globalCache[key] !== result) {
-                    }
+                    await activePromises[key];
+                    const cached = globalCache[key];
+                    if (cached !== undefined) setData(cached);
                 } catch (err) {
                     setError(err as Error);
                 } finally {

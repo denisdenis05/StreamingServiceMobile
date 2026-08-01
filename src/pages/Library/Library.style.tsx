@@ -1,11 +1,15 @@
 import { StyleSheet, View, TouchableOpacity, Image, ScrollView } from 'react-native';
 import DefaultText from '../../components/DefaultText';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
+import { moderateScale } from '../../utils/scaling';
 import { ReactNode } from 'react';
 
 interface Props {
     children: ReactNode;
 }
+
+export const libraryItemImageSize = moderateScale(60);
+export const libraryItemImageRadius = moderateScale(4);
 
 const styles = StyleSheet.create({
     container: {
@@ -19,9 +23,9 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     itemImage: {
-        width: 60,
-        height: 60,
-        borderRadius: 4,
+        width: libraryItemImageSize,
+        height: libraryItemImageSize,
+        borderRadius: libraryItemImageRadius,
         marginRight: 15,
     },
     itemInfo: {
@@ -29,14 +33,14 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     itemTitle: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
+        color: colors.normalText,
+        fontSize: typography.itemTitle,
+        fontWeight: '600',
         marginBottom: 4,
     },
     itemAuthor: {
-        color: '#b3b3b3',
-        fontSize: 14,
+        color: colors.slightlyTransparentText,
+        fontSize: typography.secondary,
     },
 });
 

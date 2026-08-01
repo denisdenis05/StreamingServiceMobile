@@ -1,7 +1,5 @@
 import {
-  Animated,
   GestureResponderEvent,
-  Image,
   ImageProps,
   Pressable,
   StyleProp,
@@ -11,10 +9,9 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors, sizes } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../CachedImage.tsx';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   children: ReactNode;
@@ -29,39 +26,44 @@ const styles = StyleSheet.create({
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    width: '90%',
-    height: verticalScale(60),
-    borderRadius: moderateScale(10),
-    backgroundColor: 'green',
-    padding: moderateScale(5),
+    width: '92%',
+    height: verticalScale(56),
+    borderRadius: moderateScale(14),
+    backgroundColor: colors.accentPrimary,
+    paddingHorizontal: scale(14),
+    paddingVertical: moderateScale(4),
+    borderWidth: 0,
+    shadowColor: '#1A2F1B',
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   metadataContainer: {
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: '75%',
-    gap: scale(15),
+    maxWidth: '78%',
+    gap: scale(12),
   },
   cardImage: {
-    width: moderateScale(45),
-    height: moderateScale(45),
-    borderRadius: moderateScale(7),
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(8),
   },
   cardTitle: {
-    color: colors.normalText,
+    color: colors.textOnAccent,
     margin: 0,
-    marginTop: verticalScale(5),
-    fontSize: moderateScale(12),
-    fontWeight: 'bold',
+    fontSize: typography.itemTitle,
+    fontWeight: '700',
     maxWidth: '100%',
-    maxHeight: '100%',
   },
   cardAuthor: {
-    color: colors.slightlyTransparentText,
+    color: colors.textOnAccentMuted,
     margin: 0,
-    fontSize: moderateScale(9),
-    fontWeight: 'semibold',
+    marginTop: 2,
+    fontSize: typography.secondary,
+    fontWeight: '400',
   },
   textContainer: {
     display: 'flex',
@@ -70,23 +72,14 @@ const styles = StyleSheet.create({
   },
 });
 
-
-
 export const MainContainer = ({ children, onPress, style }: Props) => {
-  const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-  const insets = useSafeAreaInsets();
-
   return (
-    <AnimatedPressable
-      style={[
-        styles.mainContainer,
-        { bottom: sizes.navbarHeight + insets.bottom, alignSelf: 'center' },
-        style,
-      ]}
+    <Pressable
+      style={[styles.mainContainer, { alignSelf: 'center' }, style]}
       onPress={onPress}
     >
       {children}
-    </AnimatedPressable>
+    </Pressable>
   );
 };
 
@@ -105,9 +98,17 @@ export const CardImage = ({ source }: ImageProps) => {
 };
 
 export const CardTitle = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardTitle]}>{children}</DefaultText>;
+  return (
+    <DefaultText style={[styles.cardTitle]} numberOfLines={1}>
+      {children}
+    </DefaultText>
+  );
 };
 
 export const CardAuthor = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardAuthor]}>{children}</DefaultText>;
+  return (
+    <DefaultText style={[styles.cardAuthor]} numberOfLines={1}>
+      {children}
+    </DefaultText>
+  );
 };

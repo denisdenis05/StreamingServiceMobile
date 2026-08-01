@@ -8,7 +8,7 @@ import {
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
-import { sizes } from '../../constants/styling.tsx';
+import { sizes, typography } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
@@ -54,8 +54,8 @@ const styles = StyleSheet.create({
   },
   lastFmButtonText: {
     color: 'white',
-    fontSize: moderateScale(16),
-    fontWeight: 'bold',
+    fontSize: typography.body,
+    fontWeight: '600',
   },
 });
 

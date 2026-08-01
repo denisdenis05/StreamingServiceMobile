@@ -3,7 +3,7 @@ import {
   PLACEHOLDER_ALBUM_COVER,
   TEMPORARY_API_URL,
 } from '../../constants/placeholders.tsx';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Recording } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
@@ -92,7 +92,7 @@ const AlbumViewer = ({ navigation, route }: any) => {
     }
   }, [queue]);
 
-  const handlePlayAlbum = () => {
+  const handlePlayAlbum = useCallback(() => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
       url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
@@ -108,11 +108,10 @@ const AlbumViewer = ({ navigation, route }: any) => {
     setStartIndex(0);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
-
     navigation.navigate('Playing', {});
-  };
+  }, [recordings, token, albumId, replaceQueue, navigation]);
 
-  const handlePlayFromRecording = (recordingIndex: number) => {
+  const handlePlayFromRecording = useCallback((recordingIndex: number) => {
     const tracks: Track[] = recordings.map(recording => ({
       id: recording.id,
       url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
@@ -125,13 +124,23 @@ const AlbumViewer = ({ navigation, route }: any) => {
       headers: { Authorization: `Bearer ${token}` },
       isLiked: recording.isLiked,
     }));
-
     setStartIndex(recordingIndex);
     replaceQueue(tracks);
     setShouldPlayFromStart(true);
-
     navigation.navigate('Playing', {});
-  };
+  }, [recordings, token, albumId, replaceQueue, navigation]);
+
+  const handleAlbumMorePress = useCallback((event: any) => {
+    setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    setMenuVisible(true);
+    setSelectedRecordingIds(recordings.map(r => r.id));
+  }, [recordings]);
+
+  const handleSongMorePress = useCallback((event: any, recording: Recording) => {
+    setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
+    setMenuVisible(true);
+    setSelectedRecordingIds([recording.id]);
+  }, []);
 
   return (
     <>
@@ -142,23 +151,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
         cover={albumCover}
         songs={recordings}
         onPlay={handlePlayAlbum}
-        onMorePress={(event: any) => {
-          setMenuPosition({
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          });
-          setMenuVisible(true);
-          setSelectedRecordingIds(recordings.map(r => r.id));
-        }}
+        onMorePress={handleAlbumMorePress}
         onSongPlay={handlePlayFromRecording}
-        onSongMorePress={(event: any, recording: Recording) => {
-          setMenuPosition({
-            x: event.nativeEvent.pageX,
-            y: event.nativeEvent.pageY,
-          });
-          setMenuVisible(true);
-          setSelectedRecordingIds([recording.id]);
-        }}
+        onSongMorePress={handleSongMorePress}
         isLoading={!fetched}
         emptyMessage="Album temporarily unavailable, check again in a few minutes"
       />

@@ -9,7 +9,7 @@ import {
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
-import { sizes } from '../../constants/styling.tsx';
+import { fonts, sizes, typography } from '../../constants/styling.tsx';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../../components/CachedImage.tsx';
 
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     width: moderateScale(40),
     borderRadius: moderateScale(20),
   },
-  title: { fontWeight: 'bold', fontSize: moderateScale(24) },
+  title: { fontFamily: fonts.serif, fontSize: typography.pageTitle, letterSpacing: -0.3 },
 });
 
 export const HeaderContainer = ({ children }: Props) => {

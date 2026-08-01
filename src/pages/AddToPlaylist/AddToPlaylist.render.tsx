@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Dimensions,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   FlatList,
 } from 'react-native';
+import { colors } from '../../constants/styling.tsx';
 import {
   BackdropContainer,
   CardTitle,
@@ -26,30 +27,27 @@ const AddToPlaylist = ({ navigation, route }: any) => {
   const translateY = useRef(new Animated.Value(0)).current;
   const api = useApi();
 
-  const panResponder = PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gestureState) =>
-      gestureState.dy > 0 &&
-      Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-    onPanResponderMove: (_, gestureState) => {
-      if (gestureState.dy > 0) {
-        translateY.setValue(gestureState.dy);
-      }
-    },
-    onPanResponderRelease: (_, gestureState) => {
-      if (gestureState.dy > 100 || gestureState.vy > 0.5) {
-        Animated.timing(translateY, {
-          toValue: SCREEN_HEIGHT,
-          duration: 300,
-          useNativeDriver: true,
-        }).start(() => navigation.goBack());
-      } else {
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-        }).start();
-      }
-    },
-  });
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        gestureState.dy > 0 &&
+        Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) translateY.setValue(gestureState.dy);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100 || gestureState.vy > 0.5) {
+          Animated.timing(translateY, {
+            toValue: SCREEN_HEIGHT,
+            duration: 300,
+            useNativeDriver: true,
+          }).start(() => navigation.goBack());
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
 
   useEffect(() => {
     translateY.setValue(SCREEN_HEIGHT);
@@ -61,65 +59,56 @@ const AddToPlaylist = ({ navigation, route }: any) => {
     fetchPlaylists();
   }, []);
 
-  const fetchPlaylists = async () => {
+  const fetchPlaylists = useCallback(async () => {
     try {
       const res = await api.get('library/playlists');
       setPlaylists(res.data);
     } catch (err) {
       console.error('Failed to fetch playlists:', err);
     }
-  };
+  }, [api]);
 
-  const createNewPlaylist = async () => {
+  const addToExistingPlaylist = useCallback(async (playlistId: string) => {
     if (isLoading) return;
     setIsLoading(true);
     try {
-      // Mapping songs to the format expected by CreatePlaylist if needed,
-      // but CreatePlaylist endpoint might still expect IDs or we need to update it too.
-      // For now, assuming CreatePlaylist still takes IDs or we update it.
-      // Wait, CreatePlaylistRequest still has RecordingIds (List<Guid>).
-      // If we want to support non-DB songs in creation, we need to update CreatePlaylistRequest too.
-      // But for this task, let's focus on adding to existing playlist first as per user flow.
-      // Actually, let's just pass IDs for creation for now, or update it if needed.
-      // The user asked to "allow songs not yet in the database".
-      // So CreatePlaylist also needs to handle this.
-      // But let's stick to the plan for AddToPlaylist first.
-
-      const recordingIds = songs.map((s: any) => s.id);
-      await api.post('library/playlists', {
-        name: '',
-        recordingIds: recordingIds,
-      });
-      console.log('Created new playlist with songs:', recordingIds);
-      navigation.goBack();
-    } catch (err) {
-      console.error('Failed to create playlist:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const addToExistingPlaylist = async (playlistId: string) => {
-    if (isLoading) return;
-    setIsLoading(true);
-    try {
-      // Send full song objects
       const payload = songs.map((s: any) => ({
         id: s.id,
         title: s.title,
-        artist: s.artistName || s.artist, // Handle potential naming diffs
+        artist: s.artistName || s.artist,
         album: s.releaseTitle || s.album,
         cover: s.cover,
       }));
       await api.post(`library/playlists/${playlistId}/recordings`, payload);
-      console.log(`Added songs to playlist ${playlistId}`);
       navigation.goBack();
     } catch (err) {
       console.error('Failed to add to playlist:', err);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isLoading, songs, api, navigation]);
+
+  const renderPlaylistItem = useCallback(({ item }: { item: any }) => (
+    <PlaylistItem
+      name={item.name || 'Untitled Playlist'}
+      onPress={() => addToExistingPlaylist(item.id)}
+    />
+  ), [addToExistingPlaylist]);
+
+  const createNewPlaylist = useCallback(async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      const recordingIds = songs.map((s: any) => s.id);
+      await api.post('library/playlists', { name: '', recordingIds });
+      navigation.goBack();
+    } catch (err) {
+      console.error('Failed to create playlist:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [isLoading, songs, api, navigation]);
+
 
   return (
     <BackdropContainer>
@@ -141,12 +130,10 @@ const AddToPlaylist = ({ navigation, route }: any) => {
             <FlatList
               data={playlists}
               keyExtractor={item => item.id}
-              renderItem={({ item }) => (
-                <PlaylistItem
-                  name={item.name || 'Untitled Playlist'}
-                  onPress={() => addToExistingPlaylist(item.id)}
-                />
-              )}
+              renderItem={renderPlaylistItem}
+              removeClippedSubviews
+              maxToRenderPerBatch={10}
+              initialNumToRender={10}
             />
           </ListContainer>
         </ContentContainer>
@@ -160,7 +147,7 @@ export default AddToPlaylist;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     marginTop: 60,

@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   AlbumCover,
   CardAuthor,
@@ -9,8 +10,9 @@ import {
 } from './PlaylistSong.style.tsx';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
+import { colors, iconSizes } from '../../constants/styling.tsx';
 
-const PlaylistSong = ({
+const PlaylistSong = React.memo(({
   songTitle,
   songAuthor,
   playAction,
@@ -37,10 +39,10 @@ const PlaylistSong = ({
             <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>
           </TextContainer>
         </MusicCard>
-        <MoreIcon height={15} onPress={onMorePress} />
+        <MoreIcon height={iconSizes.sm} onPress={onMorePress} fill={colors.normalText} />
       </CardContainer>
     </MainContainer>
   );
-};
+});
 
 export default PlaylistSong;

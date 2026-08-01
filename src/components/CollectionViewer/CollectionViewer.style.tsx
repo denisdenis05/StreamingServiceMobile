@@ -7,7 +7,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 import DefaultText from '../DefaultText';
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../CachedImage.tsx';
@@ -59,16 +59,18 @@ const styles = StyleSheet.create({
     zIndex: 10,
     paddingHorizontal: scale(20),
   },
-  songTitle: { fontWeight: 'bold', fontSize: moderateScale(18) },
+  songTitle: { fontFamily: fonts.serif, fontSize: typography.dialogTitle, letterSpacing: -0.3 },
   songAuthor: {
-    fontWeight: 'condensedBold',
-    fontSize: moderateScale(12),
+    fontWeight: '400',
+    fontSize: typography.secondary,
     color: colors.slightlyTransparentText,
   },
   albumCover: {
     width: '60%',
     aspectRatio: 1,
-    borderRadius: moderateScale(15),
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
   },
   recordingsContainer: {
     width: '100%',

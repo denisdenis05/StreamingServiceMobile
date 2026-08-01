@@ -1,6 +1,6 @@
 import PageContainer from '../../components/PageContainer';
 import { ContentContainer, LastFmButton } from './Profile.style.tsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
 import { Alert, Linking } from 'react-native';
 import { useAuth } from '../../hooks/AuthContext';
@@ -11,9 +11,13 @@ const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
   const [lastFmLoading, setLastFmLoading] = useState(false);
   const api = useApi();
   const { logout } = useAuth();
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     checkLastFmStatus();
+    return () => {
+      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
+    };
   }, []);
 
   const checkLastFmStatus = async () => {
@@ -59,8 +63,7 @@ const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
             {
               text: "I've completed authorization",
               onPress: () => {
-                // Check status again after user claims they've completed auth
-                setTimeout(() => {
+                statusTimeoutRef.current = setTimeout(() => {
                   checkLastFmStatus();
                 }, 1000);
               },

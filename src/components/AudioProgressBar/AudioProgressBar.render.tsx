@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PanResponder, Animated, Dimensions } from 'react-native';
+import { useProgress } from 'react-native-track-player';
+import { colors } from '../../constants/styling.tsx';
 import {
   MainContainer,
   ProgressContainer,
@@ -12,7 +14,6 @@ import {
   TimeContainer,
   TimeText,
 } from './AudioProgressBar.style.tsx';
-import { getDuration, getPosition } from '../../services/AudioPlayerService.ts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -41,106 +42,60 @@ const AudioProgressBar = ({
   disabled = false,
   containerStyle,
 }: AudioProgressBarProps) => {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const { position, duration } = useProgress(250);
   const [isDragging, setIsDragging] = useState(false);
-  const [dragPosition, setDragPosition] = useState(0);
-  const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 40);
+  const [dragPercentage, setDragPercentage] = useState(0);
+  const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 60);
+  const trackPageX = useRef(0);
 
-  const thumbOpacity = useRef(new Animated.Value(showThumb ? 1 : 0)).current;
-  const bufferWidth = useRef(new Animated.Value(0)).current;
-
-  const progressPercentage = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const displayTime = isDragging
-    ? (dragPosition * duration) / 100
-    : currentTime;
+    ? (dragPercentage / 100) * duration
+    : position;
 
   const formatTime = (timeInSeconds: number) => {
-    if (!timeInSeconds || isNaN(timeInSeconds)) return '0:00';
+    if (!timeInSeconds || isNaN(timeInSeconds) || timeInSeconds < 0) return '0:00';
     const minutes = Math.floor(timeInSeconds / 60);
     const seconds = Math.floor(timeInSeconds % 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  useEffect(() => {
-    let isMounted = true;
-    const update = async () => {
-      try {
-        const pos = await getPosition();
-        const dur = await getDuration();
-        if (isMounted) {
-          setCurrentTime(pos);
-          setDuration(dur);
-        }
-      } catch (e) {
-        console.warn('Error fetching position/duration', e);
-      }
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, []);
+  const calculatePercentage = (pageX: number) => {
+    if (containerWidth <= 0) return 0;
+    const relativeX = pageX - trackPageX.current;
+    return Math.max(0, Math.min(100, (relativeX / containerWidth) * 100));
+  };
 
-  useEffect(() => {
-    if (showThumb) {
-      Animated.timing(thumbOpacity, {
-        toValue: isDragging ? 1 : 0.8,
-        duration: 150,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [isDragging, showThumb]);
+  const dragPercentageRef = useRef(dragPercentage);
+  dragPercentageRef.current = dragPercentage;
 
-  useEffect(() => {
-    if (isBuffering && duration > 0) {
-      const bufferPercentage =
-        Math.min((currentTime + 10) / duration, 1) * containerWidth;
-      Animated.timing(bufferWidth, {
-        toValue: bufferPercentage,
-        duration: 300,
-        useNativeDriver: false,
-      }).start();
-    }
-  }, [currentTime, duration, isBuffering, containerWidth]);
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !disabled && !isLoading,
+      onMoveShouldSetPanResponder: () => !disabled && !isLoading,
+      onPanResponderGrant: evt => {
+        const pct = calculatePercentage(evt.nativeEvent.pageX);
+        setIsDragging(true);
+        setDragPercentage(pct);
+        onSeekStart?.();
+      },
+      onPanResponderMove: evt => {
+        const pct = calculatePercentage(evt.nativeEvent.pageX);
+        setDragPercentage(pct);
+      },
+      onPanResponderRelease: () => {
+        const targetPct = dragPercentageRef.current;
+        const seekTime = (targetPct / 100) * duration;
+        setIsDragging(false);
+        onSeek?.(seekTime);
+        onSeekEnd?.();
+      },
+    })
+  ).current;
 
-  const panResponder = PanResponder.create({
-    onStartShouldSetPanResponder: () => !disabled && !isLoading,
-    onMoveShouldSetPanResponder: () => !disabled && !isLoading,
-    onPanResponderGrant: evt => {
-      const { locationX } = evt.nativeEvent;
-      const percentage = Math.max(
-        0,
-        Math.min(100, (locationX / containerWidth) * 100)
-      );
-      setIsDragging(true);
-      setDragPosition(percentage);
-      onSeekStart?.();
-    },
-    onPanResponderMove: evt => {
-      const { locationX } = evt.nativeEvent;
-      const percentage = Math.max(
-        0,
-        Math.min(100, (locationX / containerWidth) * 100)
-      );
-      setDragPosition(percentage);
-    },
-    onPanResponderRelease: () => {
-      const seekTime = (dragPosition / 100) * duration;
-      setIsDragging(false);
-      onSeek?.(seekTime);
-      onSeekEnd?.();
-    },
-  });
-
-  const currentProgress = isDragging ? dragPosition : progressPercentage;
+  const currentProgress = isDragging ? dragPercentage : progressPercentage;
   const progressWidth = (currentProgress / 100) * containerWidth;
-  const thumbPosition = Math.max(
-    0,
-    Math.min(containerWidth - 20, progressWidth - 10)
-  );
+  const thumbPosition = Math.max(0, Math.min(containerWidth - 12, progressWidth - 6));
 
   return (
     <MainContainer style={containerStyle}>
@@ -148,16 +103,18 @@ const AudioProgressBar = ({
         <Track
           onLayout={event => {
             const { width } = event.nativeEvent.layout;
-            setContainerWidth(width);
+            if (width > 0) setContainerWidth(width);
+            event.target?.measure?.((_x: number, _y: number, _w: number, _h: number, pageX: number) => {
+              if (pageX) trackPageX.current = pageX;
+            });
           }}
         >
-          {isBuffering && <Buffer style={{ width: bufferWidth }} />}
-          <Progress style={{ width: `${currentProgress}%` }} />
+          <Progress style={{ width: `${currentProgress}%`, backgroundColor: colors.accentPrimary }} />
           {isLoading && <LoadingIndicator />}
         </Track>
         {showThumb && !isLoading && (
           <Thumb
-            style={{ left: thumbPosition }}
+            style={{ left: thumbPosition, backgroundColor: colors.accentPrimary }}
             panHandlers={panResponder.panHandlers}
           />
         )}
@@ -174,3 +131,4 @@ const AudioProgressBar = ({
 };
 
 export default AudioProgressBar;
+

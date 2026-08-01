@@ -349,9 +349,7 @@ export function useQueue() {
         await TrackPlayer.add(resolvedTrack);
         await TrackPlayer.play();
 
-        setTimeout(() => {
-          startPlaybackTracking(resolvedTrack);
-        }, 1000);
+        startPlaybackTracking(resolvedTrack);
 
         if (track.url.startsWith('http')) {
           cacheTrack(track.url, track.headers).catch(() => { });
