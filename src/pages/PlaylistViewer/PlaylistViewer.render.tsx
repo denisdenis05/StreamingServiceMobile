@@ -15,7 +15,6 @@ import {
   getRecordingList,
   setRecordingList,
 } from '../../services/cache/CacheDatabase';
-import { cacheTrack } from '../../services/cache/AudioCacheService';
 
 function recordingListsAreEqual(
   listA: Recording[],
@@ -70,14 +69,6 @@ const PlaylistViewer = ({ navigation, route }: any) => {
 
     fetchRecordingsFromServer(1);
   }, []);
-
-  useEffect(() => {
-    if (recordings.length > 0 && token) {
-      const firstRecording = recordings[0];
-      const streamUrl = `${TEMPORARY_API_URL}Stream?id=${firstRecording.id}`;
-      cacheTrack(streamUrl, { Authorization: `Bearer ${token}` }).catch(() => { });
-    }
-  }, [recordings, token]);
 
   const fetchRecordingsFromServer = useCallback((pageNumber: number) => {
     if (pageNumber === 1) setFetched(false);

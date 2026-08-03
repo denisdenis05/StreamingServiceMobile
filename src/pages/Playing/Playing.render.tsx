@@ -56,6 +56,8 @@ const Playing = ({ navigation }: any) => {
     repeatingState,
     setRepeatingState,
     seekToPosition,
+    isShuffled,
+    toggleShuffle,
   } = useMusicQueue();
 
   const api = useApi();
@@ -167,7 +169,7 @@ const Playing = ({ navigation }: any) => {
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer>
-            <ShufflIcon height={iconSizes.lg} fill={colors.normalText} />
+            <ShufflIcon height={iconSizes.lg} fill={isShuffled ? colors.accentPrimary : colors.normalText} onPress={toggleShuffle} />
             <BackwardIcon height={iconSizes.lg} onPress={playPrevious} fill={colors.normalText} />
             {isPlaying ? (
               <PauseIcon height={iconSizes.lg} onPress={pause} fill={colors.normalText} />

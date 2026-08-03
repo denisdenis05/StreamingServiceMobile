@@ -3,13 +3,18 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 const globalCache: Record<string, any> = {};
 const subscribers: Record<string, Set<(data: any) => void>> = {};
 const activePromises: Record<string, Promise<any> | undefined> = {};
+const fetchTriggers: Record<string, Set<() => void>> = {};
+
+export const invalidateCache = (key: string) => {
+  delete globalCache[key];
+  fetchTriggers[key]?.forEach(trigger => trigger());
+};
 
 export const useData = <T,>(
     key: string,
     fetcher?: () => Promise<T>,
     initialData?: T
 ) => {
-    // Ensure key is valid
     const isValidKey = !!(key && typeof key === 'string' && key.trim().length > 0);
 
     if (isValidKey && initialData !== undefined && !(key in globalCache)) {
@@ -99,7 +104,16 @@ export const useData = <T,>(
             }
         };
 
+        // Register for invalidation so mounted components refetch when cache is cleared
+        if (!fetchTriggers[key]) fetchTriggers[key] = new Set();
+        fetchTriggers[key].add(loadData);
+
         loadData();
+
+        return () => {
+            fetchTriggers[key]?.delete(loadData);
+            if (fetchTriggers[key]?.size === 0) delete fetchTriggers[key];
+        };
     }, [key, isValidKey]);
 
     const updateData = useCallback(

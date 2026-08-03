@@ -3,19 +3,20 @@ import {
   PLACEHOLDER_ALBUM_COVER,
   TEMPORARY_API_URL,
 } from '../../constants/placeholders.tsx';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Recording } from '../../constants/types.tsx';
 import { Track } from 'react-native-track-player';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { useApi } from '../../hooks/useApi.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
-import { menuOptions } from '../../constants/navigation.tsx';
+import { menuOptions, ActionItem } from '../../constants/navigation.tsx';
+import { invalidateCache } from '../../services/DataProvider.tsx';
 import {
   getRecordingList,
   setRecordingList,
 } from '../../services/cache/CacheDatabase';
-import { cacheTrack } from '../../services/cache/AudioCacheService';
+import LibraryIcon from '../../../assets/icons/libraryIcon.tsx';
 
 function recordingListsAreEqual(
   listA: Recording[],
@@ -45,19 +46,18 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
   const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
   const [fetched, setFetched] = useState(false);
+  const [isAlbumSaved, setIsAlbumSaved] = useState(false);
   const api = useApi();
   const { token } = useAuth();
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [albumMenuVisible, setAlbumMenuVisible] = useState(false);
+  const [songMenuVisible, setSongMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
-  const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>(
-    []
-  );
+  const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>([]);
 
   useEffect(() => {
     const cachedEntry = getRecordingList(albumId, 'album');
     if (cachedEntry && cachedEntry.recordings.length > 0) {
       setRecordings(cachedEntry.recordings);
-      console.log(cachedEntry.recordings);
       setFetched(true);
     }
 
@@ -71,19 +71,13 @@ const AlbumViewer = ({ navigation, route }: any) => {
         }
         setFetched(true);
       })
-      .catch(err => {
-        console.error('Failed to fetch recordings:', err);
-        setFetched(true);
-      });
-  }, []);
+      .catch(() => setFetched(true));
 
-  useEffect(() => {
-    if (recordings.length > 0 && token) {
-      const firstRecording = recordings[0];
-      const streamUrl = `${TEMPORARY_API_URL}Stream?id=${firstRecording.id}`;
-      cacheTrack(streamUrl, { Authorization: `Bearer ${token}` }).catch(() => { });
-    }
-  }, [recordings, token]);
+    api
+      .get(`Library/albums/${albumId}/saved`)
+      .then(res => setIsAlbumSaved(res.data.isSaved))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (shouldPlayFromStart) {
@@ -130,15 +124,35 @@ const AlbumViewer = ({ navigation, route }: any) => {
     navigation.navigate('Playing', {});
   }, [recordings, token, albumId, replaceQueue, navigation]);
 
+  const handleToggleLibrary = useCallback(async () => {
+    try {
+      const res = await api.post(`Library/albums/${albumId}`);
+      const { isSaved } = res.data;
+      setIsAlbumSaved(isSaved);
+      invalidateCache('library');
+    } catch (error) {
+      console.error('Failed to toggle album in library:', error);
+    }
+  }, [api, albumId]);
+
+  const albumContextOptions = useMemo<ActionItem[]>(() => [
+    {
+      label: isAlbumSaved ? 'Remove from library' : 'Add to library',
+      icon: LibraryIcon,
+      onClick: (_nav, params) => params?.onToggleLibrary?.(),
+    },
+    ...menuOptions,
+  ], [isAlbumSaved]);
+
   const handleAlbumMorePress = useCallback((event: any) => {
     setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
-    setMenuVisible(true);
+    setAlbumMenuVisible(true);
     setSelectedRecordingIds(recordings.map(r => r.id));
   }, [recordings]);
 
   const handleSongMorePress = useCallback((event: any, recording: Recording) => {
     setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
-    setMenuVisible(true);
+    setSongMenuVisible(true);
     setSelectedRecordingIds([recording.id]);
   }, []);
 
@@ -157,20 +171,38 @@ const AlbumViewer = ({ navigation, route }: any) => {
         isLoading={!fetched}
         emptyMessage="Album temporarily unavailable, check again in a few minutes"
       />
-      {menuVisible && (
+      {albumMenuVisible && (
         <ContextMenu
-          visible={menuVisible}
-          onClose={() => setMenuVisible(false)}
+          visible={albumMenuVisible}
+          onClose={() => setAlbumMenuVisible(false)}
+          options={albumContextOptions}
+          position={menuPosition}
+          navigation={navigation}
+          params={{
+            recordingIds: selectedRecordingIds,
+            songs: recordings.filter(r => selectedRecordingIds.includes(r.id)),
+            albumId,
+            albumTitle,
+            albumCover,
+            albumArtist,
+            onToggleLibrary: handleToggleLibrary,
+          }}
+        />
+      )}
+      {songMenuVisible && (
+        <ContextMenu
+          visible={songMenuVisible}
+          onClose={() => setSongMenuVisible(false)}
           options={menuOptions}
           position={menuPosition}
           navigation={navigation}
           params={{
             recordingIds: selectedRecordingIds,
             songs: recordings.filter(r => selectedRecordingIds.includes(r.id)),
-            albumId: albumId,
-            albumTitle: albumTitle,
-            albumCover: albumCover,
-            albumArtist: albumArtist,
+            albumId,
+            albumTitle,
+            albumCover,
+            albumArtist,
           }}
         />
       )}

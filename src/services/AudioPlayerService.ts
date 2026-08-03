@@ -7,11 +7,13 @@ import TrackPlayer, {
   AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { cacheTrack, getCacheFilePath, isTrackCached } from './cache/AudioCacheService';
+import { getCacheFilePath, isTrackCached } from './cache/AudioCacheService';
 import RNFS from 'react-native-fs';
 import { RepeatingType } from '../constants/types.tsx';
 import { useApi } from '../hooks/useApi.ts';
+import { useAuth } from '../hooks/AuthContext.tsx';
 import { onNext, onPrevious } from './QueueEventEmitter';
+import { TEMPORARY_API_URL, PLACEHOLDER_ALBUM_COVER } from '../constants/placeholders.tsx';
 
 let isSetup = false;
 
@@ -150,7 +152,13 @@ export class PlaybackTracker {
 export async function setupPlayer() {
   if (isSetup) return;
 
-  await TrackPlayer.setupPlayer();
+  await TrackPlayer.setupPlayer({
+    minBuffer: 15,
+    maxBuffer: 3600,
+    backBuffer: 0,
+    playBuffer: 0.5,
+    waitForBuffer: true,
+  });
   await TrackPlayer.updateOptions({
     capabilities: [
       Capability.Play,
@@ -203,27 +211,44 @@ export async function getDuration(): Promise<number> {
   return progress.duration;
 }
 
+function fisherYates<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 export function useQueue() {
   const [queue, setQueue] = useState<Track[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [repeatingState, setRepeatingState] = useState(RepeatingType.None);
+  const [isShuffled, setIsShuffled] = useState(false);
+  const [suggestedQueueStartIndex, setSuggestedQueueStartIndex] = useState<number | null>(null);
 
   const api = useApi();
+  const { getToken } = useAuth();
 
   const isStoppingRef = useRef(false);
   const queueRef = useRef(queue);
   const currentIndexRef = useRef(currentIndex);
   const repeatingStateRef = useRef(repeatingState);
+  const isShuffledRef = useRef(isShuffled);
+  const suggestedQueueStartIndexRef = useRef(suggestedQueueStartIndex);
+  const originalQueueRef = useRef<Track[]>([]);
 
   const playbackTrackerRef = useRef<PlaybackTracker | null>(null);
-  const prefetchingRef = useRef<string | null>(null);
+  const nextTrackQueuedRef = useRef(false);
 
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] : null;
   queueRef.current = queue;
   currentIndexRef.current = currentIndex;
   repeatingStateRef.current = repeatingState;
+  isShuffledRef.current = isShuffled;
+  suggestedQueueStartIndexRef.current = suggestedQueueStartIndex;
 
   const startPlaybackTracking = async (track: Track) => {
     try {
@@ -260,53 +285,28 @@ export function useQueue() {
   const prefetchTrackAtIndex = useCallback(
     async (index: number) => {
       const currentQueue = queueRef.current;
-      if (index < 0 || index >= currentQueue.length) {
-        return;
-      }
+      if (index < 0 || index >= currentQueue.length) return;
 
       const track = currentQueue[index];
-      if (!track.url || !track.url.startsWith('http')) {
-        return;
-      }
-
-      if (prefetchingRef.current === track.id) {
-        return;
-      }
+      if (!track.url || !track.url.startsWith('http')) return;
 
       const alreadyCached = await isTrackCached(track.url);
-      if (alreadyCached) {
-        const localPath = getCacheFilePath(track.url);
-        try {
-          const stat = await RNFS.stat(localPath);
-          if (stat.size > 0) {
-            setQueue(previousQueue =>
-              previousQueue.map((queueTrack, queueIndex) =>
-                queueIndex === index
-                  ? { ...queueTrack, url: `file://${localPath}` }
-                  : queueTrack
-              )
-            );
-            return;
-          }
-        } catch {
-          // fall through to download
-        }
-      }
+      if (!alreadyCached) return;
 
-      prefetchingRef.current = track.id;
+      const localPath = getCacheFilePath(track.url);
       try {
-        const localPath = await cacheTrack(track.url, track.headers);
-        setQueue(previousQueue =>
-          previousQueue.map((queueTrack, queueIndex) =>
-            queueIndex === index
-              ? { ...queueTrack, url: `file://${localPath}` }
-              : queueTrack
-          )
-        );
-      } catch (error) {
-        console.error(`Failed to prefetch track ${track.id}:`, error);
-      } finally {
-        prefetchingRef.current = null;
+        const stat = await RNFS.stat(localPath);
+        if (stat.size > 0) {
+          setQueue(previousQueue =>
+            previousQueue.map((queueTrack, queueIndex) =>
+              queueIndex === index
+                ? { ...queueTrack, url: `file://${localPath}` }
+                : queueTrack
+            )
+          );
+        }
+      } catch {
+        // cached file is gone, stream instead
       }
     },
     []
@@ -327,6 +327,7 @@ export function useQueue() {
           playbackTrackerRef.current = null;
         }
 
+        nextTrackQueuedRef.current = false;
         isStoppingRef.current = true;
         await setupPlayer();
         await TrackPlayer.reset();
@@ -350,23 +351,53 @@ export function useQueue() {
         await TrackPlayer.play();
 
         startPlaybackTracking(resolvedTrack);
-
-        if (track.url.startsWith('http')) {
-          cacheTrack(track.url, track.headers).catch(() => { });
-        }
-
-        const nextIndex = index + 1;
-        if (nextIndex < currentQueue.length) {
-          prefetchTrackAtIndex(nextIndex);
-        }
       } catch (error) {
         console.error('Error playing track:', error);
       } finally {
         setIsLoading(false);
       }
     },
-    [api, prefetchTrackAtIndex]
+    [api]
   );
+
+  const fetchAndPlaySuggested = useCallback(async () => {
+    try {
+      const response = await api.get('Metadata/get-suggested-recordings?count=20');
+      const recordings: any[] = response.data;
+      const token = await getToken();
+
+      const suggestedTracks: Track[] = recordings.map(r => ({
+        id: r.id,
+        url: `${TEMPORARY_API_URL}Stream?id=${r.id}`,
+        title: r.title,
+        artist: r.artistName,
+        album: r.releaseTitle,
+        releaseId: r.releaseId,
+        mediaId: r.id,
+        artwork: r.cover || PLACEHOLDER_ALBUM_COVER,
+        headers: { Authorization: `Bearer ${token}` },
+        isLiked: r.isLiked,
+      }));
+
+      const currentQueue = queueRef.current;
+      const suggestedStart = currentQueue.length;
+      const newQueue = [...currentQueue, ...suggestedTracks];
+
+      // Update ref before state so playTrackAtIndex sees the new tracks immediately
+      queueRef.current = newQueue;
+      setQueue(newQueue);
+      setSuggestedQueueStartIndex(suggestedStart);
+
+      await playTrackAtIndex(suggestedStart);
+    } catch {
+      if (playbackTrackerRef.current) {
+        await playbackTrackerRef.current.stop();
+        playbackTrackerRef.current = null;
+      }
+      setIsPlaying(false);
+      await TrackPlayer.reset();
+    }
+  }, [api, getToken, playTrackAtIndex]);
 
   const playNext = useCallback(async () => {
     const currentQueue = queueRef.current;
@@ -380,9 +411,24 @@ export function useQueue() {
 
     const nextIndex = index + 1;
     if (nextIndex < currentQueue.length) {
-      await playTrackAtIndex(nextIndex);
+      if (nextTrackQueuedRef.current) {
+        if (playbackTrackerRef.current) {
+          await playbackTrackerRef.current.stop();
+          playbackTrackerRef.current = null;
+        }
+        isStoppingRef.current = true;
+        await TrackPlayer.skipToNext();
+        isStoppingRef.current = false;
+        setCurrentIndex(nextIndex);
+        nextTrackQueuedRef.current = false;
+        startPlaybackTracking(currentQueue[nextIndex]);
+      } else {
+        await playTrackAtIndex(nextIndex);
+      }
     } else if (repeating === RepeatingType.Album) {
       await playTrackAtIndex(0);
+    } else if (suggestedQueueStartIndexRef.current === null) {
+      await fetchAndPlaySuggested();
     } else {
       if (playbackTrackerRef.current) {
         await playbackTrackerRef.current.stop();
@@ -391,7 +437,7 @@ export function useQueue() {
       setIsPlaying(false);
       await TrackPlayer.reset();
     }
-  }, [playTrackAtIndex]);
+  }, [playTrackAtIndex, fetchAndPlaySuggested]);
 
   const playPrevious = useCallback(async () => {
     const progress = await TrackPlayer.getProgress();
@@ -413,6 +459,34 @@ export function useQueue() {
       }
     }
   }, [playTrackAtIndex]);
+
+  useEffect(() => {
+    if (!isPlaying || nextTrackQueuedRef.current) return;
+
+    const nextIndex = currentIndex + 1;
+    if (nextIndex >= queueRef.current.length) return;
+
+    const interval = setInterval(async () => {
+      if (nextTrackQueuedRef.current) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const progress = await TrackPlayer.getProgress();
+        if (progress.buffered < 3) return;
+        clearInterval(interval);
+        const nextTrack = queueRef.current[nextIndex];
+        if (!nextTrack) return;
+        const resolved = await resolveTrackUrl(nextTrack);
+        await TrackPlayer.add(resolved);
+        nextTrackQueuedRef.current = true;
+      } catch {
+        // next track pre-queue failed; it will stream normally on skip
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isPlaying, currentIndex]);
 
   const playNextRef = useRef(playNext);
   const playPreviousRef = useRef(playPrevious);
@@ -436,7 +510,7 @@ export function useQueue() {
   const isAdvancingRef = useRef(false);
 
   useTrackPlayerEvents(
-    [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek],
+    [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek, Event.PlaybackActiveTrackChanged],
     async event => {
       if (event.type === Event.PlaybackState) {
         const wasPlaying = isPlaying;
@@ -481,6 +555,14 @@ export function useQueue() {
             event.position
           );
         }
+      } else if (event.type === Event.PlaybackActiveTrackChanged) {
+        if (isStoppingRef.current || !nextTrackQueuedRef.current) return;
+        const newIndex = currentIndexRef.current + 1;
+        if (newIndex < queueRef.current.length) {
+          setCurrentIndex(newIndex);
+          nextTrackQueuedRef.current = false;
+          await startPlaybackTracking(queueRef.current[newIndex]);
+        }
       }
     }
   );
@@ -494,23 +576,9 @@ export function useQueue() {
     (tracks: Track[]) => {
       setQueue(tracks);
       setCurrentIndex(-1);
-
-      if (tracks.length > 0) {
-        const firstTrack = tracks[0];
-        if (firstTrack.url && firstTrack.url.startsWith('http')) {
-          cacheTrack(firstTrack.url, firstTrack.headers)
-            .then(localPath => {
-              setQueue(previousQueue =>
-                previousQueue.map((queueTrack, queueIndex) =>
-                  queueIndex === 0
-                    ? { ...queueTrack, url: `file://${localPath}` }
-                    : queueTrack
-                )
-              );
-            })
-            .catch(() => { });
-        }
-      }
+      setIsShuffled(false);
+      setSuggestedQueueStartIndex(null);
+      originalQueueRef.current = [];
     },
     []
   );
@@ -523,6 +591,9 @@ export function useQueue() {
 
     setQueue([]);
     setCurrentIndex(-1);
+    setIsShuffled(false);
+    setSuggestedQueueStartIndex(null);
+    originalQueueRef.current = [];
     await TrackPlayer.stop();
     await TrackPlayer.reset();
   }, []);
@@ -580,12 +651,52 @@ export function useQueue() {
     await TrackPlayer.seekTo(position);
   }, []);
 
+  const toggleShuffle = useCallback(() => {
+    const currentQueue = queueRef.current;
+    const currentIdx = currentIndexRef.current >= 0 ? currentIndexRef.current : 0;
+
+    if (!isShuffledRef.current) {
+      if (currentQueue.length <= 1) {
+        setIsShuffled(true);
+        return;
+      }
+
+      originalQueueRef.current = [...currentQueue];
+
+      const currentTrack = currentQueue[currentIdx];
+      const others = currentQueue.filter((_, i) => i !== currentIdx);
+      const shuffledOthers = fisherYates(others);
+
+      // Place the playing track first so playback continues uninterrupted
+      setQueue([currentTrack, ...shuffledOthers]);
+      setCurrentIndex(0);
+      // Shuffle boundary resets — suggested mode no longer meaningful after reshuffle
+      setSuggestedQueueStartIndex(null);
+      setIsShuffled(true);
+    } else {
+      const playingTrack = queueRef.current[currentIndexRef.current];
+      const original = originalQueueRef.current;
+
+      if (original.length > 0 && playingTrack) {
+        const restoredIdx = original.findIndex(t => t.id === playingTrack.id);
+        setQueue(original);
+        setCurrentIndex(restoredIdx >= 0 ? restoredIdx : 0);
+      }
+
+      setIsShuffled(false);
+      setSuggestedQueueStartIndex(null);
+      originalQueueRef.current = [];
+    }
+  }, []);
+
   return {
     queue,
     currentTrack,
     currentIndex,
     isPlaying,
     isLoading,
+    isShuffled,
+    suggestedQueueStartIndex,
 
     addToQueue,
     replaceQueue,
@@ -597,6 +708,7 @@ export function useQueue() {
     playPrevious,
     playTrackAtIndex,
     seekToPosition,
+    toggleShuffle,
     repeatingState,
     setRepeatingState,
     prefetchTrackAtIndex,
