@@ -1,7 +1,5 @@
 import { ReactNode } from 'react';
 import {
-  Image,
-  ImageProps,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -123,9 +121,26 @@ export const HeaderContainer = ({ children }: Props) => {
   return <View style={styles.header}>{children}</View>;
 };
 
-export const AlbumCover = ({ source }: ImageProps) => {
+interface AlbumCoverProps {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+  source?: any;
+}
+
+export const AlbumCover = ({ releaseId, cover, smallCover, verySmallCover, source }: AlbumCoverProps) => {
   return (
-    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+    <CachedImage
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="full"
+      source={source}
+      style={styles.albumCover}
+      resizeMode="cover"
+    />
   );
 };
 

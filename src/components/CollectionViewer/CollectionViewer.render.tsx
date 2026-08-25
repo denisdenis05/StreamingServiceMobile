@@ -17,7 +17,6 @@ import {
 } from './CollectionViewer.style.tsx';
 import ArrowLeftIcon from '../../../assets/icons/arrowLeftIcon.tsx';
 import PlayIcon from '../../../assets/icons/playIcon.tsx';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import PlaylistSong from '../PlaylistSong';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import DownloadIcon from '../../../assets/icons/downloadIcon.tsx';
@@ -31,6 +30,9 @@ interface CollectionViewerProps {
   title: string;
   subtitle: string;
   cover: string;
+  releaseId?: string;
+  smallCover?: string;
+  verySmallCover?: string;
   songs: Recording[];
   onPlay: () => void;
   onMorePress?: (event: any) => void;
@@ -46,6 +48,9 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   title,
   subtitle,
   cover,
+  releaseId,
+  smallCover,
+  verySmallCover,
   songs,
   onPlay,
   onMorePress,
@@ -78,7 +83,12 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
         <HeaderContainer>
           <ArrowLeftIcon height={iconSizes.md} onPress={navigation.goBack} fill={colors.normalText} />
         </HeaderContainer>
-        <AlbumCover source={{ uri: cover || PLACEHOLDER_ALBUM_COVER }} />
+        <AlbumCover
+            releaseId={releaseId}
+            cover={cover}
+            smallCover={smallCover}
+            verySmallCover={verySmallCover}
+          />
         <SongDetailsContainer>
           <SongDescriptorContainer>
             <SongTitle>{title}</SongTitle>
@@ -106,6 +116,9 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
                 albumId={''}
                 albumTitle={recording.releaseTitle}
                 albumCover={recording.cover}
+                releaseId={recording.releaseId}
+                smallCover={recording.smallCover}
+                verySmallCover={recording.verySmallCover}
                 playAction={() => onSongPlay(index)}
                 onMorePress={(event: any) => onSongMorePress(event, recording)}
               />

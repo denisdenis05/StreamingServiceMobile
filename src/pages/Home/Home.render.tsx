@@ -13,7 +13,6 @@ import {
   View,
 } from 'react-native';
 import {
-  PLACEHOLDER_ALBUM_COVER,
   PLACEHOLDER_PROFILE_PIC,
   PLACEHOLDER_USERNAME,
 } from '../../constants/placeholders.tsx';
@@ -110,6 +109,8 @@ const RecentQuickGrid = ({ navigation }: { navigation: any }) => {
         albumTitle: item.title,
         albumArtist: item.artistName,
         albumCover: item.cover,
+        albumSmallCover: item.smallCover,
+        albumVerySmallCover: item.verySmallCover,
       });
     }
   };
@@ -123,7 +124,11 @@ const RecentQuickGrid = ({ navigation }: { navigation: any }) => {
           onPress={() => handlePress(item)}
         >
           <CachedImage
-            source={{ uri: item.smallCover || item.cover || PLACEHOLDER_ALBUM_COVER }}
+            releaseId={item.id}
+            cover={item.cover}
+            smallCover={item.smallCover}
+            verySmallCover={item.verySmallCover}
+            tier="small"
             style={quickCardStyles.cover}
             resizeMode="cover"
           />

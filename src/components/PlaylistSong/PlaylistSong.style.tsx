@@ -13,7 +13,6 @@ import { colors, typography } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
 import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 import CachedImage from '../CachedImage.tsx';
-import { ImageProps } from 'react-native';
 
 interface Props extends React.ComponentProps<typeof View> {
   children: ReactNode;
@@ -94,9 +93,24 @@ export const MusicCard = ({ children, onPress }: Props) => {
   );
 };
 
-export const AlbumCover = ({ source }: ImageProps) => {
+interface AlbumCoverProps {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+}
+
+export const AlbumCover = ({ releaseId, cover, smallCover, verySmallCover }: AlbumCoverProps) => {
   return (
-    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+    <CachedImage
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="verySmall"
+      style={styles.albumCover}
+      resizeMode="cover"
+    />
   );
 };
 

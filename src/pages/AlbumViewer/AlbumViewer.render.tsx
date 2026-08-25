@@ -40,7 +40,7 @@ function recordingListsAreEqual(
 }
 
 const AlbumViewer = ({ navigation, route }: any) => {
-  const { albumId, albumTitle, albumArtist, albumCover } = route.params;
+  const { albumId, albumTitle, albumArtist, albumCover, albumSmallCover, albumVerySmallCover } = route.params;
   const [startIndex, setStartIndex] = useState(0);
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
@@ -163,6 +163,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
         title={albumTitle}
         subtitle={albumArtist}
         cover={albumCover}
+        releaseId={albumId}
+        smallCover={albumSmallCover}
+        verySmallCover={albumVerySmallCover}
         songs={recordings}
         onPlay={handlePlayAlbum}
         onMorePress={handleAlbumMorePress}

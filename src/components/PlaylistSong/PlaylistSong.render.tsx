@@ -9,7 +9,6 @@ import {
   TextContainer,
 } from './PlaylistSong.style.tsx';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 
 const PlaylistSong = React.memo(({
@@ -18,6 +17,9 @@ const PlaylistSong = React.memo(({
   playAction,
   onMorePress,
   albumCover,
+  releaseId,
+  smallCover,
+  verySmallCover,
 }: {
   navigation: any;
   songId: any;
@@ -26,6 +28,9 @@ const PlaylistSong = React.memo(({
   albumId: any;
   albumTitle: any;
   albumCover: string;
+  releaseId?: string;
+  smallCover?: string;
+  verySmallCover?: string;
   playAction: any;
   onMorePress: (event: any) => void;
 }) => {
@@ -33,7 +38,12 @@ const PlaylistSong = React.memo(({
     <MainContainer>
       <CardContainer>
         <MusicCard onPress={playAction}>
-          <AlbumCover source={{ uri: albumCover || PLACEHOLDER_ALBUM_COVER }} />
+          <AlbumCover
+            releaseId={releaseId}
+            cover={albumCover}
+            smallCover={smallCover}
+            verySmallCover={verySmallCover}
+          />
           <TextContainer>
             <CardTitle numberOfLines={1}>{songTitle}</CardTitle>
             <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>

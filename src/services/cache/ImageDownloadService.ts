@@ -1,204 +1,148 @@
 import RNFS from 'react-native-fs';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders';
 import { getImageEntry, setImageEntry } from './CacheDatabase';
-import { CachedImageEntry } from './CacheModels';
+
+export type CoverTier = 'verySmall' | 'small' | 'full';
+
+export interface CoverUrls {
+    cover?: string;
+    smallCover?: string;
+    verySmallCover?: string;
+}
 
 const IMAGE_CACHE_DIRECTORY = `${RNFS.CachesDirectoryPath}/image-cache`;
-
 let cacheDirectoryReady = false;
 
 async function ensureCacheDirectory(): Promise<void> {
-    if (cacheDirectoryReady) {
-        return;
-    }
+    if (cacheDirectoryReady) return;
     const exists = await RNFS.exists(IMAGE_CACHE_DIRECTORY);
-    if (!exists) {
-        await RNFS.mkdir(IMAGE_CACHE_DIRECTORY);
-    }
+    if (!exists) await RNFS.mkdir(IMAGE_CACHE_DIRECTORY);
     cacheDirectoryReady = true;
 }
 
-function buildLocalFileName(releaseId: string, suffix: string): string {
-    return `${releaseId}_${suffix}`;
-}
-
 function extractExtensionFromUrl(url: string): string {
-    const extensionMatch = url.match(/\.([0-9a-z]+)(?:[?#]|$)/i);
-    if (extensionMatch) {
-        return extensionMatch[1];
-    }
-    return 'jpg';
+    const match = url.match(/\.([0-9a-z]+)(?:[?#]|$)/i);
+    return match ? match[1] : 'jpg';
 }
 
-async function downloadToFile(
-    sourceUrl: string,
-    destinationPath: string
-): Promise<boolean> {
-    const temporaryPath = `${destinationPath}_downloading`;
+async function downloadToFile(sourceUrl: string, destinationPath: string): Promise<boolean> {
+    const tempPath = `${destinationPath}_downloading`;
     try {
         const result = await RNFS.downloadFile({
             fromUrl: sourceUrl,
-            toFile: temporaryPath,
+            toFile: tempPath,
             connectionTimeout: 30000,
             readTimeout: 30000,
         }).promise;
-
         if (result.statusCode === 200) {
-            await RNFS.moveFile(temporaryPath, destinationPath);
+            await RNFS.moveFile(tempPath, destinationPath);
             return true;
         }
-
-        await RNFS.unlink(temporaryPath).catch(() => { });
+        await RNFS.unlink(tempPath).catch(() => {});
         return false;
     } catch {
-        await RNFS.unlink(temporaryPath).catch(() => { });
+        await RNFS.unlink(tempPath).catch(() => {});
         return false;
     }
 }
 
-export function getLocalImagePath(releaseId: string): string | null {
-    if (!releaseId) {
-        return null;
-    }
+// In-flight dedup: key = `${releaseId}:${tier}`
+const inFlight = new Map<string, Promise<string>>();
+
+function storedPathForTier(
+    entry: ReturnType<typeof getImageEntry>,
+    tier: CoverTier,
+): string {
+    if (!entry) return '';
+    if (tier === 'full') return entry.localPath || '';
+    if (tier === 'small') return entry.smallCoverLocalPath || '';
+    return entry.verySmallCoverLocalPath || '';
+}
+
+function urlForTier(tier: CoverTier, urls: CoverUrls): string | undefined {
+    if (tier === 'full') return urls.cover;
+    if (tier === 'small') return urls.smallCover;
+    return urls.verySmallCover;
+}
+
+export function getLocalPathForTier(releaseId: string, tier: CoverTier): string | null {
+    if (!releaseId) return null;
     const entry = getImageEntry(releaseId);
-    if (!entry || !entry.localPath) {
-        return null;
-    }
-    return `file://${entry.localPath}`;
+    const path = storedPathForTier(entry, tier);
+    return path ? `file://${path}` : null;
 }
 
-export function getVerySmallCoverPath(releaseId: string): string | null {
-    if (!releaseId) {
-        return null;
-    }
+export function getBestAvailableLocalPath(releaseId: string): string | null {
+    if (!releaseId) return null;
     const entry = getImageEntry(releaseId);
-    if (!entry || !entry.verySmallCoverLocalPath) {
-        return null;
-    }
-    return `file://${entry.verySmallCoverLocalPath}`;
+    if (!entry) return null;
+    if (entry.localPath) return `file://${entry.localPath}`;
+    if (entry.smallCoverLocalPath) return `file://${entry.smallCoverLocalPath}`;
+    if (entry.verySmallCoverLocalPath) return `file://${entry.verySmallCoverLocalPath}`;
+    return null;
 }
 
-function shouldRecache(
-    existingEntry: CachedImageEntry,
-    newCoverUrl: string
-): boolean {
-    return existingEntry.coverUrl !== newCoverUrl;
-}
-
-export async function getOrDownloadImage(
+async function _downloadForTier(
     releaseId: string,
-    coverUrl: string,
-    verySmallCoverUrl?: string
+    tier: CoverTier,
+    urls: CoverUrls,
 ): Promise<string> {
-    if (!releaseId || !coverUrl || coverUrl === PLACEHOLDER_ALBUM_COVER) {
-        return coverUrl || PLACEHOLDER_ALBUM_COVER;
-    }
-
-    const existingEntry = getImageEntry(releaseId);
-
-    if (existingEntry && !shouldRecache(existingEntry, coverUrl)) {
-        if (existingEntry.localPath) {
-            return `file://${existingEntry.localPath}`;
-        }
-    }
+    const url = urlForTier(tier, urls);
+    if (!url || url === PLACEHOLDER_ALBUM_COVER) return url || PLACEHOLDER_ALBUM_COVER;
 
     await ensureCacheDirectory();
+    const ext = extractExtensionFromUrl(url);
+    const localPath = `${IMAGE_CACHE_DIRECTORY}/${releaseId}_${tier}.${ext}`;
 
-    let verySmallCoverLocalPath = existingEntry?.verySmallCoverLocalPath || '';
-
-    if (
-        verySmallCoverUrl &&
-        verySmallCoverUrl !== PLACEHOLDER_ALBUM_COVER &&
-        !verySmallCoverLocalPath
-    ) {
-        const verySmallExtension = extractExtensionFromUrl(verySmallCoverUrl);
-        const verySmallFileName = buildLocalFileName(releaseId, 'verysmall');
-        const verySmallPath = `${IMAGE_CACHE_DIRECTORY}/${verySmallFileName}.${verySmallExtension}`;
-
-        const verySmallDownloaded = await downloadToFile(
-            verySmallCoverUrl,
-            verySmallPath
-        );
-        if (verySmallDownloaded) {
-            verySmallCoverLocalPath = verySmallPath;
-
-            setImageEntry(releaseId, {
-                releaseId,
-                coverUrl,
-                localPath: '',
-                verySmallCoverLocalPath,
-                downloadedAt: Date.now(),
-            });
-        }
-    }
-
-    const fullExtension = extractExtensionFromUrl(coverUrl);
-    const fullFileName = buildLocalFileName(releaseId, 'full');
-    const fullPath = `${IMAGE_CACHE_DIRECTORY}/${fullFileName}.${fullExtension}`;
-
-    const fullDownloaded = await downloadToFile(coverUrl, fullPath);
-
-    if (fullDownloaded) {
-        setImageEntry(releaseId, {
-            releaseId,
-            coverUrl,
-            localPath: fullPath,
-            verySmallCoverLocalPath,
-            downloadedAt: Date.now(),
-        });
-        return `file://${fullPath}`;
-    }
-
-    if (verySmallCoverLocalPath) {
-        return `file://${verySmallCoverLocalPath}`;
-    }
-
-    return coverUrl;
-}
-
-export async function downloadVerySmallCoverOnly(
-    releaseId: string,
-    coverUrl: string,
-    verySmallCoverUrl: string
-): Promise<string> {
-    if (
-        !verySmallCoverUrl ||
-        verySmallCoverUrl === PLACEHOLDER_ALBUM_COVER
-    ) {
-        return verySmallCoverUrl || PLACEHOLDER_ALBUM_COVER;
-    }
-
-    const existingEntry = getImageEntry(releaseId);
-    if (existingEntry?.verySmallCoverLocalPath) {
-        return `file://${existingEntry.verySmallCoverLocalPath}`;
-    }
-
-    await ensureCacheDirectory();
-
-    const extension = extractExtensionFromUrl(verySmallCoverUrl);
-    const fileName = buildLocalFileName(releaseId, 'verysmall');
-    const localPath = `${IMAGE_CACHE_DIRECTORY}/${fileName}.${extension}`;
-
-    const downloaded = await downloadToFile(verySmallCoverUrl, localPath);
-
+    const downloaded = await downloadToFile(url, localPath);
     if (downloaded) {
+        const existing = getImageEntry(releaseId);
         setImageEntry(releaseId, {
             releaseId,
-            coverUrl,
-            localPath: existingEntry?.localPath || '',
-            verySmallCoverLocalPath: localPath,
+            coverUrl: urls.cover || existing?.coverUrl || url,
+            localPath: tier === 'full' ? localPath : (existing?.localPath || ''),
+            smallCoverLocalPath: tier === 'small' ? localPath : (existing?.smallCoverLocalPath || ''),
+            verySmallCoverLocalPath: tier === 'verySmall' ? localPath : (existing?.verySmallCoverLocalPath || ''),
             downloadedAt: Date.now(),
         });
         return `file://${localPath}`;
     }
+    return url;
+}
 
-    return verySmallCoverUrl;
+export async function getOrDownloadForTier(
+    releaseId: string,
+    tier: CoverTier,
+    urls: CoverUrls,
+): Promise<string> {
+    if (!releaseId) return urlForTier(tier, urls) || PLACEHOLDER_ALBUM_COVER;
+
+    const existing = getImageEntry(releaseId);
+    if (existing && urls.cover && existing.coverUrl && existing.coverUrl !== urls.cover) {
+        // Cover URL changed — invalidate all tiers
+        setImageEntry(releaseId, {
+            ...existing,
+            coverUrl: urls.cover,
+            localPath: '',
+            smallCoverLocalPath: '',
+            verySmallCoverLocalPath: '',
+        });
+    } else {
+        const cached = getLocalPathForTier(releaseId, tier);
+        if (cached) return cached;
+    }
+
+    const key = `${releaseId}:${tier}`;
+    const inflight = inFlight.get(key);
+    if (inflight) return inflight;
+
+    const promise = _downloadForTier(releaseId, tier, urls).finally(() => inFlight.delete(key));
+    inFlight.set(key, promise);
+    return promise;
 }
 
 export async function clearImageCache(): Promise<void> {
     const exists = await RNFS.exists(IMAGE_CACHE_DIRECTORY);
-    if (exists) {
-        await RNFS.unlink(IMAGE_CACHE_DIRECTORY);
-    }
+    if (exists) await RNFS.unlink(IMAGE_CACHE_DIRECTORY);
     cacheDirectoryReady = false;
 }

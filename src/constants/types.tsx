@@ -5,6 +5,7 @@ export interface Recording {
   releaseId?: string;
   releaseTitle: string;
   cover: string;
+  smallCover?: string;
   verySmallCover?: string;
   isLiked?: boolean;
 }

@@ -160,6 +160,8 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       albumTitle: album.title,
       albumArtist: album.artistName,
       albumCover: album.cover,
+      albumSmallCover: album.smallCover,
+      albumVerySmallCover: album.verySmallCover,
     });
   }, [navigation]);
 

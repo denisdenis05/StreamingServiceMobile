@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PanResponder, Animated, Dimensions } from 'react-native';
+import { PanResponder, Dimensions } from 'react-native';
 import { useProgress } from 'react-native-track-player';
 import { colors } from '../../constants/styling.tsx';
 import {
   MainContainer,
   ProgressContainer,
   Track,
-  Buffer,
   Progress,
   LoadingIndicator,
   Thumb,
@@ -46,11 +45,38 @@ const AudioProgressBar = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragPercentage, setDragPercentage] = useState(0);
   const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 60);
-  const trackPageX = useRef(0);
+  const [postSeekPosition, setPostSeekPosition] = useState<number | null>(null);
+
+  // Refs so PanResponder callbacks (created once) always read current values
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
+  const containerWidthRef = useRef(containerWidth);
+  containerWidthRef.current = containerWidth;
+  const dragPercentageRef = useRef(dragPercentage);
+  dragPercentageRef.current = dragPercentage;
+  const isLoadingRef = useRef(isLoading);
+  isLoadingRef.current = isLoading;
+  const disabledRef = useRef(disabled);
+  disabledRef.current = disabled;
+  const onSeekRef = useRef(onSeek);
+  onSeekRef.current = onSeek;
+  const onSeekStartRef = useRef(onSeekStart);
+  onSeekStartRef.current = onSeekStart;
+  const onSeekEndRef = useRef(onSeekEnd);
+  onSeekEndRef.current = onSeekEnd;
+
+  // Clear postSeekPosition once the player position catches up
+  useEffect(() => {
+    if (postSeekPosition !== null && Math.abs(position - postSeekPosition) < 2) {
+      setPostSeekPosition(null);
+    }
+  }, [position, postSeekPosition]);
 
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
   const displayTime = isDragging
     ? (dragPercentage / 100) * duration
+    : postSeekPosition !== null
+    ? postSeekPosition
     : position;
 
   const formatTime = (timeInSeconds: number) => {
@@ -60,35 +86,35 @@ const AudioProgressBar = ({
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
-  const calculatePercentage = (pageX: number) => {
-    if (containerWidth <= 0) return 0;
-    const relativeX = pageX - trackPageX.current;
-    return Math.max(0, Math.min(100, (relativeX / containerWidth) * 100));
+  // Uses locationX (relative to TouchArea, which starts at left: 0 of the track)
+  // so no pageX offset calculation is needed
+  const calculatePercentage = (locationX: number) => {
+    const width = containerWidthRef.current;
+    if (width <= 0) return 0;
+    return Math.max(0, Math.min(100, (locationX / width) * 100));
   };
-
-  const dragPercentageRef = useRef(dragPercentage);
-  dragPercentageRef.current = dragPercentage;
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !disabled && !isLoading,
-      onMoveShouldSetPanResponder: () => !disabled && !isLoading,
+      onStartShouldSetPanResponder: () => !disabledRef.current && !isLoadingRef.current,
+      onMoveShouldSetPanResponder: () => !disabledRef.current && !isLoadingRef.current,
       onPanResponderGrant: evt => {
-        const pct = calculatePercentage(evt.nativeEvent.pageX);
+        const pct = calculatePercentage(evt.nativeEvent.locationX);
         setIsDragging(true);
         setDragPercentage(pct);
-        onSeekStart?.();
+        onSeekStartRef.current?.();
       },
       onPanResponderMove: evt => {
-        const pct = calculatePercentage(evt.nativeEvent.pageX);
+        const pct = calculatePercentage(evt.nativeEvent.locationX);
         setDragPercentage(pct);
       },
       onPanResponderRelease: () => {
         const targetPct = dragPercentageRef.current;
-        const seekTime = (targetPct / 100) * duration;
+        const seekTime = (targetPct / 100) * durationRef.current;
         setIsDragging(false);
-        onSeek?.(seekTime);
-        onSeekEnd?.();
+        setPostSeekPosition(seekTime);
+        onSeekRef.current?.(seekTime);
+        onSeekEndRef.current?.();
       },
     })
   ).current;
@@ -104,20 +130,15 @@ const AudioProgressBar = ({
           onLayout={event => {
             const { width } = event.nativeEvent.layout;
             if (width > 0) setContainerWidth(width);
-            event.target?.measure?.((_x: number, _y: number, _w: number, _h: number, pageX: number) => {
-              if (pageX) trackPageX.current = pageX;
-            });
           }}
         >
           <Progress style={{ width: `${currentProgress}%`, backgroundColor: colors.accentPrimary }} />
           {isLoading && <LoadingIndicator />}
         </Track>
         {showThumb && !isLoading && (
-          <Thumb
-            style={{ left: thumbPosition, backgroundColor: colors.accentPrimary }}
-            panHandlers={panResponder.panHandlers}
-          />
+          <Thumb style={{ left: thumbPosition, backgroundColor: colors.accentPrimary }} />
         )}
+        {/* Thumb is purely visual; all gesture handling goes through TouchArea */}
         <TouchArea panHandlers={panResponder.panHandlers} />
       </ProgressContainer>
       {showTimeLabels && (
@@ -131,4 +152,3 @@ const AudioProgressBar = ({
 };
 
 export default AudioProgressBar;
-

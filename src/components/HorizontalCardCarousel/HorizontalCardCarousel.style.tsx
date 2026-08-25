@@ -1,7 +1,6 @@
 import {
   Animated,
   GestureResponderEvent,
-  ImageProps,
   Pressable,
   StyleProp,
   StyleSheet,
@@ -90,8 +89,25 @@ export const MusicCard = ({ children, onPress }: Props) => {
   );
 };
 
-export const CardImage = ({ source }: ImageProps) => {
-  return <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />;
+interface CardImageProps {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+}
+
+export const CardImage = ({ releaseId, cover, smallCover, verySmallCover }: CardImageProps) => {
+  return (
+    <CachedImage
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="small"
+      style={styles.cardImage}
+      resizeMode="cover"
+    />
+  );
 };
 
 export const CardTitle = ({ children }: Props) => {

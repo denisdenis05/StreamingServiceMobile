@@ -9,7 +9,6 @@ import {
   cardImageSize,
 } from './HorizontalCardCarousel.style.tsx';
 import SectionTitle from '../SectionTitle';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
 import { View } from 'react-native';
 import { typography } from '../../constants/styling.tsx';
@@ -45,6 +44,8 @@ const HorizontalCardCarousel = ({
         albumTitle: card.title,
         albumArtist: card.artistName,
         albumCover: card.cover,
+        albumSmallCover: card.smallCover,
+        albumVerySmallCover: card.verySmallCover,
       });
     }
   };
@@ -59,7 +60,10 @@ const HorizontalCardCarousel = ({
             onPress={() => handleCardClick(card)}
           >
             <CardImage
-              source={{ uri: card.smallCover || PLACEHOLDER_ALBUM_COVER }}
+              releaseId={card.id}
+              cover={card.cover}
+              smallCover={card.smallCover}
+              verySmallCover={card.verySmallCover}
             />
             <CardTitle>{card.title}</CardTitle>
             <CardAuthor>{card.artistName}</CardAuthor>

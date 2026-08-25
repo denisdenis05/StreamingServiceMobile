@@ -510,7 +510,7 @@ export function useQueue() {
   const isAdvancingRef = useRef(false);
 
   useTrackPlayerEvents(
-    [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek, Event.PlaybackActiveTrackChanged],
+    [Event.PlaybackState, Event.PlaybackQueueEnded, Event.RemoteSeek, Event.PlaybackActiveTrackChanged, Event.PlaybackError],
     async event => {
       if (event.type === Event.PlaybackState) {
         const wasPlaying = isPlaying;
@@ -562,6 +562,18 @@ export function useQueue() {
           setCurrentIndex(newIndex);
           nextTrackQueuedRef.current = false;
           await startPlaybackTracking(queueRef.current[newIndex]);
+        }
+      } else if (event.type === Event.PlaybackError) {
+        if (isAdvancingRef.current || isStoppingRef.current) return;
+        isAdvancingRef.current = true;
+        try {
+          if (playbackTrackerRef.current) {
+            await playbackTrackerRef.current.stop();
+            playbackTrackerRef.current = null;
+          }
+          await playNextRef.current();
+        } finally {
+          isAdvancingRef.current = false;
         }
       }
     }
