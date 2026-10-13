@@ -54,13 +54,15 @@ After the user requested continuation, the same build command was retried. The w
 
 RNTP remains the selected runtime. Its audio service, playback-service registration and UI hooks have not been switched. The new package is available for integration, but no new audio engine is initialized by the application yet.
 
-## Pending behavior decision
+## Task dismissal — stop selected, lifecycle integration pending
 
-The mobile app configures RNTP with `StopPlaybackAndRemoveNotification` when Android's task is dismissed. The replacement player's service currently keeps active playback running. Work stops for the user's choice before migrating the audio service: preserve the current stop behavior or use background continuation. No implementation was made for either choice.
+The user selected stopping audio when dismissing the app card from Recent apps. The player callback now stops the coordinator and active requests, clears Media3's prepared timeline and stops the service, retaining the logical queue. Going Home or switching apps does not invoke this callback. Eleven dedicated new unit cases cover action ordering, cleanup after errors, timeline invalidation/projection restoration, retained queue and media-request cancellation. Gradle's actual unit task passed all 196 tests with zero failures/errors/skips. No new APK or device dismissal scenario was run for this revision.
+
+While reviewing the wiring, a further issue was found: the native bridge uses a custom binding action, bypassing Media3's automatic session registration, and the service never explicitly registers its MediaSession. Media3's notification manager observes registered sessions and starts foreground playback through that path. The missing registration needs fixing and lifecycle tests before this behavior can be considered complete. Work stopped for the user's decision before implementing that fix or switching the mobile engine.
 
 ## Resume after the user's decision
 
-1. Resolve the Android task-dismissal behavior with the user and implement its dedicated tests.
+1. Obtain the user's decision on fixing Media3 session registration; add lifecycle tests and recheck Android packaging. The task-dismissal stop behavior is already selected.
 2. Add a focused mobile player adapter, using platform transports and native queue revisions. Read `StreamingServicePlayer/MEDIA_SOURCES.md` and `SOURCE_WIRE_CONTRACT.md` first.
 3. Connect authentication changes to native configuration. Clear the native session on logout/account change; rotate same-account tokens without resetting playback.
 4. Map catalog tracks and existing managed cache files into native queue entries, preserving occurrence identifiers and separate UI metadata.
