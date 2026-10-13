@@ -72,3 +72,21 @@ The user approved fixing Media3 session registration. The service now registers 
 8. Verify Android app packaging and device playback, then iOS pod integration and the documented xtool/device workflow. Compilation and host tests do not establish playback correctness.
 
 Native background credential renewal, persistent history accounting, process recovery and measured format/performance parity remain player limitations. Do not silently claim those capabilities during migration.
+
+## Mobile adapter foundations — completed
+
+Added the pure adapter components under `src/services/player` without switching the selected runtime:
+
+- PlaybackTrackMapper converts catalog tracks, readable managed cache files, local files, exact signed URLs, headers and POST-resolved source configurations into native preparation data. Caller metadata and request definitions are captured before asynchronous work. Public track views and queue metadata omit source addresses, authentication headers and request bodies. Catalog tracks use the native server credentials; arbitrary URLs do not use the legacy catalog cache.
+- NativePlayerCommandDispatcher shares initialization, preserves command submission order, constructs contexts from current native epochs/revisions, retries queue conflicts with new request identifiers up to a finite limit, and refuses retries across engine/account changes. Session clear bypasses pending command completion and invalidates queued work and late receipts. Initial cursor values are copied rather than retaining a mutable returned object.
+- NativeQueueProjection reads native playback-order pages with a limit of 100 entries. It rejects conflicting/malformed/foreign-session pages and duplicate occurrence identifiers, discards stale read completions, reuses unchanged queue views and invalidates pending reads on clear. It does not mutate or determine the native playback order.
+
+`npm run test:player-mobile` performs strict focused TypeScript compilation, then passes 47 deterministic tests: 19 track/source mapping, 14 command dispatch and 14 native queue projection cases. The focused compiler output is ignored under `.build/audio-migration`. These are injected adapter tests, not React Native runtime integration or device playback tests.
+
+## Reporting compatibility gap — awaiting the user
+
+The existing AudioPlayerService handles RNTP's PlaybackActiveTrackChanged and RemoteSeek events for PlaybackTracker session creation and seek reporting. The shared replacement facade currently delivers only State events, and its Android bridge wraps every observed native snapshot as a State event. Although the public contract defines EntryChanged with reasons, that path is not delivered by the implemented facade/backend. There is also no explicit seek/position-discontinuity event carrying the affected entry and previous/new positions.
+
+State snapshots can show a position reset on the same occurrence, but cannot reliably distinguish natural repeat, explicit restart and a remote seek. Heuristics would change the app's reporting behavior. Work stopped for the user's decision before adding native event contracts/implementation or switching AudioPlayerService, playback-service registration or UI hooks. RNTP remains selected.
+
+With approval, add ordered occurrence/seek events on Android and iOS, expose supported events through the facade, and test same-occurrence repeats, previous/restart, remote seeking, cursor order, stale delivery and independent reporting. Then compose the adapter with native source registration, authentication, React observation and controls; remove the RNTP runtime after those pieces are tested. Native persistent listening/history and background renewal remain separate limits.
