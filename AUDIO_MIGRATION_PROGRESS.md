@@ -54,15 +54,15 @@ After the user requested continuation, the same build command was retried. The w
 
 RNTP remains the selected runtime. Its audio service, playback-service registration and UI hooks have not been switched. The new package is available for integration, but no new audio engine is initialized by the application yet.
 
-## Task dismissal — stop selected, lifecycle integration pending
+## Task dismissal and session registration — host tests passed
 
 The user selected stopping audio when dismissing the app card from Recent apps. The player callback now stops the coordinator and active requests, clears Media3's prepared timeline and stops the service, retaining the logical queue. Going Home or switching apps does not invoke this callback. Eleven dedicated new unit cases cover action ordering, cleanup after errors, timeline invalidation/projection restoration, retained queue and media-request cancellation. Gradle's actual unit task passed all 196 tests with zero failures/errors/skips. No new APK or device dismissal scenario was run for this revision.
 
-While reviewing the wiring, a further issue was found: the native bridge uses a custom binding action, bypassing Media3's automatic session registration, and the service never explicitly registers its MediaSession. Media3's notification manager observes registered sessions and starts foreground playback through that path. The missing registration needs fixing and lifecycle tests before this behavior can be considered complete. Work stopped for the user's decision before implementing that fix or switching the mobile engine.
+The user approved fixing Media3 session registration. The service now registers its owned session before custom binding and safely unregisters/releases it on destruction. Seven Robolectric tests execute the real service against Android framework shadows, checking ownership, the missing-registration path, cleanup, recreation, dismissal and binding without stopping playback. Gradle passed 203 tests with no failures/errors/skips; the eight clean AAR and eleven APK integration checks passed again. The player TypeScript/tooling suite passed 300 tests after its Codegen fixtures were isolated from the shared prepared-specification directory. Physical notification visibility, real Recent-app dismissal and sound remain untested. This resolves the previous registration blocker.
 
 ## Resume after the user's decision
 
-1. Obtain the user's decision on fixing Media3 session registration; add lifecycle tests and recheck Android packaging. The task-dismissal stop behavior is already selected.
+1. Continue the mobile adapter/source mapping and native queue projection. Registration and task-dismissal logic now pass host lifecycle/build checks; retain device checks as a separate gate.
 2. Add a focused mobile player adapter, using platform transports and native queue revisions. Read `StreamingServicePlayer/MEDIA_SOURCES.md` and `SOURCE_WIRE_CONTRACT.md` first.
 3. Connect authentication changes to native configuration. Clear the native session on logout/account change; rotate same-account tokens without resetting playback.
 4. Map catalog tracks and existing managed cache files into native queue entries, preserving occurrence identifiers and separate UI metadata.
