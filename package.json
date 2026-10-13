@@ -14,7 +14,7 @@
     "test:player-integration": "node tools/player-integration.test.cjs",
     "test:player-android-build": "node tools/player-android-build.test.cjs",
     "test:player-android-app": "node tools/player-android-app.test.cjs",
-    "test:player-mobile": "tsc --project tsconfig.audio-migration.json && node tools/player-track-mapper.test.cjs && node tools/player-command-dispatcher.test.cjs && node tools/player-queue-projection.test.cjs"
+    "test:player-mobile": "tsc --project tsconfig.audio-migration.json && node tools/player-track-mapper.test.cjs && node tools/player-command-dispatcher.test.cjs && node tools/player-queue-projection.test.cjs && node tools/player-reporting.test.cjs && node tools/player-reporting-integration.test.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

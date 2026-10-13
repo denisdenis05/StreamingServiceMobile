@@ -83,10 +83,31 @@ Added the pure adapter components under `src/services/player` without switching 
 
 `npm run test:player-mobile` performs strict focused TypeScript compilation, then passes 47 deterministic tests: 19 track/source mapping, 14 command dispatch and 14 native queue projection cases. The focused compiler output is ignored under `.build/audio-migration`. These are injected adapter tests, not React Native runtime integration or device playback tests.
 
-## Reporting compatibility gap — awaiting the user
+## Reporting compatibility gap — resolved in the event chapter
 
 The existing AudioPlayerService handles RNTP's PlaybackActiveTrackChanged and RemoteSeek events for PlaybackTracker session creation and seek reporting. The shared replacement facade currently delivers only State events, and its Android bridge wraps every observed native snapshot as a State event. Although the public contract defines EntryChanged with reasons, that path is not delivered by the implemented facade/backend. There is also no explicit seek/position-discontinuity event carrying the affected entry and previous/new positions.
 
 State snapshots can show a position reset on the same occurrence, but cannot reliably distinguish natural repeat, explicit restart and a remote seek. Heuristics would change the app's reporting behavior. Work stopped for the user's decision before adding native event contracts/implementation or switching AudioPlayerService, playback-service registration or UI hooks. RNTP remains selected.
 
-With approval, add ordered occurrence/seek events on Android and iOS, expose supported events through the facade, and test same-occurrence repeats, previous/restart, remote seeking, cursor order, stale delivery and independent reporting. Then compose the adapter with native source registration, authentication, React observation and controls; remove the RNTP runtime after those pieces are tested. Native persistent listening/history and background renewal remain separate limits.
+The user approved adding those events. The completed chapter below supersedes this pause. Native persistent listening/history and background renewal remain separate limits.
+
+
+## Native events and mobile reporting — completed
+
+Both player backends now deliver ordered EntryChanged and Seeked events. Entry-change reasons distinguish selection, next, previous/restart, natural advance/repeat, removal and clear. Replayed/stale commands do not emit duplicate events. The Android service/bridge forwards complete envelopes, and the shared facade exposes supported event types. Read sibling player PLAYBACK_EVENTS.md for the complete timing contract.
+
+Added NativePlaybackReporting under src/services/player. It establishes ownership from an authoritative snapshot and rejects raw events from other engine/account epochs, older sequences and duplicates. Entry changes stop the previous tracker immediately. Listening accounting begins only on a matching Playing snapshot with Play intent, pauses during buffering/resolution/pause, and stops when the queue ends or playback stops. Seek events update the captured current tracker without starting a new session. Metadata and cursor values passed to session creation are copied.
+
+All reporting operations run independently of audio commands. The adapter never waits for an HTTP request. Synchronous exceptions, rejected promises and delayed responses cannot replace the current tracker. The existing PlaybackTracker continues to preserve HTTP report ordering in its background queue.
+
+`npm run test:player-mobile` passed strict focused TypeScript compilation and 73 deterministic checks: 47 existing adapter cases, 22 reporting cases and four integration cases composing NativePlaybackReporting with transpiled production PlaybackTracker/PlaybackReportingQueue source and injected HTTP, clock and timers. Integration cases hold an old session-start request open while selecting/seeking a new track, resolve it late, reject it, and switch accounts. They verify captured session/account identifiers and interval cleanup. These are host component integration checks, not React Native/device execution or live Last.fm calls.
+
+Player checks passed: 310 TypeScript/tooling, 224 Android unit/lifecycle and 255 Swift host tests; Apple SDK module compilation; actual unsigned xtool release harness packaging. The eight clean Android AAR and eleven Android APK integration checks passed after the changes, including linked modules, all configured ABIs and packaged service/permission. RNTP remains selected; these adapter components are not yet composed into AudioPlayerService or the UI.
+
+## Source-capacity compatibility issue — awaiting the user
+
+The next queue-composition step exposes a source budget mismatch. Native logical queues allow 10,000 entries, but both source registries allow only 256 registered handles. Ordinary uncached catalog entries use recording identifiers directly. Each distinct cached local file, exact URL or resolver configuration needs a registered source handle. Queue references and active transport leases prevent releasing an in-use handle.
+
+Consequently, a queue with more than 256 distinct cached files cannot be prepared this way. Preparing replacement sources while the old queue still owns many handles can also exhaust the budget before the atomic replacement command. Clearing the old queue first would interrupt playback; falling back to catalog streams would change cached/offline behavior. Neither change was made. Existing native source-capacity and in-use-release tests verify the constraints.
+
+Per the user's stop-and-ask instruction, runtime composition pauses for a decision on extending source management to support large cached queues and queue replacement. Completed event/reporting work can be reviewed independently. Resume after that decision with source ownership/cleanup, authentication readiness, native observation, one-engine composition and UI changes. Keep device playback, persistent background listening accounting and iOS React Native host integration as separate gates.
