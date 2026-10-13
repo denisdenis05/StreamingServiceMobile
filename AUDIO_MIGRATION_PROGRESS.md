@@ -26,7 +26,9 @@ Command attempted from `android`:
 ./gradlew :streaming-service-player:assembleDebug --offline --no-daemon
 ```
 
-The Gradle wrapper exits before compilation because it cannot write its lock file in the read-only `/home/denis/.gradle/wrapper/dists` directory. No Android library or app package was produced. Work stopped for the user's decision; no environment workaround was attempted after this failure.
+The initial attempt failed because the Gradle wrapper could not write its lock file in the read-only `/home/denis/.gradle/wrapper/dists` directory. The user subsequently added `/home/denis/.gradle` to this session's writable roots. A temporary-file write/delete check passed.
+
+After the user requested continuation, the same build command was retried. The wrapper lock failure is resolved, but Gradle now exits before compilation while creating `FileLockContentionHandler`, reporting `Could not determine a usable wildcard IP for this machine.` No Android library or app package was produced. The user authorized investigation. Retrying with `--stacktrace` traced the failure to `NetworkInterface.getNetworkInterfaces`, with `java.net.SocketException: Operation not permitted (Socket creation failed)`. Independent Python UDP socket checks for `0.0.0.0`, `127.0.0.1` and `::` each failed with `PermissionError: [Errno 1] Operation not permitted` during socket creation. The session blocks local sockets as well as remote networking. Writable cache access does not remove that restriction, and offline/no-daemon flags do not avoid Gradle lock-coordination networking. Native packaging requires a session that permits sockets or a build from the user's normal terminal. No Gradle or application code changes were made to work around the restriction.
 
 RNTP remains the selected runtime. Its audio service, playback-service registration and UI hooks have not been switched. The new package is available for integration, but no new audio engine is initialized by the application yet.
 
