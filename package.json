@@ -3,13 +3,15 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
-    "ios": "react-native run-ios",
+    "android": "npm run prepare:player && react-native run-android",
+    "ios": "npm run prepare:player && react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "npm run prepare:player && react-native start",
     "test": "jest",
     "format": "prettier --write \"src/**/*.{js,ts,jsx,tsx}\"",
-    "format:check": "prettier --check \"src/**/*.{js,ts,jsx,tsx}\""
+    "format:check": "prettier --check \"src/**/*.{js,ts,jsx,tsx}\"",
+    "prepare:player": "npm --prefix ../StreamingServicePlayer run build && npm --prefix ../StreamingServicePlayer run generate:specs",
+    "test:player-integration": "node tools/player-integration.test.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -33,7 +35,8 @@
     "react-native-screens": "^4.13.1",
     "react-native-svg": "^15.12.0",
     "react-native-toast-message": "^2.3.3",
-    "react-native-track-player": "github:lovegaoshi/react-native-track-player#4f954e55682e9644be5b4c0be8947aad1aa91566"
+    "react-native-track-player": "github:lovegaoshi/react-native-track-player#4f954e55682e9644be5b4c0be8947aad1aa91566",
+    "streaming-service-player": "file:../StreamingServicePlayer"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
