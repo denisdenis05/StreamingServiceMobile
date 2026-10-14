@@ -128,3 +128,20 @@ The separate server subagent completed NuGet restore, vulnerability query and tr
 ### Confirmed behavior and next composition
 
 The user confirmed that Next under Repeat Song must restart the current song, and removal of the current track must continue with its next surviving track. Native removal already matches. Align manual Next in all queue reducers and coordinator tests before switching the app. Then compose source/metadata ownership, authentication readiness, native observation/reporting, the one-engine audio facade and UI actions. Candidate metadata must be available by occurrence before native events arrive, without turning React into the queue authority. Preserve the native staging epochs across command retries and keep preparation/reporting out of the audio command chain.
+
+## Confirmed controls — implemented in the native player
+
+Next now restarts the current entry under Repeat Song on both platforms, including a one-entry queue. Native snapshots allow that action at the last entry. The new occurrence is reported with reason Next, while natural repeats retain reason Repeated. The experimental reducers now expose advance(state) without a redundant natural-completion flag; coordinators own the cause. Active removal already follows the user's choice to continue to its next surviving entry, with the existing wrap/end rules when none follows. Play/pause intent remains preserved.
+
+Final player checks for this chapter passed: 327 TypeScript/tooling, 248 Android unit/lifecycle, 275 Swift host cases; Apple SDK compilation and unsigned xtool release packaging; eight clean Android AAR integration checks. The full app/APK build failed in MMKV as detailed below. Mobile focused tests passed 73 existing cases plus 24 source-preparation cases. Native sound, lock-screen actions and real cached playback remain untested.
+
+Player source management is committed as 4981963; mobile preparation/copier work as 98795d6; the separate server audit report as b2357f4. Resume runtime composition using the settled repeat/removal policies. RNTP remains active until AudioPlayerService, registration and UI hooks are switched together. Preserve the user's unrelated dependency/patch changes and server configuration edits.
+
+
+## Current app build failure — awaiting the user
+
+`npm run test:player-android-app` attempted the actual Gradle app build and failed at :react-native-mmkv:compileDebugKotlin. Installed MMKV is 4.3.2, installed Nitro Modules is 0.33.9. MMKV's generated HybridMMKVPlatformContextSpec expects HybridObject.CxxPart and initHybrid/createCxxPart; the installed Nitro base class lacks that API. Errors are CxxPart unresolved and overrides nothing, plus the resulting return-type exposure error. The eleven APK checks failed from their shared build prerequisite; none passed on this revision. An existing APK is not evidence of a current build.
+
+This is separate from the player library: its 248 unit/lifecycle cases and eight clean AAR integration checks passed. The user has pending dependency/lock/patch changes outside this task; those were preserved. No MMKV/Nitro version, generated source or patch was changed. Per the user's stop-and-ask rule, runtime composition pauses for a decision on investigating/fixing the version pairing. The server NuGet audit and source-management/control work are complete.
+
+With approval: inspect the storage library's required Nitro generation/runtime pairing, make the smallest compatible dependency change with a regression check, build the full app again, then compose the native audio facade, auth/session lifecycle, observation, source metadata and UI together. Next repeats the same entry in Repeat Song; removing the active entry continues according to the settled native successor rules. These decisions need no repeat approval.
