@@ -1,5 +1,6 @@
 import { MediaSourceKind, MediaSourceValidator } from 'streaming-service-player';
 import type { MediaSourceConfiguration, QueueEntry } from 'streaming-service-player';
+import { copyMediaRequestConfiguration, copyMediaSourceConfiguration } from './PlaybackMediaConfiguration';
 import { PlaybackTrackPolicy } from './PlaybackTrack';
 import type { PlaybackCacheReader, PlaybackTrack, PlaybackTrackView, PreparedPlaybackTrack } from './PlaybackTrack';
 
@@ -14,8 +15,8 @@ export class PlaybackTrackMapper {
   async prepare(track: PlaybackTrack, entryIdentifier: string): Promise<PreparedPlaybackTrack> {
     if (track.mediaSource !== undefined) this.mediaValidator.validateSource(track.mediaSource);
     const capturedTrack: PlaybackTrack = { ...track,
-      ...(track.mediaSource === undefined ? {} : { mediaSource: this.copySource(track.mediaSource) }),
-      ...(track.mediaRequest === undefined ? {} : { mediaRequest: this.copyRequest(track.mediaRequest) }) };
+      ...(track.mediaSource === undefined ? {} : { mediaSource: copyMediaSourceConfiguration(track.mediaSource) }),
+      ...(track.mediaRequest === undefined ? {} : { mediaRequest: copyMediaRequestConfiguration(track.mediaRequest) }) };
     return this.prepareCapturedTrack(capturedTrack, entryIdentifier);
   }
 
@@ -66,7 +67,7 @@ export class PlaybackTrackMapper {
   }
 
   private async resolveSource(track: PlaybackTrack, catalogTrack: boolean): Promise<MediaSourceConfiguration | null> {
-    if (track.mediaSource !== undefined) return this.copySource(track.mediaSource);
+    if (track.mediaSource !== undefined) return copyMediaSourceConfiguration(track.mediaSource);
     if (track.mediaAddress.startsWith(PlaybackTrackPolicy.localFileAddressPrefix)) {
       return { kind: MediaSourceKind.Local, address: track.mediaAddress };
     }
@@ -77,26 +78,7 @@ export class PlaybackTrackMapper {
       return cachedAddress === null ? null : { kind: MediaSourceKind.Local, address: cachedAddress };
     }
     return { kind: MediaSourceKind.Remote, address: track.mediaAddress,
-      ...(track.mediaRequest === undefined ? {} : { request: this.copyRequest(track.mediaRequest) }) };
+      ...(track.mediaRequest === undefined ? {} : { request: copyMediaRequestConfiguration(track.mediaRequest) }) };
   }
 
-  private copyRequest(request: NonNullable<PlaybackTrack['mediaRequest']>): NonNullable<PlaybackTrack['mediaRequest']> {
-    return {
-      ...(request.method === undefined ? {} : { method: request.method }),
-      ...(request.headers === undefined ? {} : { headers: request.headers.map(header => ({ name: header.name, value: header.value })) }),
-      ...(request.body === undefined ? {} : { body: { encoding: request.body.encoding, value: request.body.value, contentType: request.body.contentType } }),
-      ...(request.credentialIdentifier === undefined ? {} : { credentialIdentifier: request.credentialIdentifier }),
-    };
-  }
-
-  private copySource(source: MediaSourceConfiguration): MediaSourceConfiguration {
-    switch (source.kind) {
-      case MediaSourceKind.Catalog: return { kind: source.kind, recordingIdentifier: source.recordingIdentifier };
-      case MediaSourceKind.Local: return { kind: source.kind, address: source.address };
-      case MediaSourceKind.Remote: return { kind: source.kind, address: source.address,
-        ...(source.request === undefined ? {} : { request: this.copyRequest(source.request) }) };
-      case MediaSourceKind.Resolved: return { kind: source.kind, address: source.address, request: this.copyRequest(source.request),
-        ...(source.mediaRequest === undefined ? {} : { mediaRequest: this.copyRequest(source.mediaRequest) }) };
-    }
-  }
 }

@@ -104,10 +104,27 @@ All reporting operations run independently of audio commands. The adapter never 
 
 Player checks passed: 310 TypeScript/tooling, 224 Android unit/lifecycle and 255 Swift host tests; Apple SDK module compilation; actual unsigned xtool release harness packaging. The eight clean Android AAR and eleven Android APK integration checks passed after the changes, including linked modules, all configured ABIs and packaged service/permission. RNTP remains selected; these adapter components are not yet composed into AudioPlayerService or the UI.
 
-## Source-capacity compatibility issue — awaiting the user
+## Source-capacity compatibility issue — resolved by queue ownership
 
 The next queue-composition step exposes a source budget mismatch. Native logical queues allow 10,000 entries, but both source registries allow only 256 registered handles. Ordinary uncached catalog entries use recording identifiers directly. Each distinct cached local file, exact URL or resolver configuration needs a registered source handle. Queue references and active transport leases prevent releasing an in-use handle.
 
 Consequently, a queue with more than 256 distinct cached files cannot be prepared this way. Preparing replacement sources while the old queue still owns many handles can also exhaust the budget before the atomic replacement command. Clearing the old queue first would interrupt playback; falling back to catalog streams would change cached/offline behavior. Neither change was made. Existing native source-capacity and in-use-release tests verify the constraints.
 
 Per the user's stop-and-ask instruction, runtime composition pauses for a decision on extending source management to support large cached queues and queue replacement. Completed event/reporting work can be reviewed independently. Resume after that decision with source ownership/cleanup, authentication readiness, native observation, one-engine composition and UI changes. Keep device playback, persistent background listening accounting and iOS React Native host integration as separate gates.
+
+
+## Queue-owned source preparation — completed
+
+The user approved source-management extension. The native registries now separate manual registrations from Queue ownership, admit a current and staged 10,000-source queue under shared 32 MiB configuration accounting, and retire old queue-owned handles after their final occurrence/transfer. Unused staged sources still expire after five minutes. Resolved POST registrations retain a separate bound. Native capabilities report ownership support and limits. See sibling player SOURCE_MANAGEMENT.md.
+
+NativeQueueSourcePreparation prepares candidate handles before the atomic queue command. It captures epochs, metadata, headers and bodies, validates the logical queue length and aggregate configuration budget, copies supported fields only, and rejects duplicate/mismatched occurrences. A selection predicate fences obsolete work. Failed/conflicted/superseded results and exceptions release staged handles; cleanup continues after errors. Candidate preparation has its own serialized chain, so rapid selections clean canceled handles before staging the next candidate. Audio commands remain on their separate dispatcher. PlaybackMediaConfiguration supplies the shared deep copier used by the mapper and preparer.
+
+Checks: strict focused TypeScript compilation; `npm run test:player-mobile` passed its existing 73 cases; `node tools/player-source-preparation.test.cjs` passed 24 additional cases. The latter includes an actual NativePlayerCommandDispatcher integration case completing an audio command while source registration remains pending. The user's unrelated package scripts, dependency lock changes, patches and removed declaration were preserved; the new preparation suite is invoked separately.
+
+Player checks passed: 327 TypeScript/tooling, 247 Android unit/lifecycle, 274 Swift host; Apple SDK compilation; unsigned xtool release packaging; eight clean Android AAR integration checks. Physical audio, cached-file playback and large-queue performance remain unverified. RNTP remains the selected app runtime.
+
+The separate server subagent completed NuGet restore, vulnerability query and transitive inventory. No known advisories were reported across six projects and 129 unique resolved package/version pairs. Server DEPENDENCY_AUDIT.md records exact commands, versions and coverage limits; existing server configuration edits were preserved.
+
+### Confirmed behavior and next composition
+
+The user confirmed that Next under Repeat Song must restart the current song, and removal of the current track must continue with its next surviving track. Native removal already matches. Align manual Next in all queue reducers and coordinator tests before switching the app. Then compose source/metadata ownership, authentication readiness, native observation/reporting, the one-engine audio facade and UI actions. Candidate metadata must be available by occurrence before native events arrive, without turning React into the queue authority. Preserve the native staging epochs across command retries and keep preparation/reporting out of the audio command chain.
