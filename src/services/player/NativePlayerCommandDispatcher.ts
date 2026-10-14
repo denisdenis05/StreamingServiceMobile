@@ -46,10 +46,14 @@ export class NativePlayerCommandDispatcher {
   }
 
   async clearSession(): Promise<void> {
-    this.sessionGeneration += PlayerDispatchPolicy.sessionGenerationIncrement;
+    this.invalidateSession();
     await this.initialize();
     try { await this.lifecycle.clearSession(); }
     catch (failure) { this.initialization = null; throw failure; }
+  }
+
+  invalidateSession(): void {
+    this.sessionGeneration += PlayerDispatchPolicy.sessionGenerationIncrement;
   }
 
   playbackCommand(operation: (context: CommandContext) => Promise<CommandResult>): Promise<CommandResult> {

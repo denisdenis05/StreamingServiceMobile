@@ -165,3 +165,35 @@ The patch was preserved. Per the user's stop-and-ask instruction, further migrat
 The user approved repairing the existing patch. Its Flow hunk now declares the five lines actually present. `npm run postinstall` applies metro@0.82.5 successfully. `npm run test:dependency-security` passes both PNG dimension parsing and empty-asset rejection. `node --test tools/player-metro-patch.test.cjs` passes two dedicated checks for exact hunk lengths and both named image-size imports. The new length test reproduces the malformed-hunk failure without relying on the installed node_modules copy.
 
 The repaired patch depends on the user's pending image-size override and patch-package/postinstall configuration. Those changes, the removed image-colors declaration and the existing security test remain outside this chapter's staged changes. RNTP is still selected. Resume migration with native queue/controller composition; run a Metro bundle and Android integration again when the runtime and UI switch is complete.
+
+## Native queue and authentication composition — completed components
+
+NativeQueueController composes the existing dispatcher, mapper and source preparation. Replacement selects the requested occurrence in one native command. Source capture, cache lookup and registration run outside the audio command chain. New selections, pause, stop, next, previous and clear cancel obsolete candidate preparation. Playback commands can finish while registration is pending. Queue retries retain the staging engine/account epochs and use fresh native command contexts. Rejected commands release staged handles and unobserved metadata. Selection/removal operate on occurrence identifiers, and shuffle/repeat remain native decisions.
+
+PlaybackMetadataRegistry stages copied public metadata before commands can emit events. Native observation retains associations for cached recording identifiers, album identifiers and likes; queue reconciliation removes retired occurrences. Retention is bounded to one current and one staged maximum queue. Restored entries without an in-memory association expose their available native metadata; the registry does not invent a recording identifier for an opaque source. Durable reconstruction of those associations across JavaScript restarts remains unimplemented.
+
+SharedNativePlayerObservation supplies one native event subscription to state and reporting consumers. NativePlaybackViewStore projects authoritative playback-order pages and publishes stable queue/control views. Progress events update PlayerStateStore separately without queue-control notifications or repeated page reads. Suspension hides the old account queue, stops local listening accounting and prevents late page completions or events from restoring it. Native snapshot/session changes fence queue reads and reporting.
+
+PlaybackAccountIdentity reads the server token's subject for local account separation. It handles UTF-8 payloads, bounds decoding and rejects missing/malformed subjects with a fixed message. It does not authenticate or verify tokens; server authentication remains authoritative. PlaybackAuthenticationCoordinator waits for restoration, clears unknown/account-switched ownership, serializes credential changes, and preserves the queue/listening state on same-account token rotation. Account changes invalidate queued dispatcher commands immediately and cancel source preparation. Late credential completions cannot become the final active account. Failed transitions can be retried. The AuthContext readiness field and runtime wiring are still pending.
+
+### Feature checks
+
+| Component / behavior | Dedicated checks |
+| --- | --- |
+| Metadata capture, duplicate occurrences, uncertain receipts, rollback, retirement, clearing, native metadata updates, restoration and capacity | `tools/player-native-composition.test.cjs` |
+| Single native subscription, separate subscription lifetimes, consumer exceptions and retry | `tools/player-native-composition.test.cjs` |
+| Atomic replacement/selection, append, cancellation, stale source sessions, conflict retry and cleanup | `tools/player-native-composition.test.cjs` |
+| Each playback command, seek conversion, shuffle restoration, repeat-one Next, active removal and clear | `tools/player-native-composition.test.cjs` |
+| Native queue projection, progress isolation, active listening transitions, suspension, pending-read cancellation, epoch changes and disposal | `tools/player-native-composition.test.cjs` |
+| Subject extraction, token rotation, UTF-8, redacted rejection and payload bounds | `tools/player-authentication.test.cjs` |
+| Restoration, signed-out clearing, initial ownership, transition sharing, account changes, logout, late configuration, readiness, retry and queued-command invalidation | `tools/player-authentication.test.cjs` |
+
+`./node_modules/.bin/tsc --project tsconfig.audio-migration.json` passed. `npm run test:player-mobile` passed its existing 73 checks, and `node tools/player-source-preparation.test.cjs` passed 24. `node --test tools/player-authentication.test.cjs tools/player-native-composition.test.cjs` passed 63 new checks: 17 authentication and 46 composition cases. Storage/patch structural regression checks passed seven cases; the existing image security suite passed its two cases after patch application. Composition tests use the production TypeScript queue reference model and injected native/event/cache collaborators. They do not run the Android service or a device. The previously completed eleven Android APK checks were not rerun for these unused JavaScript components.
+
+### Full app type check — awaiting the user
+
+Before modifying runtime startup, AuthContext or UI consumers, `./node_modules/.bin/tsc --noEmit --pretty false` failed with six existing errors. heartEmptyIcon.tsx and heartIcon.tsx pass an unsupported colorInterpolationFilters SVG filter prop; pauseIcon.tsx passes xmlns; ContextMenu's icon type omits its supplied fill prop; DeepLinkHandler's two URLSearchParams.get calls are absent from the React Native declaration. The same command after component implementation produced byte-for-byte identical diagnostics. Focused strict player adapter compilation is passing, but the complete app type check is not.
+
+Per the user's stop-and-ask instruction, runtime/UI migration pauses for approval to fix those unrelated app type errors. RNTP is still active. No startup registration, existing audio hook or UI engine has been switched in this chapter.
+
+After that decision: expose authentication restoration readiness, compose the native bridge/cache/reporting adapters with these components, preserve the suggestions flow with account/selection fences, replace AudioPlayerService and RNTP UI hooks together, and remove old playback-service registration. Then verify full app types, deterministic runtime/integration cases, a Metro bundle and the actual Android APK. Device playback, native background listening persistence and the iOS React Native host remain separate gates. Keep the user's pending package/lock security edits and removed declaration intact.
