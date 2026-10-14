@@ -159,3 +159,9 @@ Installation used `npm install --save-exact react-native-mmkv@4.3.2 react-native
 Running `npm run postinstall` failed because the existing, untracked `patches/metro+0.82.5.patch` cannot be parsed by patch-package 8.0.1. Its second hunk declares seven old/new lines but contains five. `npm run test:dependency-security` passed the empty-asset case and failed the PNG-dimension case with `getImageSize is not a function`. The working override selects image-size 2.x; Metro still imports it as a callable default export because the patch did not apply.
 
 The patch was preserved. Per the user's stop-and-ask instruction, further migration implementation pauses for approval to repair the patch and rerun postinstall and both security regression tests. RNTP remains the active engine. Once that blocker is resolved, resume native controller composition, authentication readiness, source metadata ownership, event observation, reporting and UI migration with the settled repeat/removal behavior.
+
+## Metro patch repair — completed
+
+The user approved repairing the existing patch. Its Flow hunk now declares the five lines actually present. `npm run postinstall` applies metro@0.82.5 successfully. `npm run test:dependency-security` passes both PNG dimension parsing and empty-asset rejection. `node --test tools/player-metro-patch.test.cjs` passes two dedicated checks for exact hunk lengths and both named image-size imports. The new length test reproduces the malformed-hunk failure without relying on the installed node_modules copy.
+
+The repaired patch depends on the user's pending image-size override and patch-package/postinstall configuration. Those changes, the removed image-colors declaration and the existing security test remain outside this chapter's staged changes. RNTP is still selected. Resume migration with native queue/controller composition; run a Metro bundle and Android integration again when the runtime and UI switch is complete.
