@@ -68,7 +68,8 @@ export class NativeQueueProjection {
   }
 
   private sameQueue(previous: PlayerCursor, current: PlayerCursor): boolean {
-    return this.sameSession(previous, current) && previous.queueRevision === current.queueRevision;
+    return this.sameSession(previous, current) && (previous.queueIdentifier === current.queueIdentifier)
+      && (previous.queueContentRevision ?? previous.queueRevision) === (current.queueContentRevision ?? current.queueRevision);
   }
 
   private sameSession(previous: PlayerCursor, current: PlayerCursor): boolean {

@@ -14,7 +14,7 @@
     "test:player-integration": "node tools/player-integration.test.cjs",
     "test:player-android-build": "node tools/player-android-build.test.cjs",
     "test:player-android-app": "node tools/player-android-app.test.cjs",
-    "test:player-mobile": "tsc --project tsconfig.audio-migration.json && node tools/player-track-mapper.test.cjs && node tools/player-command-dispatcher.test.cjs && node tools/player-queue-projection.test.cjs && node tools/player-reporting.test.cjs && node tools/player-reporting-integration.test.cjs"
+    "test:player-mobile": "tsc --project tsconfig.audio-migration.json && node --test tools/player-track-mapper.test.cjs tools/player-command-dispatcher.test.cjs tools/player-queue-projection.test.cjs tools/player-reporting.test.cjs tools/player-reporting-integration.test.cjs tools/player-source-preparation.test.cjs tools/player-native-composition.test.cjs tools/player-authentication.test.cjs tools/player-queue-intents.test.cjs tools/player-queue-rewrite.test.cjs tools/player-application-session.test.cjs tools/player-collections.test.cjs tools/player-runtime.test.cjs tools/player-network-client.test.cjs tools/player-view-recovery.test.cjs tools/player-selected-runtime.test.cjs"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
@@ -38,7 +38,6 @@
     "react-native-screens": "^4.13.1",
     "react-native-svg": "^15.12.0",
     "react-native-toast-message": "^2.3.3",
-    "react-native-track-player": "github:lovegaoshi/react-native-track-player#4f954e55682e9644be5b4c0be8947aad1aa91566",
     "streaming-service-player": "file:../StreamingServicePlayer"
   },
   "devDependencies": {

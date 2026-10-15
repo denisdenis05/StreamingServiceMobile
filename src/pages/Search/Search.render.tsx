@@ -14,7 +14,6 @@ import {
 import {
   PLACEHOLDER_ALBUM_COVER,
   PLACEHOLDER_PROFILE_PIC,
-  TEMPORARY_API_URL,
 } from '../../constants/placeholders.tsx';
 import { SEARCH_HEADER_TEXT } from '../../constants/texts.tsx';
 import Navbar from '../../components/Navbar';
@@ -23,7 +22,7 @@ import SearchEntry from '../../components/SearchEntry';
 import { SearchEntrySkeleton } from '../../components/SearchEntry/SearchEntry.render.tsx';
 import { useApi } from '../../hooks/useApi.ts';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
-import { useAuth } from '../../hooks/AuthContext.tsx';
+import { catalogPlaybackMapping } from '../../services/NativeAudioRuntime';
 import { useData } from '../../services/DataProvider.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render';
 import { menuOptions } from '../../constants/navigation.tsx';
@@ -114,35 +113,12 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
   const pageRef = useRef(1);
 
   const api = useApi();
-  const { token } = useAuth();
-  const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
-
-  const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
-
-  useEffect(() => {
-    if (shouldPlayFromStart) {
-      playTrackAtIndex(0);
-      setShouldPlayFromStart(false);
-    }
-  }, [queue]);
-
+  const { playTracks } = useMusicQueue();
+  const FirstSearchEntryIndex = 0;
   const playTrack = useCallback((recording: Track) => {
-    const track = {
-      id: recording.id,
-      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
-      title: recording.title,
-      artist: recording.artistName,
-      album: recording.releaseTitle,
-      releaseId: recording.releaseId || '',
-      mediaId: recording.id,
-      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
-      headers: { Authorization: `Bearer ${token}` },
-      isLiked: recording.isLiked,
-    };
-    replaceQueue([track]);
-    setShouldPlayFromStart(true);
+    void playTracks([catalogPlaybackMapping.map(recording)], FirstSearchEntryIndex);
     navigation.navigate('Playing', {});
-  }, [token, replaceQueue, navigation]);
+  }, [playTracks, navigation]);
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });

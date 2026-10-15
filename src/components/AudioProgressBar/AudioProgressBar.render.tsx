@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PanResponder, Dimensions } from 'react-native';
-import { useProgress } from 'react-native-track-player';
+import { usePlaybackProgress } from '../../services/AudioPlayerService';
 import { colors } from '../../constants/styling.tsx';
 import {
   MainContainer,
@@ -41,7 +41,7 @@ const AudioProgressBar = ({
   disabled = false,
   containerStyle,
 }: AudioProgressBarProps) => {
-  const { position, duration } = useProgress(250);
+  const { position, duration } = usePlaybackProgress();
   const [isDragging, setIsDragging] = useState(false);
   const [dragPercentage, setDragPercentage] = useState(0);
   const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 60);

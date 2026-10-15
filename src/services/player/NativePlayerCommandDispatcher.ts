@@ -66,6 +66,16 @@ export class NativePlayerCommandDispatcher {
     });
   }
 
+  queueCommandOnce(operation: (context: QueueCommandContext, snapshot: PlayerSnapshot) => Promise<CommandResult>): Promise<CommandResult> {
+    return this.enqueue(async isCurrent => {
+      const snapshot = await this.getSnapshot();
+      this.requireCurrent(isCurrent);
+      const result = await operation({ ...this.commandContext(snapshot), expectedQueueRevision: snapshot.cursor.queueRevision }, snapshot);
+      this.requireCurrent(isCurrent);
+      return result;
+    });
+  }
+
   queueCommand(operation: (context: QueueCommandContext) => Promise<CommandResult>): Promise<CommandResult> {
     return this.enqueue(async isCurrent => {
       let initialCursor: PlayerCursor | null = null;

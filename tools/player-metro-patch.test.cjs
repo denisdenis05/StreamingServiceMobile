@@ -16,7 +16,7 @@ const PatchPolicy = Object.freeze({
   newLengthCaptureIndex: 4,
   emptyLength: 0,
   countIncrement: 1,
-  expectedHunkCount: 2,
+  expectedHunkCount: 4,
 });
 const TestNames = Object.freeze({
   lengths: 'the Metro patch declares the actual old and new lengths of every hunk',

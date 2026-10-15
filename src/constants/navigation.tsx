@@ -14,7 +14,7 @@ export interface NavigationButton {
 
 export interface ActionItem {
   label: string;
-  icon: React.ComponentType<{ height: number }>;
+  icon: React.ComponentType<{ height: number; fill?: string }>;
   onClick: (navigation: any, params?: any) => void;
 }
 

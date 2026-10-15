@@ -30,7 +30,7 @@ export class PlaybackAuthenticationCoordinator {
     private readonly mediaServerAddress: string,
     private readonly credentials: PlaybackCredentialWriter,
     private readonly dispatcher: Pick<NativePlayerCommandDispatcher, 'initialize' | 'invalidateSession' | 'clearSession'>,
-    private readonly queue: Pick<NativeQueueController, 'cancelPreparation'>,
+    private readonly queue: Pick<NativeQueueController, 'invalidateSession'>,
     private readonly views: Pick<NativePlaybackViewStore, 'suspend' | 'connect' | 'refresh' | 'resume'>,
   ) { this.views.suspend(); }
 
@@ -44,7 +44,7 @@ export class PlaybackAuthenticationCoordinator {
     const generation = ++this.generation;
     this.failedTransition = false;
     if (accountChanged) {
-      this.queue.cancelPreparation();
+      this.queue.invalidateSession();
       this.dispatcher.invalidateSession();
       this.views.suspend();
     }
@@ -88,4 +88,13 @@ export class PlaybackAuthenticationCoordinator {
   }
 
   getAccountIdentifier(): string | null { return this.desired.accountIdentifier; }
+
+  reconnect(): Promise<void> {
+    this.queue.invalidateSession();
+    this.dispatcher.invalidateSession();
+    this.views.suspend();
+    this.configured = false;
+    this.failedTransition = true;
+    return this.update(this.desired);
+  }
 }

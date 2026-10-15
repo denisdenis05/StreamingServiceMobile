@@ -51,6 +51,13 @@ export class PlaybackMetadataRegistry implements PlaybackTrackViewSource {
     if (entry !== null) this.observedIdentifiers.add(entry.entryIdentifier);
   }
 
+  forget(identifiers: readonly string[]): void {
+    for (const identifier of identifiers) {
+      this.views.delete(identifier);
+      this.observedIdentifiers.delete(identifier);
+    }
+  }
+
   viewFor(entry: QueueEntry): PlaybackTrackView {
     const known = this.views.get(entry.entryIdentifier);
     return {

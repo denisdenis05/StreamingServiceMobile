@@ -1,14 +1,12 @@
 import CollectionViewer from '../../components/CollectionViewer';
 import {
   PLACEHOLDER_ALBUM_COVER,
-  TEMPORARY_API_URL,
 } from '../../constants/placeholders.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Recording } from '../../constants/types.tsx';
-import { Track } from 'react-native-track-player';
+import { catalogPlaybackMapping } from '../../services/NativeAudioRuntime';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { useApi } from '../../hooks/useApi.ts';
-import { useAuth } from '../../hooks/AuthContext.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions, ActionItem } from '../../constants/navigation.tsx';
 import { invalidateCache } from '../../services/DataProvider.tsx';
@@ -41,14 +39,11 @@ function recordingListsAreEqual(
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover, albumSmallCover, albumVerySmallCover } = route.params;
-  const [startIndex, setStartIndex] = useState(0);
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
-  const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
+  const { playTracks } = useMusicQueue();
   const [fetched, setFetched] = useState(false);
   const [isAlbumSaved, setIsAlbumSaved] = useState(false);
   const api = useApi();
-  const { token } = useAuth();
   const [albumMenuVisible, setAlbumMenuVisible] = useState(false);
   const [songMenuVisible, setSongMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
@@ -79,50 +74,13 @@ const AlbumViewer = ({ navigation, route }: any) => {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    if (shouldPlayFromStart) {
-      playTrackAtIndex(startIndex);
-      setShouldPlayFromStart(false);
-    }
-  }, [queue]);
-
-  const handlePlayAlbum = useCallback(() => {
-    const tracks: Track[] = recordings.map(recording => ({
-      id: recording.id,
-      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
-      title: recording.title,
-      artist: recording.artistName,
-      album: recording.releaseTitle,
-      releaseId: recording.releaseId || albumId,
-      mediaId: recording.id,
-      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
-      headers: { Authorization: `Bearer ${token}` },
-      isLiked: recording.isLiked,
-    }));
-    setStartIndex(0);
-    replaceQueue(tracks);
-    setShouldPlayFromStart(true);
-    navigation.navigate('Playing', {});
-  }, [recordings, token, albumId, replaceQueue, navigation]);
-
   const handlePlayFromRecording = useCallback((recordingIndex: number) => {
-    const tracks: Track[] = recordings.map(recording => ({
-      id: recording.id,
-      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
-      title: recording.title,
-      artist: recording.artistName,
-      album: recording.releaseTitle,
-      releaseId: recording.releaseId || albumId,
-      mediaId: recording.id,
-      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
-      headers: { Authorization: `Bearer ${token}` },
-      isLiked: recording.isLiked,
-    }));
-    setStartIndex(recordingIndex);
-    replaceQueue(tracks);
-    setShouldPlayFromStart(true);
+    const tracks = recordings.map(recording => catalogPlaybackMapping.map(recording, albumId));
+    void playTracks(tracks, recordingIndex);
     navigation.navigate('Playing', {});
-  }, [recordings, token, albumId, replaceQueue, navigation]);
+  }, [recordings, albumId, playTracks, navigation]);
+  const FirstAlbumEntryIndex = 0;
+  const handlePlayAlbum = useCallback(() => handlePlayFromRecording(FirstAlbumEntryIndex), [handlePlayFromRecording]);
 
   const handleToggleLibrary = useCallback(async () => {
     try {

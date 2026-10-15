@@ -68,7 +68,7 @@ function environment() {
       operations.push({ name: Fixture.configureOperation, address, accessToken });
       if (configurationOperation !== null) await configurationOperation(accessToken);
     },
-  }, dispatcher, { cancelPreparation() { cancelCount += Fixture.increment; } }, {
+  }, dispatcher, { invalidateSession() { cancelCount += Fixture.increment; } }, {
     suspend() { suspended = true; suspendCount += Fixture.increment; }, connect() {},
     async refresh() { operations.push({ name: Fixture.refreshOperation }); },
     resume() { suspended = false; resumeCount += Fixture.increment; operations.push({ name: Fixture.resumeOperation }); },

@@ -62,21 +62,21 @@ const Playing = ({ navigation }: any) => {
 
   const api = useApi();
   const { data: isLiked, updateData } = useData<boolean>(
-    `isLiked:${currentTrack?.id}`,
+    `isLiked:${currentTrack?.recordingIdentifier}`,
     undefined,
     currentTrack?.isLiked
   );
 
   const toggleLike = useCallback(async () => {
-    if (!currentTrack) return;
+    if (!currentTrack?.recordingIdentifier) return;
     const newLikedState = !isLiked;
     updateData(newLikedState);
     try {
-      await api.post(`Library/likes/${currentTrack.id}`, {
+      await api.post(`Library/likes/${currentTrack.recordingIdentifier}`, {
         title: currentTrack.title,
         artist: currentTrack.artist,
         album: currentTrack.album,
-        cover: currentTrack.artwork,
+        cover: currentTrack.artworkAddress,
       });
     } catch (error) {
       console.error('Failed to toggle like:', error);
@@ -147,7 +147,7 @@ const Playing = ({ navigation }: any) => {
             />
           </HeaderContainer>
           <AlbumCover
-            source={{ uri: currentTrack?.artwork || PLACEHOLDER_ALBUM_COVER }}
+            source={{ uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER }}
           />
           <SongDetailsContainer>
             <SongDescriptorContainer>
@@ -195,10 +195,10 @@ const Playing = ({ navigation }: any) => {
           position={menuPosition}
           navigation={navigation}
           params={{
-            recordingIds: [currentTrack?.id],
-            albumId: currentTrack?.releaseId || '',
+            recordingIds: [currentTrack?.recordingIdentifier],
+            albumId: currentTrack?.albumIdentifier || '',
             albumTitle: currentTrack?.album || '',
-            albumCover: currentTrack?.artwork || '',
+            albumCover: currentTrack?.artworkAddress || '',
             albumArtist: currentTrack?.artist || '',
           }}
         />

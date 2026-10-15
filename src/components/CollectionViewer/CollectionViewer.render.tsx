@@ -60,8 +60,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   emptyMessage = 'Collection temporarily unavailable',
   onEndReached,
 }) => {
-  const { queueLength } = useMusicQueue();
-  const hasPlayingOverlay = queueLength > 0;
+  const { currentTrack } = useMusicQueue();
+  const hasPlayingOverlay = currentTrack !== null;
 
   const handleScroll = ({ nativeEvent }: any) => {
     if (!onEndReached) return;

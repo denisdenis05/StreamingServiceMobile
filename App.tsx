@@ -65,7 +65,7 @@ export const CustomToast = ({ text1, text2 }: any) => (
 // --- Inner app component, hooks safe here ---
 const InnerApp = () => {
   const api = useApi();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, isRestored } = useAuth();
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
   // Deep link listener
@@ -89,18 +89,9 @@ const InnerApp = () => {
     return () => unsubscribe();
   }, [api]);
 
-  // Initialize player
+  const PlayerStartupFailureMessage = 'Audio player initialization failed.';
   useEffect(() => {
-    const initializePlayer = async () => {
-      try {
-        await setupPlayer();
-        console.log('Track Player initialized successfully');
-      } catch (error) {
-        console.error('Failed to initialize Track Player:', error);
-      }
-    };
-
-    initializePlayer();
+    void setupPlayer().catch(() => console.warn(PlayerStartupFailureMessage));
   }, []);
 
   const AuthStack = () => (
@@ -164,7 +155,7 @@ const InnerApp = () => {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      {isLoggedIn ? <MainStack /> : <AuthStack />}
+      {isRestored && (isLoggedIn ? <MainStack /> : <AuthStack />)}
       <Toast config={{ message: CustomToast }} />
     </NavigationContainer>
   );

@@ -4,7 +4,15 @@
 
 Branch: `feat/streaming-service-player-audio-migration`.
 
-Replace RNTP with the sibling StreamingServicePlayer package on Android and iOS. The user requires stopping and asking when a migration or build problem occurs. Apply the project quality skill to player work. Keep audio commands independent of Last.fm requests and capture reporting session identity before asynchronous operations.
+Replace RNTP with the sibling StreamingServicePlayer package on Android and iOS. The latest user instruction authorizes continuing the full migration without stopping for implementation choices. Commits were prohibited until after 17:23 Europe/Bucharest on 2026-10-15; the first commit in this chapter was made after 20:23 local. Earlier stop/no-commit statements below describe prior instructions. Apply the project quality skill to player work. Keep audio commands independent of Last.fm requests and capture reporting session identity before asynchronous operations.
+
+## Current state — 2026-10-15
+
+The app now uses StreamingServicePlayer for playback on both platform code paths. AudioPlayerService, album/playlist/search actions, Playing, the mini player and progress controls use PlaybackRuntime. RNTP imports, dependency/lock entry, startup service registration, playbackService.js and QueueEventEmitter.ts are removed. Native player prerequisite: StreamingServicePlayer commit a986902.
+
+The rewritten queue is selected. Authentication restoration, shared refresh, account cleanup, managed cache lookup, public metadata, native observation, Last.fm accounting and one-batch suggestions are wired. Full playlist playback loads all pages before one atomic selection, with cancellation and a 10,000-entry limit. Background listening reports remain in memory.
+
+Code/build migration is implemented. Physical-device playback and the real iOS React Native host remain unverified. The unsigned xtool harness validates shared Swift packaging, not the app's complete iOS CocoaPods/Codegen/Objective-C++/Hermes integration. No Android device was connected. Existing dependency-security edits were preserved separately; checks below used the current working dependency installation.
 
 ## Completed — 2026-10-13
 
@@ -197,3 +205,100 @@ Before modifying runtime startup, AuthContext or UI consumers, `./node_modules/.
 Per the user's stop-and-ask instruction, runtime/UI migration pauses for approval to fix those unrelated app type errors. RNTP is still active. No startup registration, existing audio hook or UI engine has been switched in this chapter.
 
 After that decision: expose authentication restoration readiness, compose the native bridge/cache/reporting adapters with these components, preserve the suggestions flow with account/selection fences, replace AudioPlayerService and RNTP UI hooks together, and remove old playback-service registration. Then verify full app types, deterministic runtime/integration cases, a Metro bundle and the actual Android APK. Device playback, native background listening persistence and the iOS React Native host remain separate gates. Keep the user's pending package/lock security edits and removed declaration intact.
+
+## App TypeScript errors — fixed, uncommitted
+
+The user requested only these fixes, then a stop without committing. Removed the unsupported colorInterpolationFilters props from both heart icons and xmlns from the pause icon. ActionItem now declares the optional fill prop already supplied by ContextMenu. Added src/types/url-search-params.d.ts for URLSearchParams.get; the installed React Native implementation provides this method, but its global type declaration omits it. Deep-link runtime behavior was not changed.
+
+`./node_modules/.bin/tsc --noEmit --pretty false` and `git diff --check` passed. These changes remain uncommitted. Runtime/UI migration was not resumed; RNTP remains active. The next migration steps above remain pending further instruction.
+
+## Queue review — rewrite before runtime migration
+
+The user requested a queue analysis before further integration. [QUEUE_REWRITE_REVIEW.md](QUEUE_REWRITE_REVIEW.md) records the reviewed source locations, inferred failure sequences, replacement-component gaps, target ownership, behavior decisions, implementation chapters and required regression cases.
+
+Recommendation: completely replace the active mobile queue hook and its screen-level coordination. Keep the replacement player's native logical queue as authority and retain its tested canonical/playback-order semantics. The review found lost edits on shuffle restoration, stale prequeued removals, index-based misidentification, non-atomic screen-driven playback startup, commands bypassing serialization, missing active-path account cleanup and incomplete suggestion/error handling. Playing a playlist currently queues only loaded pages.
+
+The new components also need work before wiring: reserve edit order before asynchronous mapping, distinguish queue identity from session epochs, define cancellation/rebase rules, avoid full paging on selection-only revisions, recover failed reads, retire metadata without relying on full UI projection, and avoid linear active-index searches on every progress update. Native page lookup/timeline reconciliation and large-candidate source preparation need measurement and targeted changes.
+
+Updated next step: specify and rewrite the mobile queue layer, correct the reviewed adapter/native gaps, then resume authentication/runtime/UI composition. Proposed features such as atomic Insert Next, Clear Upcoming, configurable continuation and listening history are identified separately from confirmed behavior. Next in Repeat Song restarts the same song; active removal continues to the next surviving entry. No implementation changes or test runs were made for this analysis, and nothing was committed. Existing uncommitted TypeScript/dependency changes remain intact.
+
+## Queue specification and command-layer rewrite — items 1 and 2 completed, uncommitted
+
+The user authorized only work-list items 1 and 2 and explicitly prohibited commits. [QUEUE_BEHAVIOR.md](QUEUE_BEHAVIOR.md) defines ownership, occurrence/lifetime identities, ordering, candidate dependencies, control cancellation, conservative conflicts/unknown outcomes, retained native playback semantics, continuation/collection boundaries and the feature-to-test mapping.
+
+NativeQueueController has been rewritten around QueueIntentScheduler. It reserves list/mode edit slots at acceptance before asynchronous cache/snapshot work. Append order is stable. Appends/mode edits accepted during replacement wait for its successful commit, and cannot fall through to the previous queue if it fails. Replacements and clear supersede earlier pending edits. Controls and explicit selection cancel candidate playback through a separate native command path; ordinary append can finish while paused. Source inputs and occurrence identifiers are captured at acceptance. Added atomic removeMany and stable-anchor move using existing native contracts.
+
+Queue lifetimes distinguish desired from acknowledged committed ownership. They are local dependency tokens, not a newly implemented native queue identity. Session invalidation cancels pending work, and PlaybackAuthenticationCoordinator now calls the explicitly named invalidateSession method. cancelPendingReplacement is a separate integration port for native controls; it does not send another control or cancel ordinary appends.
+
+Added queueCommandOnce to the dispatcher. This facade does not use automatic queue conflict retries. A changed revision during preparation rejects before mutation, with staged source cleanup. A lost/uncertain native outcome blocks later list/mode/selection edits rather than replaying them; explicit replacement or clear restores known ownership, while Pause/Stop remain available. Native rejections expose fixed messages with typed status/error code. A replacement already applied before cancellation remains authoritative when its receipt returns; cancellation does not restore the previous native queue. Late unused source registrations are consumed and released.
+
+The existing RNTP hook, QueueEventEmitter, playback service and screen shouldPlayFromStart effects remain selected and unchanged. The new facade contains none of their index/prequeue/original-array coordination. Removing the legacy implementation occurs at the runtime/UI switch; partially wiring these components would exceed items 1 and 2.
+
+### Checks
+
+- `npm run test:player-mobile` passed focused strict compilation and all 230 deterministic host checks across ten suites. It now includes previously standalone source-preparation, composition and authentication suites plus the rewrite suites by default.
+- New coverage: 56 queue rewrite cases, 11 intent scheduler cases and three single-attempt dispatcher cases. The existing composition suite was updated for prompt cancellation/late cleanup and the explicit no-retry conflict policy. Authentication tests cover the renamed session invalidation boundary.
+- Cases cover slow/fast append ordering, replacement dependencies/failure, cancellation fairness, paused append, rapid replacement, captured identifiers/source input, duplicate recordings, batch removal, move/anchor failure, shuffle edits, repeat-one Next, paused active removal, stale revisions/accounts, unknown receipts/recovery and late handle cleanup. See QUEUE_BEHAVIOR.md for the mapping.
+- `./node_modules/.bin/tsc --noEmit --pretty false` passed for the full app. `git diff --check` passed. No native code/protocol changed, so no Gradle, Swift, xtool, APK, Metro bundle or device check was rerun for this chapter. These are host command-component checks, not proof of audible playback or a performance gain.
+
+No changes were staged or committed. Existing TypeScript fixes, dependency/lock/security edits and the removed declaration were preserved. The only new package script edit is the expanded test:player-mobile command.
+
+### Resume at item 3
+
+Correct native list/content revision and ownership/remote-control preconditions, lazy paging, failed-read recovery, metadata retirement and measured indexing/reconciliation/preparation costs. The current coarse native revision deliberately rejects some edits across selection changes. Remote Pause/Stop supersession, including redundant native actions, still needs native event/precondition design and runtime wiring; the cancellation port alone is not an atomic native intent guard. Then implement accepted optional queue features, wire authentication/cache/reporting/continuation, and switch UI/startup/system controls together. RNTP remains active; no Android/iOS runtime validation is claimed for this rewrite.
+
+## Full runtime/UI migration — implemented
+
+### Selected runtime
+
+PlaybackRuntime composes the native bridge, serialized command dispatcher, queue intent scheduler, source preparation, metadata registry, state/control stores, reporting and authentication. The app uses one native event subscription. Progress selects primitive position/duration values independently of the music context. A native engine restart invalidates pending work, clears uncertain ownership and restores credentials before further playback.
+
+ApplicationAuthenticationSession is shared by AuthContext, API clients and playback. Concurrent 401 responses share token refresh. Restoration cannot overwrite a later login/logout. A new account invalidates queue preparation and continuation immediately. Same-account token rotation preserves the queue. Captured reporting clients keep old requests tied to their account and never refresh or replay them as another account. Request timeouts are 15 seconds; HTTP completion does not hold the native audio command lane.
+
+The app transport uses the same StreamingPlayer TurboModule and StreamingPlayerStateChanged event on Android/iOS. Framework module names and server response keys remain explicit protocol boundaries. Platform dependencies are composed at NativeAudioRuntime and AuthenticationService; pure runtime/authentication/queue components have injected collaborators.
+
+### Queue and continuation
+
+Native queue identities detect replacement outside the app facade. Separate content revisions avoid repeated page reads on selection/progress, and native control revisions reject stale prepared replacements, including redundant system Pause. Ordinary append can survive Pause. Atomic appendAndSelect installs suggestions and selects their first occurrence in one native mutation. Repeat Song Next restarts the same occurrence. Clear/removal release public metadata independently of a successful full UI read.
+
+A full playlist is loaded with bounded 100-row server pages, checked against the selected recording and native capacity, then committed once. A newer collection request cancels older source preparation before its HTTP loading finishes. Superseded collection results do not touch audio. Suggestions are one batch per explicitly selected queue, shared by duplicate end/Next notifications and fenced by account, engine, queue identity, control revision and selection. Late results do not override manual selection. Empty/error responses preserve the ended queue; there is no endless autoplay policy or dedicated suggestion-retry button.
+
+Queue views keep a bounded native page projection and an occurrence-position index. Failed reads clear the loading flag and retry while paused, with a 250-millisecond delay and at most three attempts; content changes or explicit refresh allow a new attempt. Late failures cannot restore an older selected entry. Suspension cancels retries. The projection still materializes the full logical queue on content changes; fully lazy queue UI, large queue benchmarks and Android timeline reorder optimization remain follow-up work.
+
+### Feature checks
+
+| Behavior | Dedicated tests |
+| --- | --- |
+| Restoration, persistence order/failure, shared refresh, subject mismatch, late refresh/logout/account changes | tools/player-application-session.test.cjs |
+| Actual axios interceptors: authorization, concurrent refresh across clients, one replay, auth route exclusion, captured account and late login/401 responses | tools/player-network-client.test.cjs |
+| Catalog URLs/public metadata and complete/cancelled/oversized collection pagination | tools/player-collections.test.cjs |
+| Runtime composition, shared observation/disposal, source capture, late collection/suggestion results, native Pause, token rotation/logout, continuation, repeat-one, nonblocking reports, foreign ownership and engine restart | tools/player-runtime.test.cjs, injected native fixture backed by the production queue reference model |
+| Failed projection recovery, retry bound, latest selection, suspension and new queue recovery | tools/player-view-recovery.test.cjs |
+| Native content/identity projection cache | tools/player-queue-projection.test.cjs |
+| Each app bridge method, subscription cleanup, selected dependency and startup removal | tools/player-selected-runtime.test.cjs |
+| Queue ordering, cancellation, unknown outcomes, duplicate occurrences, edit semantics, metadata/source ownership and reporting | Existing rewrite, intent, source, composition, authentication and reporting suites |
+| Metro binary image API and patch integrity | tools/player-metro-assets.test.cjs, tools/player-metro-patch.test.cjs |
+
+### Executed checks
+
+- npm run test:player-mobile: strict adapter compilation and 287 deterministic tests passed across 16 files. New runtime/network tests inject native, cache, network, reporting and scheduling collaborators; they do not play device audio.
+- ./node_modules/.bin/tsc --noEmit --pretty false: full app passed.
+- npm run test:player-integration: seven workspace/Metro/export checks passed.
+- npm run test:player-android-app: all 11 APK integration checks passed after RNTP removal. Generated registration/provider, service permission and four ABI FFmpeg/application libraries are present.
+- node --test tools/player-metro-patch.test.cjs tools/player-metro-assets.test.cjs: three passed. The patch applies to pristine metro 0.82.5 using npm run postinstall. It fixes both named imports and asset-file reads for image-size's binary API, in JavaScript and Flow.
+- React Native CLI bundle --platform android --dev false and --platform ios --dev false: both production bundles and image assets built successfully. Bundle artifacts are under /tmp/full-audio-migration-baseline.
+- Player checks: 328 TypeScript/tooling, 253 Android native and 280 Swift host tests passed; Apple SDK compilation and unsigned xtool release harness packaging passed. See ../StreamingServicePlayer/PROGRESS.md.
+- adb devices: no device attached. No audible playback, service dismissal, notification controls, background survival, iPhone execution or performance measurement is claimed.
+
+The available all-ABI debug APK changed from 168,631,447 bytes to 163,573,711 bytes: 5,057,736 bytes smaller (about 4.82 MiB). The baseline already contained both players, so this measures removing RNTP from that build, not the size difference between an original RNTP-only app and this player. Release/device-size results may differ.
+
+### Resume / remaining validation
+
+1. Install the Android APK and exercise real authenticated playback, cached files, URL/header/POST-resolved sources, seeks, rapid selections, playlist pagination, queue edits, repeat/shuffle, suggestions, account changes, Bluetooth/headphones, notifications and lock-screen controls.
+2. Verify the confirmed Android policy: dismissing the app from Recent Apps stops playback; ordinary backgrounding preserves it. Exercise service/process recreation and stale JS reconnect.
+3. On a macOS/Xcode host, prepare the sibling player, run CocoaPods and build the actual iOS React Native app. The Linux Apple SDK/xtool harness checks do not replace this gate. Use the existing harness device scenarios when signing/device access is available.
+4. Measure large queue preparation/first-read/reorder cost and release memory/start/seek behavior. Native entry/page indexing is implemented; full lazy UI projection and Android timeline reconciliation remain unmeasured follow-up work.
+5. Implement durable background report/session restoration only if required. Current reporting is nonblocking but process-local. Cached files are accepted using the existing managed-file existence/size policy; complete download integrity and account-scoped offline storage remain separate work.
+6. Keep optional Insert Next, Clear Upcoming, explicit continuation retry/configuration and actual listening history separate from this migration.
+
+No push was made. Earlier package/lock security edits, removed image-colors declaration and dependency-security test remain outside the migration commit. In particular, the checked working installation includes the user's pending Metro/image-size override; dependency reproducibility should be rechecked once that separate change is committed.

@@ -188,3 +188,25 @@ test(TestNames.cachedReadFence, async () => {
   gate.resolve(page(snapshot(entries.length, Fixture.newerRevision), entries));
   assertion.equal(await pending, null);
 });
+
+const ContentRevisionFixture = Object.freeze({ queueIdentifier: 'content-queue', otherQueueIdentifier: 'other-content-queue',
+  contentRevision: 12, controlRevision: 20, changedControlRevision: 21 });
+test('native content stamps reuse queue pages across selection and redundant playback controls', async () => {
+  const entries = [queueEntry(Fixture.firstIdentifier)]; const scenario = fixtureProjection(entries);
+  scenario.currentSnapshot.cursor = { ...scenario.currentSnapshot.cursor, queueIdentifier: ContentRevisionFixture.queueIdentifier,
+    queueContentRevision: ContentRevisionFixture.contentRevision, playbackControlRevision: ContentRevisionFixture.controlRevision };
+  const first = await scenario.projection.read(scenario.currentSnapshot);
+  const selected = { ...scenario.currentSnapshot, cursor: { ...scenario.currentSnapshot.cursor, queueRevision: Fixture.newerRevision,
+    playbackControlRevision: ContentRevisionFixture.changedControlRevision } };
+  assertion.equal(await scenario.projection.read(selected), first);
+  assertion.equal(scenario.reads.length, Fixture.expectedSinglePageReadCount);
+});
+test('a changed native queue identity invalidates equal-content cached pages', async () => {
+  const entries = [queueEntry(Fixture.firstIdentifier)]; const scenario = fixtureProjection(entries);
+  scenario.currentSnapshot.cursor = { ...scenario.currentSnapshot.cursor, queueIdentifier: ContentRevisionFixture.queueIdentifier,
+    queueContentRevision: ContentRevisionFixture.contentRevision };
+  await scenario.projection.read(scenario.currentSnapshot);
+  scenario.currentSnapshot.cursor = { ...scenario.currentSnapshot.cursor, queueIdentifier: ContentRevisionFixture.otherQueueIdentifier };
+  await scenario.projection.read(scenario.currentSnapshot);
+  assertion.equal(scenario.reads.length, Fixture.expectedSinglePageReadCount + Fixture.expectedSinglePageReadCount);
+});

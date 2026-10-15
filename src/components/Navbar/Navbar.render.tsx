@@ -14,7 +14,7 @@ import { useState } from 'react';
 
 const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
   const currentScreen = route.name;
-  const { queueLength } = useMusicQueue();
+  const { currentTrack } = useMusicQueue();
   const [pressedCreate, setPressedCreate] = useState(false);
   const [navbarHeight, setNavbarHeight] = useState(sizes.navbarHeight);
 
@@ -56,7 +56,7 @@ const Navbar = ({ navigation, route }: { navigation: any; route: any }) => {
           })}
         </MainContainer>
       </GradientContainer>
-      {queueLength > 0 && <PlayingOverlay navigation={navigation} bottomOffset={navbarHeight + 6} />}
+      {currentTrack !== null && <PlayingOverlay navigation={navigation} bottomOffset={navbarHeight + 6} />}
       {pressedCreate && <CreateOverlay navigation={navigation} />}
     </>
   );

@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
-import { useAuth } from '../../hooks/AuthContext.tsx';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { Recording } from '../../constants/types.tsx';
-import { Track } from 'react-native-track-player';
 import {
-  TEMPORARY_API_URL,
   PLACEHOLDER_ALBUM_COVER,
 } from '../../constants/placeholders.tsx';
 import CollectionViewer from '../../components/CollectionViewer';
@@ -41,12 +38,9 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   const { playlistId, playlistTitle, playlistOwner, playlistCover, isOwner } =
     route.params;
   const [recordings, setRecordings] = useState<Recording[]>([]);
-  const { replaceQueue, playTrackAtIndex, queue } = useMusicQueue();
-  const [shouldPlayFromStart, setShouldPlayFromStart] = useState(false);
-  const [startIndex, setStartIndex] = useState(0);
+  const { playPlaylist } = useMusicQueue();
   const [fetched, setFetched] = useState(false);
   const api = useApi();
-  const { token } = useAuth();
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>(
@@ -111,52 +105,12 @@ const PlaylistViewer = ({ navigation, route }: any) => {
     fetchRecordingsFromServer(nextPage);
   }, [hasMore, isLoadingMore, page, fetchRecordingsFromServer]);
 
-  useEffect(() => {
-    if (shouldPlayFromStart) {
-      playTrackAtIndex(startIndex);
-      setShouldPlayFromStart(false);
-    }
-  }, [queue]);
-
-  const handlePlayPlaylist = useCallback(() => {
-    const tracks: Track[] = recordings.map(recording => ({
-      id: recording.id,
-      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
-      title: recording.title,
-      artist: recording.artistName,
-      album: recording.releaseTitle,
-      releaseId: recording.releaseId || '',
-      mediaId: recording.id,
-      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
-      headers: { Authorization: `Bearer ${token}` },
-      playlistId: playlistId,
-      isLiked: recording.isLiked,
-    }));
-    setStartIndex(0);
-    replaceQueue(tracks);
-    setShouldPlayFromStart(true);
-    navigation.navigate('Playing', {});
-  }, [recordings, token, playlistId, replaceQueue, navigation]);
-
+  const FirstPlaylistEntryIndex = 0;
   const handlePlayFromRecording = useCallback((recordingIndex: number) => {
-    const tracks: Track[] = recordings.map(recording => ({
-      id: recording.id,
-      url: `${TEMPORARY_API_URL}Stream?id=${recording.id}`,
-      title: recording.title,
-      artist: recording.artistName,
-      album: recording.releaseTitle,
-      releaseId: recording.releaseId || '',
-      mediaId: recording.id,
-      artwork: recording.cover || PLACEHOLDER_ALBUM_COVER,
-      headers: { Authorization: `Bearer ${token}` },
-      playlistId: playlistId,
-      isLiked: recording.isLiked,
-    }));
-    setStartIndex(recordingIndex);
-    replaceQueue(tracks);
-    setShouldPlayFromStart(true);
+    void playPlaylist(playlistId, recordingIndex, recordings[recordingIndex]?.id);
     navigation.navigate('Playing', {});
-  }, [recordings, token, playlistId, replaceQueue, navigation]);
+  }, [playlistId, recordings, playPlaylist, navigation]);
+  const handlePlayPlaylist = useCallback(() => handlePlayFromRecording(FirstPlaylistEntryIndex), [handlePlayFromRecording]);
 
   const handlePlaylistMore = useCallback((event: any) => {
     if (!isOwner) return;

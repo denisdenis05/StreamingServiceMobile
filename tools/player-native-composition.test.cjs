@@ -11,7 +11,7 @@ const { NativePlaybackViewStore } = require('../.build/audio-migration/NativePla
 const { NativePlaybackReporting } = require('../.build/audio-migration/NativePlaybackReporting');
 const { CommandResultStatus, QueuePageStatus, PlayerEventType, PlaybackState, PlaybackIntent,
   PlaybackInterruption, RepeatMode, MediaSourceKind, PlayerStateStore, QueueReferenceModel, DefaultQueuePolicy,
-  QueueEntryValidator } = require('streaming-service-player');
+  QueueEntryValidator, PlayerErrorCode } = require('streaming-service-player');
 
 const Fixture = Object.freeze({
   server: 'https://catalog.example.invalid/', recording: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -50,7 +50,7 @@ const TestNames = Object.freeze({
   pause: 'pause completes while private source registration remains pending and cancels candidate playback',
   account: 'prepared private sources cannot be committed into another native authentication epoch',
   rejection: 'rejected native queue commands release staged sources and metadata',
-  retry: 'queue conflicts retry with fresh contexts while retaining the staged source session',
+  retry: 'queue conflicts return without replaying an edit against changed native state',
   append: 'queue append preserves the current native occurrence',
   wanted: 'an obsolete append predicate prevents source registration and queue mutation',
   repeat: 'repeat-one Next delegates to the native reducer and restarts the same occurrence',
@@ -296,7 +296,8 @@ test(TestNames.pause, async () => {
   const execution = scenario.controller.playTracks([{ ...track(), mediaSource: { kind: MediaSourceKind.Local, address: Fixture.localAddress } }], Fixture.firstIndex);
   const rejected = assertion.rejects(execution); await started.promise; await scenario.controller.pause();
   assertion.deepEqual(scenario.operations.map(operation => operation.name), [Fixture.pauseOperation]);
-  pendingRegistration.resolve(); await rejected; assertion.equal(scenario.releases.length, Fixture.singleCount);
+  pendingRegistration.resolve(); await rejected;
+  await settleUntil(() => scenario.releases.length === Fixture.singleCount);
 });
 test(TestNames.account, async () => {
   const scenario = environment(); const pendingRegistration = deferred(); const started = deferred();
@@ -306,7 +307,8 @@ test(TestNames.account, async () => {
   assertion.deepEqual(scenario.operations, []); assertion.equal(scenario.releases.length, Fixture.singleCount);
 });
 test(TestNames.rejection, async () => {
-  const scenario = environment(); scenario.setCommandOverride(() => ({ status: CommandResultStatus.Rejected }));
+  const scenario = environment(); scenario.setCommandOverride(() => ({ status: CommandResultStatus.Rejected,
+    error: { code: PlayerErrorCode.InvalidCommand, message: Fixture.failure, retryable: false } }));
   let stagedIdentifier = null;
   const stageMetadata = scenario.metadata.stage.bind(scenario.metadata);
   scenario.metadata.stage = views => {
@@ -322,10 +324,10 @@ test(TestNames.retry, async () => {
   const scenario = environment(); let first = true; scenario.setCommandOverride(() => {
     if (!first) return null; first = false; return { status: CommandResultStatus.Conflict, cursor: scenario.snapshot().cursor };
   });
-  await scenario.controller.playTracks([{ ...track(), mediaAddress: Fixture.address }], Fixture.firstIndex);
-  assertion.equal(scenario.registrations.length, Fixture.singleCount); assertion.equal(scenario.operations.length, Fixture.twoCount);
-  assertion.notEqual(scenario.operations[Fixture.firstIndex].context.requestIdentifier, scenario.operations[Fixture.secondIndex].context.requestIdentifier);
-  assertion.deepEqual(scenario.releases, []);
+  await assertion.rejects(scenario.controller.playTracks([{ ...track(), mediaAddress: Fixture.address }], Fixture.firstIndex));
+  await settleUntil(() => scenario.releases.length === Fixture.singleCount);
+  assertion.equal(scenario.registrations.length, Fixture.singleCount); assertion.equal(scenario.operations.length, Fixture.singleCount);
+  assertion.equal(scenario.snapshot().queueLength, Fixture.emptyCount);
 });
 test(TestNames.append, async () => {
   const scenario = environment(); await scenario.controller.playTracks([track()], Fixture.firstIndex);

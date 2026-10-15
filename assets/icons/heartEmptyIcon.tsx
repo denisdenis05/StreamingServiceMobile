@@ -60,7 +60,6 @@ const HeartEmptyIcon: React.FC<IconProps> = ({
           width="58"
           height="58"
           filterUnits="userSpaceOnUse"
-          colorInterpolationFilters="sRGB"
         >
           <FeFlood floodOpacity="0" result="BackgroundImageFix" />
           <FeColorMatrix

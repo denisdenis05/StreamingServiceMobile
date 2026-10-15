@@ -12,7 +12,15 @@ export const PlaybackViewPolicy = Object.freeze({
   firstGeneration: 0,
   generationIncrement: 1,
   staleProjectionMessage: 'The native queue changed while its view was being read.',
+  retryDelayMilliseconds: 250,
+  maximumReadAttempts: 3,
 });
+
+export type QueueReadRetryScheduler = (retry: () => void) => () => void;
+const scheduleQueueReadRetry: QueueReadRetryScheduler = retry => {
+  const timeout = setTimeout(retry, PlaybackViewPolicy.retryDelayMilliseconds);
+  return () => clearTimeout(timeout);
+};
 
 export interface PlaybackQueueView {
   readonly queue: readonly PlaybackTrackView[];
@@ -44,6 +52,10 @@ export class NativePlaybackViewStore {
   private queueCursor: PlayerCursor | null = null;
   private readGeneration = PlaybackViewPolicy.firstGeneration;
   private enabled = true;
+  private readonly entryPositions = new Map<string, number>();
+  private failedCursor: PlayerCursor | null = null;
+  private retryCount = PlaybackViewPolicy.emptyQueueLength;
+  private cancelRetry: (() => void) | null = null;
 
   constructor(
     readonly state: PlayerStateStore,
@@ -52,6 +64,7 @@ export class NativePlaybackViewStore {
     private readonly metadata: Pick<PlaybackMetadataRegistry, 'viewFor' | 'observe' | 'observeCurrentEntry' | 'clear'>,
     private readonly reporting: Pick<NativePlaybackReporting, 'receive' | 'clear' | 'synchronize'>,
     private readonly reportFailure: (failure: unknown) => void,
+    private readonly scheduleRetry: QueueReadRetryScheduler = scheduleQueueReadRetry,
   ) {}
 
   getSnapshot = (): PlaybackQueueView => this.view;
@@ -81,8 +94,10 @@ export class NativePlaybackViewStore {
   }
 
   clear(): void {
+    this.resetRetry();
     this.readGeneration += PlaybackViewPolicy.generationIncrement;
     this.queueCursor = null;
+    this.entryPositions.clear();
     this.projection.clear();
     this.reporting.clear();
     this.metadata.clear();
@@ -100,6 +115,7 @@ export class NativePlaybackViewStore {
   }
 
   async refresh(): Promise<void> {
+    this.resetRetry();
     this.queueCursor = null;
     await this.state.refresh();
     this.receiveSnapshot();
@@ -115,12 +131,16 @@ export class NativePlaybackViewStore {
     this.metadata.observeCurrentEntry(snapshot.currentEntry);
     this.reporting.synchronize(snapshot);
     const needsQueue = this.queueCursor === null || !this.sameQueue(this.queueCursor, snapshot.cursor);
-    this.updateView(snapshot, needsQueue || this.view.isQueueLoading);
+    const failedSameQueue = this.failedCursor !== null && this.sameQueue(this.failedCursor, snapshot.cursor);
+    if (!failedSameQueue) this.resetRetry();
+    const retryBlocked = failedSameQueue && (this.cancelRetry !== null || this.retryCount >= PlaybackViewPolicy.maximumReadAttempts);
+    this.updateView(snapshot, !retryBlocked && (needsQueue || this.view.isQueueLoading));
+    if (retryBlocked) return;
     if (needsQueue) {
       this.queueCursor = { ...snapshot.cursor };
       const generation = ++this.readGeneration;
       void this.readQueue(snapshot, generation).catch(failure => {
-        if (generation === this.readGeneration) this.reportFailure(failure);
+        this.readFailed(snapshot, generation, failure);
       });
     }
   }
@@ -131,12 +151,37 @@ export class NativePlaybackViewStore {
     const latest = this.state.getSnapshot();
     if (latest === null || !this.sameQueue(snapshot.cursor, latest.cursor)) return;
     if (queue === null) {
-      this.queueCursor = null;
-      this.reportFailure(new Error(PlaybackViewPolicy.staleProjectionMessage));
+      this.readFailed(snapshot, generation, new Error(PlaybackViewPolicy.staleProjectionMessage));
       return;
     }
+    this.resetRetry();
+    this.entryPositions.clear();
+    queue.forEach((entry, entryIndex) => this.entryPositions.set(entry.entryIdentifier, entryIndex));
     this.metadata.observe(queue, latest.currentEntry);
     this.updateView(latest, false, queue);
+  }
+
+  private readFailed(snapshot: PlayerSnapshot, generation: number, failure: unknown): void {
+    if (generation !== this.readGeneration || !this.enabled) return;
+    const latest = this.state.getSnapshot();
+    if (latest === null || !this.sameQueue(snapshot.cursor, latest.cursor)) return;
+    this.queueCursor = null;
+    this.failedCursor = { ...latest.cursor };
+    this.retryCount += PlaybackViewPolicy.generationIncrement;
+    this.updateView(latest, false);
+    this.reportFailure(failure);
+    if (this.retryCount >= PlaybackViewPolicy.maximumReadAttempts) return;
+    this.cancelRetry = this.scheduleRetry(() => {
+      this.cancelRetry = null;
+      if (generation === this.readGeneration && this.enabled) this.receiveSnapshot();
+    });
+  }
+
+  private resetRetry(): void {
+    this.cancelRetry?.();
+    this.cancelRetry = null;
+    this.failedCursor = null;
+    this.retryCount = PlaybackViewPolicy.emptyQueueLength;
   }
 
   private updateView(snapshot: PlayerSnapshot, isQueueLoading: boolean, queue = this.view.queue): void {
@@ -145,7 +190,7 @@ export class NativePlaybackViewStore {
       ? this.view.currentTrack : currentTrack;
     this.setView({ queue, currentTrack: stableTrack,
       currentIndex: currentTrack === null ? PlaybackViewPolicy.noCurrentEntryIndex
-        : queue.findIndex(entry => entry.entryIdentifier === currentTrack.entryIdentifier),
+        : this.entryPositions.get(currentTrack.entryIdentifier) ?? PlaybackViewPolicy.noCurrentEntryIndex,
       isPlaying: snapshot.state === PlaybackState.Playing && snapshot.playbackIntent === PlaybackIntent.Play,
       isLoading: snapshot.state === PlaybackState.Resolving || snapshot.state === PlaybackState.Buffering,
       isQueueLoading, isShuffled: snapshot.shuffled, repeatMode: snapshot.repeatMode,
@@ -169,6 +214,7 @@ export class NativePlaybackViewStore {
   }
 
   private sameQueue(previous: PlayerCursor, current: PlayerCursor): boolean {
-    return this.sameSession(previous, current) && previous.queueRevision === current.queueRevision;
+    return this.sameSession(previous, current) && previous.queueIdentifier === current.queueIdentifier
+      && (previous.queueContentRevision ?? previous.queueRevision) === (current.queueContentRevision ?? current.queueRevision);
   }
 }

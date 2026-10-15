@@ -203,3 +203,24 @@ test(TestNames.clearRecovery, async () => {
   await fixture.dispatcher.initialize();
   assertion.equal(fixture.initializationCount, ExpectedReconnectCalls);
 });
+const SingleAttemptTestNames = Object.freeze({
+  context: 'single-attempt queue dispatch captures the current native revision and epochs',
+  conflict: 'single-attempt queue dispatch returns a conflict without retrying',
+  invalidation: 'single-attempt queue dispatch rejects a late receipt after session invalidation',
+});
+test(SingleAttemptTestNames.context, async () => {
+  const fixture = fixtureDispatcher(); let captured;
+  await fixture.dispatcher.queueCommandOnce(async context => { captured = context; return receipt(context); });
+  assertion.equal(captured.expectedQueueRevision, Fixture.firstRevision);
+  assertion.equal(captured.engineEpoch, Fixture.engineEpoch); assertion.equal(captured.authenticationEpoch, Fixture.authenticationEpoch);
+});
+test(SingleAttemptTestNames.conflict, async () => {
+  const fixture = fixtureDispatcher(); let attempts = InitialCount;
+  const result = await fixture.dispatcher.queueCommandOnce(async context => { attempts += CountIncrement; return receipt(context, CommandResultStatus.Conflict); });
+  assertion.equal(attempts, ExpectedSingleCall); assertion.equal(result.status, CommandResultStatus.Conflict);
+});
+test(SingleAttemptTestNames.invalidation, async () => {
+  const fixture = fixtureDispatcher(); const pending = deferred(); const started = deferred();
+  const operation = fixture.dispatcher.queueCommandOnce(async context => { started.resolve(); await pending.promise; return receipt(context); });
+  const rejected = assertion.rejects(operation); await started.promise; fixture.dispatcher.invalidateSession(); pending.resolve(); await rejected;
+});
