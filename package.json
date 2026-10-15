@@ -8,6 +8,8 @@
     "lint": "eslint .",
     "start": "npm run prepare:player && react-native start",
     "test": "jest",
+    "postinstall": "patch-package --error-on-fail",
+    "test:dependency-security": "node --test tools/dependency-security.test.cjs tools/player-metro-patch.test.cjs tools/player-metro-assets.test.cjs",
     "format": "prettier --write \"src/**/*.{js,ts,jsx,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,ts,jsx,tsx}\"",
     "prepare:player": "npm --prefix ../StreamingServicePlayer run build && npm --prefix ../StreamingServicePlayer run generate:specs",
@@ -28,14 +30,13 @@
     "react-native": "0.80.2",
     "react-native-config": "^1.6.1",
     "react-native-fs": "^2.20.0",
-    "react-native-image-colors": "^1.5.2",
     "react-native-inappbrowser-reborn": "^3.7.0",
     "react-native-linear-gradient": "^2.8.3",
     "react-native-mmkv": "4.3.2",
     "react-native-nitro-modules": "0.35.9",
     "react-native-paper": "^5.14.5",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.13.1",
+    "react-native-screens": "~4.18.0",
     "react-native-svg": "^15.12.0",
     "react-native-toast-message": "^2.3.3",
     "streaming-service-player": "file:../StreamingServicePlayer"
@@ -44,9 +45,9 @@
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
-    "@react-native-community/cli": "19.1.1",
-    "@react-native-community/cli-platform-android": "19.1.1",
-    "@react-native-community/cli-platform-ios": "19.1.1",
+    "@react-native-community/cli": "19.1.2",
+    "@react-native-community/cli-platform-android": "19.1.2",
+    "@react-native-community/cli-platform-ios": "19.1.2",
     "@react-native/babel-preset": "0.80.2",
     "@react-native/eslint-config": "0.80.2",
     "@react-native/metro-config": "0.80.2",
@@ -56,10 +57,17 @@
     "@types/react-test-renderer": "^19.1.0",
     "eslint": "^8.19.0",
     "jest": "^29.6.3",
+    "patch-package": "^8.0.1",
     "prettier": "^2.8.8",
     "react-native-svg-transformer": "^1.5.1",
     "react-test-renderer": "19.1.0",
     "typescript": "5.0.4"
+  },
+  "overrides": {
+    "fast-xml-parser": "^5.11.2",
+    "metro": {
+      "image-size": "^2.0.4"
+    }
   },
   "engines": {
     "node": ">=18"

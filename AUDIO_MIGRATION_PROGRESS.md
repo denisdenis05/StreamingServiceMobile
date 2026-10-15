@@ -302,3 +302,15 @@ The available all-ABI debug APK changed from 168,631,447 bytes to 163,573,711 by
 6. Keep optional Insert Next, Clear Upcoming, explicit continuation retry/configuration and actual listening history separate from this migration.
 
 No push was made. Earlier package/lock security edits, removed image-colors declaration and dependency-security test remain outside the migration commit. In particular, the checked working installation includes the user's pending Metro/image-size override; dependency reproducibility should be rechecked once that separate change is committed.
+
+## Pending dependency changes — reviewed and clean-install verified
+
+The user asked to complete migration follow-up item 6 immediately. The earlier unrelated pending dependency changes now belong to this authorized chapter. [DEPENDENCY_AUDIT.md](DEPENDENCY_AUDIT.md) records the exact changes, dependency paths, audit commands, remaining findings and validation.
+
+A separate source copy at /tmp/streaming-mobile-dependency-validation passed a fresh npm ci, automatic Metro patch application, explicit player preparation, 11 dependency/Metro regression checks, all 287 mobile tests, full app TypeScript checking, seven workspace integration checks, both production bundles and the 11-check Android APK build across four ABIs. There were no existing dependency/native outputs in that copy; npm/Gradle download caches were reused. The lockfile hash matched the workspace exactly.
+
+The pending package/lock changes and removed unused image-colors declaration are now reviewed for commit with the security regression test. No dependency changes remain intentionally excluded from this chapter. Earlier notes saying they were left separate describe the migration commit only.
+
+Current npm audit: 62 affected-package entries (56 high, six moderate), compared with 91 in a75fd66 (four critical, 68 high, 18 moderate, one low). The production-only audit reports 31 entries. All remaining entries trace to two root advisories, braces and sprintf-js, with no published fixed version at the check time. The audit still exits nonzero. These findings remain open; completing clean-install verification does not mean every vulnerability is fixed.
+
+No forced framework upgrade or advisory suppression was used. See DEPENDENCY_AUDIT.md before updating those toolchain paths. Device playback and the actual iOS native host remain the next migration validation steps.
