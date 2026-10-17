@@ -91,9 +91,9 @@ export const MetadataContainer = ({ children }: Props) => {
   return <View style={[styles.metadataContainer]}>{children}</View>;
 };
 
-export const CardImage = ({ source }: ImageProps) => {
+export const CardImage = ({ source, releaseId, cover, smallCover, verySmallCover }: ImageProps & { releaseId?: string; cover?: string; smallCover?: string; verySmallCover?: string }) => {
   return (
-    <CachedImage source={source} style={styles.cardImage} resizeMode="cover" />
+    <CachedImage releaseId={releaseId} cover={cover} smallCover={smallCover} verySmallCover={verySmallCover} tier="verySmall" source={source} style={styles.cardImage} resizeMode="cover" />
   );
 };
 

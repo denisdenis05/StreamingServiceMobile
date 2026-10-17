@@ -1,13 +1,16 @@
+import { retireLegacyImageCache } from './cache/ImageDownloadService';
+import Toast from 'react-native-toast-message';
+import { PlaybackApplicationLifecycle, PlaybackApplicationPolicy } from './player/PlaybackApplicationLifecycle';
+import { playbackNativeSessionStorage } from './PlaybackNativeSessionStorage';
 import axios from 'axios';
-import RNFS from 'react-native-fs';
-import { NativeStreamingPlayer } from 'streaming-service-player';
+import { NativeStreamingPlayer, PlayerProgressStore } from 'streaming-service-player';
 import { reactNativePlaybackTransport } from './ReactNativePlaybackTransport';
 import { PlaybackRuntime } from './player/PlaybackRuntime';
 import { PlaybackCatalogMapping } from './player/PlaybackCatalogMapping';
 import { PlaybackReportingQueue, PlaybackTracker } from './PlaybackTracker';
 import { authenticationSession } from './AuthenticationService';
 import { createApplicationNetworkClient } from './ApplicationNetworkClient';
-import { getCacheFilePath } from './cache/AudioCacheService';
+import { findCachedTrackAddress, clearAccountAudioCache, retireLegacyAudioCache } from './cache/AudioCacheService';
 import { PLACEHOLDER_ALBUM_COVER, TEMPORARY_API_URL } from '../constants/placeholders';
 
 export const AudioRuntimePolicy = Object.freeze({
@@ -15,6 +18,8 @@ export const AudioRuntimePolicy = Object.freeze({
   minimumCacheBytes: 0, filePrefix: 'file://', millisecondsPerSecond: 1000, unknownDurationMilliseconds: 0,
   startRoute: '/lastfm/start-playback', suggestionRoute: 'Metadata/get-suggested-recordings?count=20',
   unknownAlbum: 'Unknown Album', failureMessage: 'Audio playback operation failed.',
+  legacyCleanupDelayMilliseconds: 1500,
+  playbackFailureMessage: 'Audio playback failed. Tap Play to try again.', toastType: 'message',
 });
 const instancePrefix = Date.now().toString(AudioRuntimePolicy.identifierRadix) + AudioRuntimePolicy.separator
   + Math.random().toString(AudioRuntimePolicy.identifierRadix);
@@ -28,12 +33,11 @@ export const catalogPlaybackMapping = new PlaybackCatalogMapping(TEMPORARY_API_U
 const native = new NativeStreamingPlayer(reactNativePlaybackTransport, identifiers);
 const reports = new PlaybackReportingQueue();
 export const audioRuntime = new PlaybackRuntime({
-  native, mediaServerAddress: TEMPORARY_API_URL, identifiers,
+  native, mediaServerAddress: TEMPORARY_API_URL, identifiers, sessionOwnership: playbackNativeSessionStorage,
+  reportPlaybackFailure() { Toast.show({ type: AudioRuntimePolicy.toastType, text1: AudioRuntimePolicy.playbackFailureMessage }); },
   cache: { async findReadableCachedAddress(address) {
-    const path = getCacheFilePath(address);
-    if (!await RNFS.exists(path)) return null;
-    const information = await RNFS.stat(path);
-    return information.isFile() && information.size > AudioRuntimePolicy.minimumCacheBytes ? AudioRuntimePolicy.filePrefix + path : null;
+    const accountIdentifier = authenticationSession.getSnapshot().accountIdentifier;
+    return accountIdentifier === null ? null : findCachedTrackAddress(address, { accountIdentifier, serverAddress: TEMPORARY_API_URL });
   } },
   listening: metadata => ({ create(snapshot) {
     const entry = snapshot.currentEntry;
@@ -63,4 +67,46 @@ export const audioRuntime = new PlaybackRuntime({
   reportFailure(failure) {
     if (!axios.isCancel(failure)) console.warn(AudioRuntimePolicy.failureMessage);
   },
+});
+
+export const playbackApplication = new PlaybackApplicationLifecycle(authenticationSession, audioRuntime, () => {
+  Toast.show({ type: AudioRuntimePolicy.toastType, text1: PlaybackApplicationPolicy.startupFailureMessage });
+});
+
+const playbackProgressClock = globalThis as typeof globalThis & { performance: { now(): number } };
+export const playbackProgressStore = new PlayerProgressStore(audioRuntime.state, {
+  nowMilliseconds: () => playbackProgressClock.performance.now(),
+  requestFrame(callback) {
+    const frameIdentifier = requestAnimationFrame(callback);
+    return () => cancelAnimationFrame(frameIdentifier);
+  },
+});
+
+let previousCacheAccount = authenticationSession.getSnapshot().accountIdentifier;
+const stopCacheOwnership = authenticationSession.subscribe(() => {
+  const accountIdentifier = authenticationSession.getSnapshot().accountIdentifier;
+  const retiredAccount = previousCacheAccount;
+  previousCacheAccount = accountIdentifier;
+  if (retiredAccount !== null && retiredAccount !== accountIdentifier) {
+    void clearAccountAudioCache({ accountIdentifier: retiredAccount, serverAddress: TEMPORARY_API_URL })
+      .catch(() => console.warn(AudioRuntimePolicy.failureMessage));
+  }
+});
+
+let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+let legacyCleanupStarted = false;
+const stopCacheMaintenance = playbackApplication.subscribe(() => {
+  if (!playbackApplication.getSnapshot().ready || legacyCleanupStarted) return;
+  legacyCleanupStarted = true;
+  cleanupTimer = setTimeout(() => {
+    cleanupTimer = null;
+    void Promise.all([retireLegacyImageCache(), retireLegacyAudioCache()]).catch(() => console.warn(AudioRuntimePolicy.failureMessage));
+  }, AudioRuntimePolicy.legacyCleanupDelayMilliseconds);
+});
+
+declare const module: { readonly hot?: { dispose(callback: () => void): void } };
+module.hot?.dispose(() => {
+  stopCacheOwnership(); stopCacheMaintenance();
+  if (cleanupTimer !== null) clearTimeout(cleanupTimer);
+  playbackProgressStore.setActive(false); playbackApplication.dispose();
 });

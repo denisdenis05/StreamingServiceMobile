@@ -1,4 +1,5 @@
-import { StyleSheet, View, TouchableOpacity, Image, ScrollView } from 'react-native';
+import CachedImage from '../../components/CachedImage';
+import { StyleSheet, View, TouchableOpacity, ScrollView } from 'react-native';
 import DefaultText from '../../components/DefaultText';
 import { colors, typography } from '../../constants/styling.tsx';
 import { moderateScale } from '../../utils/scaling';
@@ -55,7 +56,7 @@ export const LibraryItemContainer = ({ children, onPress }: any) => (
 );
 
 export const LibraryItemImage = (props: any) => (
-    <Image style={styles.itemImage} {...props} />
+    <CachedImage style={styles.itemImage} {...props} />
 );
 
 export const LibraryItemInfo = ({ children }: Props) => (

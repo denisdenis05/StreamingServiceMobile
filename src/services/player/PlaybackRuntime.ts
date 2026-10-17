@@ -1,5 +1,6 @@
+import type { PlaybackNativeSessionOwnership } from './PlaybackNativeSessionOwnership';
 import { PlayerStateStore, PlayerEventType, PlaybackIntent, PlaybackState, RepeatMode, EntryChangeReason, CommandResultStatus } from 'streaming-service-player';
-import type { PlayerCursor, PlayerEvent, PlayerSnapshot, StreamingPlayer } from 'streaming-service-player';
+import type { PlayerCursor, PlayerEvent, PlayerError, PlayerSnapshot, StreamingPlayer } from 'streaming-service-player';
 import { NativePlayerCommandDispatcher, PlaybackIdentifierSource } from './NativePlayerCommandDispatcher';
 import { NativeQueueController } from './NativeQueueController';
 import { NativeQueueSourcePreparation } from './NativeQueueSourcePreparation';
@@ -17,6 +18,8 @@ import { copyMediaRequestConfiguration, copyMediaSourceConfiguration } from './P
 
 export interface PlaybackRuntimeConfiguration {
   readonly native: StreamingPlayer;
+  readonly sessionOwnership?: PlaybackNativeSessionOwnership;
+  readonly reportPlaybackFailure?: (failure: PlayerError) => void;
   readonly mediaServerAddress: string;
   readonly cache: PlaybackCacheReader;
   readonly identifiers: PlaybackIdentifierSource;
@@ -34,6 +37,7 @@ export class PlaybackRuntime {
   private readonly observation: SharedNativePlayerObservation;
   private readonly native: StreamingPlayer;
   private readonly fetchSuggestions: () => Promise<readonly PlaybackTrack[]>;
+  private readonly reportPlaybackFailure: (failure: PlayerError) => void;
   private readonly reportFailure: (failure: unknown) => void;
   private lastSnapshot: PlayerSnapshot | null = null;
   private stopEvents: (() => void) | null = null;
@@ -41,12 +45,14 @@ export class PlaybackRuntime {
   private continuation: Promise<void> | null = null;
   private continuationQueueIdentifier: string | null = null;
   private selectionFence = {};
+  private reportedFailure: string | null = null;
   private accountIdentifier: string | null = null;
 
   constructor(configuration: PlaybackRuntimeConfiguration) {
     this.native = configuration.native;
     this.fetchSuggestions = configuration.fetchSuggestions;
     this.reportFailure = configuration.reportFailure;
+    this.reportPlaybackFailure = configuration.reportPlaybackFailure ?? configuration.reportFailure;
     this.dispatcher = new NativePlayerCommandDispatcher(this.native, configuration.identifiers);
     const metadata = new PlaybackMetadataRegistry();
     this.queue = new NativeQueueController(this.native, this.dispatcher,
@@ -57,7 +63,7 @@ export class PlaybackRuntime {
     this.views = new NativePlaybackViewStore(this.state, this.observation, new NativeQueueProjection(this.native, metadata),
       metadata, new NativePlaybackReporting(configuration.listening(metadata), this.reportFailure), this.reportFailure);
     this.authentication = new PlaybackAuthenticationCoordinator(configuration.mediaServerAddress, this.native,
-      this.dispatcher, this.queue, this.views);
+      this.dispatcher, this.queue, this.views, configuration.sessionOwnership);
   }
 
   async initialize(): Promise<void> {
@@ -152,6 +158,7 @@ export class PlaybackRuntime {
   }
 
   dispose(): void {
+    this.authentication.dispose();
     this.invalidateSelection();
     this.queue.invalidateSession();
     this.stopEvents?.();
@@ -182,6 +189,12 @@ export class PlaybackRuntime {
   private receiveSnapshot(snapshot: PlayerSnapshot): void {
       const previous = this.lastSnapshot;
       this.lastSnapshot = snapshot;
+      if (snapshot.error == null) this.reportedFailure = null;
+      else if (this.authentication.isReady()) {
+        const identity = JSON.stringify([snapshot.cursor.engineEpoch, snapshot.cursor.authenticationEpoch,
+          snapshot.error.code, snapshot.error.entryIdentifier, snapshot.error.message]);
+        if (identity !== this.reportedFailure) { this.reportedFailure = identity; this.reportPlaybackFailure(snapshot.error); }
+      }
       if (previous !== null && previous.cursor.engineEpoch !== snapshot.cursor.engineEpoch) {
         this.invalidateSelection();
         void this.authentication.reconnect().catch(this.reportFailure);

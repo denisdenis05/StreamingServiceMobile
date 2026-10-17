@@ -115,9 +115,9 @@ export const HeaderTitle = ({ children }: Props) => {
   return <DefaultText style={styles.headerTitle}>{children}</DefaultText>;
 };
 
-export const AlbumCover = ({ source }: ImageProps) => {
+export const AlbumCover = ({ source, releaseId, cover, smallCover, verySmallCover }: ImageProps & { releaseId?: string; cover?: string; smallCover?: string; verySmallCover?: string }) => {
   return (
-    <CachedImage source={source} style={styles.albumCover} resizeMode="cover" />
+    <CachedImage releaseId={releaseId} cover={cover} smallCover={smallCover} verySmallCover={verySmallCover} tier="full" source={source} style={styles.albumCover} resizeMode="cover" />
   );
 };
 

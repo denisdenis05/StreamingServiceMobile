@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import Toast from 'react-native-toast-message';
+import { AppState } from 'react-native';
 import { RepeatMode } from 'streaming-service-player';
-import type { PlayerSnapshot } from 'streaming-service-player';
-import { audioRuntime, AudioRuntimePolicy, catalogPlaybackMapping } from './NativeAudioRuntime';
+import { audioRuntime, AudioRuntimePolicy, catalogPlaybackMapping, playbackProgressStore, playbackApplication } from './NativeAudioRuntime';
 import { authenticationSession } from './AuthenticationService';
 import type { PlaybackTrack } from './player/PlaybackTrack';
 import { QueueIntentSupersededError } from './player/QueueIntentScheduler';
@@ -14,26 +14,39 @@ import { RepeatingType } from '../constants/types';
 export { PlaybackTracker } from './PlaybackTracker';
 const PlaybackMessages = Object.freeze({ failure: 'Playback unavailable. Please try again.', toastType: 'message', zeroSeconds: 0 });
 async function runAudioCommand(operation: () => Promise<void>): Promise<void> {
-  try { await operation(); }
+  const account = authenticationSession.getSnapshot().accountIdentifier;
+  try {
+    await playbackApplication.whenReady();
+    if (account !== authenticationSession.getSnapshot().accountIdentifier) throw new QueueIntentSupersededError();
+    await operation();
+  }
   catch (failure) {
-    if (failure instanceof QueueIntentSupersededError) return;
+    if (failure instanceof QueueIntentSupersededError || playbackApplication.getSnapshot().error !== null) return;
     Toast.show({ type: PlaybackMessages.toastType, text1: PlaybackMessages.failure });
   }
 }
-export const setupPlayer = (): Promise<void> => audioRuntime.initialize();
+export const setupPlayer = (): Promise<void> => playbackApplication.start();
 export const getPosition = async (): Promise<number> => (await audioRuntime.dispatcher.getSnapshot()).positionMilliseconds / AudioRuntimePolicy.millisecondsPerSecond;
 export const getDuration = async (): Promise<number> => ((await audioRuntime.dispatcher.getSnapshot()).durationMilliseconds
   ?? PlaybackMessages.zeroSeconds) / AudioRuntimePolicy.millisecondsPerSecond;
-const selectPosition = (snapshot: PlayerSnapshot | null) =>
-  (snapshot?.positionMilliseconds ?? PlaybackMessages.zeroSeconds) / AudioRuntimePolicy.millisecondsPerSecond;
-const selectDuration = (snapshot: PlayerSnapshot | null) =>
-  (snapshot?.durationMilliseconds ?? PlaybackMessages.zeroSeconds) / AudioRuntimePolicy.millisecondsPerSecond;
-function useProgressValue(selector: (snapshot: PlayerSnapshot | null) => number): number {
-  const subscribe = useCallback((listener: () => void) => audioRuntime.state.subscribeSelector(selector, listener), [selector]);
-  const read = useCallback(() => selector(audioRuntime.state.getSnapshot()), [selector]);
-  return useSyncExternalStore(subscribe, read, read);
+const ProgressLifecycle = Object.freeze({ active: 'active', changeEvent: 'change' as const });
+export function usePlaybackProgress() {
+  const progress = useSyncExternalStore(playbackProgressStore.subscribe, playbackProgressStore.getSnapshot,
+    playbackProgressStore.getSnapshot);
+  useEffect(() => {
+    const synchronize = () => {
+      const active = AppState.currentState === ProgressLifecycle.active;
+      playbackProgressStore.setActive(active);
+      if (active) void audioRuntime.state.refresh().catch(() => console.warn(AudioRuntimePolicy.failureMessage));
+    };
+    const subscription = AppState.addEventListener(ProgressLifecycle.changeEvent, synchronize);
+    synchronize();
+    return () => subscription.remove();
+  }, []);
+  return { position: progress.positionMilliseconds / AudioRuntimePolicy.millisecondsPerSecond,
+    duration: (progress.durationMilliseconds ?? PlaybackMessages.zeroSeconds) / AudioRuntimePolicy.millisecondsPerSecond,
+    entryIdentifier: progress.entryIdentifier };
 }
-export const usePlaybackProgress = () => ({ position: useProgressValue(selectPosition), duration: useProgressValue(selectDuration) });
 
 const PlaylistPlaybackPolicy = Object.freeze({
   routePrefix: 'Library/playlists/', routeSuffix: '/recordings', pageParameter: '?page=', pageSizeParameter: '&pageSize=',
@@ -67,16 +80,8 @@ const Commands = Object.freeze({
 });
 export function useQueue() {
   const view = useSyncExternalStore(audioRuntime.views.subscribe, audioRuntime.views.getSnapshot);
-  useEffect(() => {
-    const synchronize = () => {
-      const state = authenticationSession.getSnapshot();
-      void audioRuntime.updateAuthentication({ restored: state.restored, accountIdentifier: state.accountIdentifier,
-        accessToken: state.token }).catch(() => console.warn(AudioRuntimePolicy.failureMessage));
-    };
-    const unsubscribe = authenticationSession.subscribe(synchronize);
-    synchronize();
-    return unsubscribe;
-  }, []);
+  const application = useSyncExternalStore(playbackApplication.subscribe, playbackApplication.getSnapshot);
+  useEffect(() => { void playbackApplication.start().catch(() => undefined); }, []);
   const seekToPosition = useCallback((seconds: number) => {
     const entry = audioRuntime.state.getSnapshot()?.currentEntry;
     return entry === null || entry === undefined ? Promise.resolve()
@@ -85,7 +90,8 @@ export function useQueue() {
   const toggleShuffle = useCallback(() => runAudioCommand(() => audioRuntime.setShuffle(!audioRuntime.views.getSnapshot().isShuffled)), []);
   const setRepeatingState = useCallback((mode: RepeatingType) => runAudioCommand(() => audioRuntime.setRepeat(
     mode === RepeatingType.Song ? RepeatMode.One : mode === RepeatingType.Album ? RepeatMode.All : RepeatMode.Off)), []);
-  return { ...view, ...Commands, seekToPosition, toggleShuffle, setRepeatingState,
+  return { ...view, ...Commands, isLoading: view.isLoading || application.initializing, isPlayerReady: application.ready, isPlayerInitializing: application.initializing,
+    playbackError: application.error, seekToPosition, toggleShuffle, setRepeatingState,
     repeatingState: view.repeatMode === RepeatMode.One ? RepeatingType.Song
       : view.repeatMode === RepeatMode.All ? RepeatingType.Album : RepeatingType.None,
   };

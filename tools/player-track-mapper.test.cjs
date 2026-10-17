@@ -230,3 +230,16 @@ test(TestNames.baseAddress, async () => {
   const mapper = new PlaybackTrackMapper(serverAddress, { async findReadableCachedAddress() { return null; } });
   assertion.equal((await mapper.prepare(catalogTrack(), Fixture.entryIdentifier)).source, null);
 });
+test('artwork variants survive catalog mapping, source preparation and native queue projection', async () => {
+  const { PlaybackCatalogMapping } = require('../.build/audio-migration/PlaybackCatalogMapping');
+  const { PlaybackMetadataRegistry } = require('../.build/audio-migration/PlaybackMetadataRegistry');
+  const catalog = new PlaybackCatalogMapping(Fixture.serverAddress, Fixture.artworkAddress);
+  const track = catalog.map({ id: Fixture.recordingIdentifier, title: Fixture.title, artistName: Fixture.artist,
+    releaseTitle: Fixture.album, releaseId: Fixture.albumIdentifier, cover: Fixture.artworkAddress,
+    smallCover: Fixture.artworkAddress + '/small', verySmallCover: Fixture.artworkAddress + '/thumbnail' });
+  const prepared = await fixtureMapper().mapper.prepare(track, Fixture.entryIdentifier);
+  const metadata = new PlaybackMetadataRegistry(); metadata.stage([prepared.view]).settle(true);
+  assertion.equal(metadata.viewFor(prepared.entry).smallArtworkAddress, track.smallArtworkAddress);
+  assertion.equal(metadata.viewFor(prepared.entry).thumbnailArtworkAddress, track.thumbnailArtworkAddress);
+  assertion.equal(metadata.viewFor({ ...prepared.entry, artworkAddress: Fixture.remoteAddress }).smallArtworkAddress, undefined);
+});

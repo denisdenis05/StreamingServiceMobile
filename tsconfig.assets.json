@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2020", "module": "CommonJS", "moduleResolution": "Node", "strict": true,
+    "noUncheckedIndexedAccess": true, "exactOptionalPropertyTypes": true, "noUnusedLocals": true,
+    "noUnusedParameters": true, "skipLibCheck": true, "types": [],
+    "rootDir": "src/services/cache/assets", "outDir": ".build/assets"
+  },
+  "include": ["src/services/cache/assets/AssetCache.ts", "src/services/cache/assets/AssetIdentity.ts", "src/services/cache/assets/ImageHeaderDimensions.ts"]
+}

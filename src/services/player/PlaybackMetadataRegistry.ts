@@ -60,6 +60,7 @@ export class PlaybackMetadataRegistry implements PlaybackTrackViewSource {
 
   viewFor(entry: QueueEntry): PlaybackTrackView {
     const known = this.views.get(entry.entryIdentifier);
+    const artworkMatches = entry.artworkAddress === undefined || entry.artworkAddress === known?.artworkAddress;
     return {
       entryIdentifier: entry.entryIdentifier,
       title: entry.title ?? known?.title ?? PlaybackTrackPolicy.untitledTrack,
@@ -69,6 +70,8 @@ export class PlaybackMetadataRegistry implements PlaybackTrackViewSource {
         recordingIdentifier: known?.recordingIdentifier ?? entry.recordingIdentifier!,
       }),
       ...(known?.albumIdentifier === undefined ? {} : { albumIdentifier: known.albumIdentifier }),
+      ...(!artworkMatches || known?.smallArtworkAddress === undefined ? {} : { smallArtworkAddress: known.smallArtworkAddress }),
+      ...(!artworkMatches || known?.thumbnailArtworkAddress === undefined ? {} : { thumbnailArtworkAddress: known.thumbnailArtworkAddress }),
       ...(known?.isLiked === undefined ? {} : { isLiked: known.isLiked }),
       ...(entry.album === undefined && known?.album === undefined ? {} : { album: entry.album ?? known?.album! }),
       ...(entry.artworkAddress === undefined && known?.artworkAddress === undefined ? {} : {

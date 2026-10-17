@@ -27,6 +27,10 @@ const PlayingOverlay = ({ navigation, bottomOffset }: { navigation: any; bottomO
       <MetadataContainer>
         <CardImage
           source={{ uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER }}
+            releaseId={currentTrack?.albumIdentifier}
+            cover={currentTrack?.artworkAddress}
+            smallCover={currentTrack?.smallArtworkAddress}
+            verySmallCover={currentTrack?.thumbnailArtworkAddress}
         />
         <TextContainer>
           <CardTitle>{currentTrack?.title}</CardTitle>

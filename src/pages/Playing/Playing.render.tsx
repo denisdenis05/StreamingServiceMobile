@@ -148,6 +148,10 @@ const Playing = ({ navigation }: any) => {
           </HeaderContainer>
           <AlbumCover
             source={{ uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER }}
+            releaseId={currentTrack?.albumIdentifier}
+            cover={currentTrack?.artworkAddress}
+            smallCover={currentTrack?.smallArtworkAddress}
+            verySmallCover={currentTrack?.thumbnailArtworkAddress}
           />
           <SongDetailsContainer>
             <SongDescriptorContainer>

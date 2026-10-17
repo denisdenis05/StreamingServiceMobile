@@ -8,6 +8,8 @@ export interface PlaybackTrack {
   readonly album?: string;
   readonly albumIdentifier?: string;
   readonly artworkAddress?: string;
+  readonly smallArtworkAddress?: string;
+  readonly thumbnailArtworkAddress?: string;
   readonly playlistIdentifier?: string;
   readonly isLiked?: boolean;
   readonly durationSeconds?: number;
@@ -23,6 +25,8 @@ export interface PlaybackTrackView {
   readonly album?: string;
   readonly albumIdentifier?: string;
   readonly artworkAddress?: string;
+  readonly smallArtworkAddress?: string;
+  readonly thumbnailArtworkAddress?: string;
   readonly playlistIdentifier?: string;
   readonly isLiked?: boolean;
   readonly isLocalCached: boolean;

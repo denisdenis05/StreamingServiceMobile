@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { PanResponder, Dimensions } from 'react-native';
 import { usePlaybackProgress } from '../../services/AudioPlayerService';
 import { colors } from '../../constants/styling.tsx';
@@ -45,7 +45,6 @@ const AudioProgressBar = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragPercentage, setDragPercentage] = useState(0);
   const [containerWidth, setContainerWidth] = useState(SCREEN_WIDTH - 60);
-  const [postSeekPosition, setPostSeekPosition] = useState<number | null>(null);
 
   // Refs so PanResponder callbacks (created once) always read current values
   const durationRef = useRef(duration);
@@ -65,19 +64,8 @@ const AudioProgressBar = ({
   const onSeekEndRef = useRef(onSeekEnd);
   onSeekEndRef.current = onSeekEnd;
 
-  // Clear postSeekPosition once the player position catches up
-  useEffect(() => {
-    if (postSeekPosition !== null && Math.abs(position - postSeekPosition) < 2) {
-      setPostSeekPosition(null);
-    }
-  }, [position, postSeekPosition]);
-
   const progressPercentage = duration > 0 ? (position / duration) * 100 : 0;
-  const displayTime = isDragging
-    ? (dragPercentage / 100) * duration
-    : postSeekPosition !== null
-    ? postSeekPosition
-    : position;
+  const displayTime = isDragging ? (dragPercentage / 100) * duration : position;
 
   const formatTime = (timeInSeconds: number) => {
     if (!timeInSeconds || isNaN(timeInSeconds) || timeInSeconds < 0) return '0:00';
@@ -98,21 +86,22 @@ const AudioProgressBar = ({
     PanResponder.create({
       onStartShouldSetPanResponder: () => !disabledRef.current && !isLoadingRef.current,
       onMoveShouldSetPanResponder: () => !disabledRef.current && !isLoadingRef.current,
-      onPanResponderGrant: evt => {
-        const pct = calculatePercentage(evt.nativeEvent.locationX);
+      onPanResponderGrant: gestureEvent => {
+        const percentage = calculatePercentage(gestureEvent.nativeEvent.locationX);
         setIsDragging(true);
-        setDragPercentage(pct);
+        dragPercentageRef.current = percentage;
+        setDragPercentage(percentage);
         onSeekStartRef.current?.();
       },
-      onPanResponderMove: evt => {
-        const pct = calculatePercentage(evt.nativeEvent.locationX);
-        setDragPercentage(pct);
+      onPanResponderMove: gestureEvent => {
+        const percentage = calculatePercentage(gestureEvent.nativeEvent.locationX);
+        dragPercentageRef.current = percentage;
+        setDragPercentage(percentage);
       },
       onPanResponderRelease: () => {
-        const targetPct = dragPercentageRef.current;
-        const seekTime = (targetPct / 100) * durationRef.current;
+        const targetPercentage = dragPercentageRef.current;
+        const seekTime = (targetPercentage / 100) * durationRef.current;
         setIsDragging(false);
-        setPostSeekPosition(seekTime);
         onSeekRef.current?.(seekTime);
         onSeekEndRef.current?.();
       },

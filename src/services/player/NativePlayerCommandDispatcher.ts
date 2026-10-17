@@ -1,4 +1,4 @@
-import { CommandResultStatus } from 'streaming-service-player';
+import { CommandResultStatus, PlayerErrorCode } from 'streaming-service-player';
 import type { CommandContext, CommandResult, PlayerCursor, PlayerSnapshot, QueueCommandContext } from 'streaming-service-player';
 
 export interface NativeCommandLifecycle {
@@ -41,8 +41,21 @@ export class NativePlayerCommandDispatcher {
 
   async getSnapshot(): Promise<PlayerSnapshot> {
     await this.initialize();
+    const binding = this.initialization;
     try { return await this.lifecycle.getSnapshot(); }
-    catch (failure) { this.initialization = null; throw failure; }
+    catch (failure) {
+      if (this.initialization === binding) this.initialization = null;
+      if (failure !== null && typeof failure === 'object' && 'code' in failure && failure.code === PlayerErrorCode.ServiceUnavailable) {
+        await this.initialize();
+        const replacementBinding = this.initialization;
+        try { return await this.lifecycle.getSnapshot(); }
+        catch (replacementFailure) {
+          if (this.initialization === replacementBinding) this.initialization = null;
+          throw replacementFailure;
+        }
+      }
+      throw failure;
+    }
   }
 
   async clearSession(): Promise<void> {

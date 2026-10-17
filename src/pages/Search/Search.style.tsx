@@ -1,5 +1,5 @@
+import CachedImage from '../../components/CachedImage';
 import {
-  Image,
   ImageProps,
   StyleSheet,
   TextInput,
@@ -78,7 +78,7 @@ export const TopSection = ({ children }: Props) => (
 );
 
 export const StyledImage = ({ source }: ImageProps) => (
-  <Image source={source} style={styles.image} resizeMode="cover" />
+  <CachedImage source={source} style={styles.image} resizeMode="cover" />
 );
 
 export const HeaderTitle = ({ children }: Props) => (

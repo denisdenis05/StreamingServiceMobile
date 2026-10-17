@@ -148,3 +148,20 @@ export function clearAllCache(): void {
         return;
     }
 }
+
+export async function clearImageEntries(): Promise<void> {
+    const database = getStorage();
+    if (database === null) return;
+    const policy = Object.freeze({ prefix: 'image:', batchSize: 100, yieldMilliseconds: 0, initialCount: 0, increment: 1 });
+    try {
+        let removed: number = policy.initialCount;
+        for (const key of database.getAllKeys()) {
+            if (!key.startsWith(policy.prefix)) continue;
+            database.remove(key);
+            removed += policy.increment;
+            if (removed % policy.batchSize === policy.initialCount) {
+                await new Promise<void>(resolve => setTimeout(resolve, policy.yieldMilliseconds));
+            }
+        }
+    } catch {}
+}

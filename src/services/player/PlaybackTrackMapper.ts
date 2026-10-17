@@ -53,6 +53,8 @@ export class PlaybackTrackMapper {
       ...(track.album === undefined ? {} : { album: track.album }),
       ...(track.albumIdentifier === undefined ? {} : { albumIdentifier: track.albumIdentifier }),
       ...(track.artworkAddress === undefined ? {} : { artworkAddress: track.artworkAddress }),
+      ...(track.smallArtworkAddress === undefined ? {} : { smallArtworkAddress: track.smallArtworkAddress }),
+      ...(track.thumbnailArtworkAddress === undefined ? {} : { thumbnailArtworkAddress: track.thumbnailArtworkAddress }),
       ...(track.playlistIdentifier === undefined ? {} : { playlistIdentifier: track.playlistIdentifier }),
       ...(track.isLiked === undefined ? {} : { isLiked: track.isLiked }),
     };

@@ -1,76 +1,48 @@
 import RNFS from 'react-native-fs';
-
-const AUDIO_CACHE_DIRECTORY = `${RNFS.CachesDirectoryPath}/audio-cache`;
-
-async function ensureCacheDirectory(): Promise<void> {
-    const exists = await RNFS.exists(AUDIO_CACHE_DIRECTORY);
-    if (!exists) {
-        await RNFS.mkdir(AUDIO_CACHE_DIRECTORY);
-    }
+import { AssetCache, AssetCachePolicy, AssetLease, AssetRequest } from './assets/AssetCache';
+import { assetIdentity } from './assets/AssetIdentity';
+import { createNativeAssetCache } from './assets/NativeAssetCache';
+export interface AudioCacheScope { readonly accountIdentifier: string; readonly serverAddress: string }
+const AudioCachePolicy = Object.freeze({ directory: '/audio-assets-v2/', invalidScope: 'An authenticated audio cache scope is required.',
+  partialHeader: 'range', partialFailure: 'Partial requests cannot create complete offline tracks.' });
+const caches = new Map<string, AssetCache>();
+function scopeIdentity(scope: AudioCacheScope): string {
+  if (!scope.accountIdentifier || !scope.serverAddress) throw new Error(AudioCachePolicy.invalidScope);
+  return assetIdentity(JSON.stringify([scope.serverAddress, scope.accountIdentifier]));
 }
-
-function extractIdFromUrl(url: string): string {
-    const match = url.match(/id=([a-zA-Z0-9-]+)/);
-    return match ? match[1] : 'unknown';
+function cacheFor(scope: AudioCacheScope): AssetCache {
+  const identity = scopeIdentity(scope); let cache = caches.get(identity);
+  if (cache === undefined) {
+    cache = createNativeAssetCache({ directory: RNFS.CachesDirectoryPath + AudioCachePolicy.directory + identity,
+      maximumBytes: AssetCachePolicy.maximumAudioBytes, byteBudget: AssetCachePolicy.maximumAudioBytes,
+      maximumAgeMilliseconds: AssetCachePolicy.maximumAgeMilliseconds, maximumParallelDownloads: AssetCachePolicy.maximumParallelDownloads,
+      verifyChecksum: true, evictExisting: false }, false);
+    caches.set(identity, cache);
+  }
+  return cache;
 }
-
-export function getCacheFilePath(url: string): string {
-    const fileName = extractIdFromUrl(url);
-    return `${AUDIO_CACHE_DIRECTORY}/${fileName}.mp3`;
+function requestFor(address: string, scope: AudioCacheScope, headers?: Readonly<Record<string, string>>): AssetRequest {
+  return { address, scope: scopeIdentity(scope), ...(headers === undefined ? {} : { headers }) };
 }
-
-export async function isTrackCached(url: string): Promise<boolean> {
-    const path = getCacheFilePath(url);
-    return RNFS.exists(path);
+export function getCacheFilePath(address: string, scope: AudioCacheScope): string { return cacheFor(scope).path(requestFor(address, scope)); }
+export async function findCachedTrackAddress(address: string, scope: AudioCacheScope): Promise<string | null> {
+  return cacheFor(scope).find(requestFor(address, scope));
 }
-
-export async function cacheTrack(
-    url: string,
-    headers: any
-): Promise<string> {
-    await ensureCacheDirectory();
-    const path = getCacheFilePath(url);
-
-    const alreadyCached = await RNFS.exists(path);
-    if (alreadyCached) {
-        try {
-            const stat = await RNFS.stat(path);
-            if (stat.size > 0) {
-                return path;
-            }
-            await RNFS.unlink(path).catch(() => { });
-        } catch {
-            await RNFS.unlink(path).catch(() => { });
-        }
-    }
-
-    try {
-        const result = await RNFS.downloadFile({
-            fromUrl: url,
-            toFile: path,
-            headers,
-            connectionTimeout: 60000,
-            readTimeout: 120000,
-            background: true,
-            discretionary: false,
-        }).promise;
-
-        if (result.statusCode >= 200 && result.statusCode < 300) {
-            const stat = await RNFS.stat(path);
-            if (stat.size > 0) {
-                return path;
-            }
-            await RNFS.unlink(path).catch(() => { });
-            throw new Error(`Downloaded file is empty for ${url}`);
-        }
-
-        await RNFS.unlink(path).catch(() => { });
-        throw new Error(`Failed to cache track, server returned status ${result.statusCode} for ${url}`);
-    } catch (downloadError: any) {
-        await RNFS.unlink(path).catch(() => { });
-        if (downloadError.message?.includes('Failed to cache track') || downloadError.message?.includes('Downloaded file is empty')) {
-            throw downloadError;
-        }
-        throw new Error(`Failed to download track: ${downloadError.message}`);
-    }
+export async function isTrackCached(address: string, scope: AudioCacheScope): Promise<boolean> {
+  return await findCachedTrackAddress(address, scope) !== null;
+}
+export function requestTrackDownload(address: string, headers: Readonly<Record<string, string>>, scope: AudioCacheScope): AssetLease {
+  if (Object.keys(headers).some(header => header.toLowerCase() === AudioCachePolicy.partialHeader)) throw new Error(AudioCachePolicy.partialFailure);
+  return cacheFor(scope).acquire(requestFor(address, scope, headers), AssetCachePolicy.prefetchPriority);
+}
+export async function cacheTrack(address: string, headers: Readonly<Record<string, string>>, scope: AudioCacheScope): Promise<string> {
+  const lease = requestTrackDownload(address, headers, scope);
+  try { return (await lease.result).substring(AssetCachePolicy.filePrefix.length); } finally { lease.cancel(); }
+}
+export async function clearAccountAudioCache(scope: AudioCacheScope): Promise<void> {
+  await cacheFor(scope).clear(); await retireLegacyAudioCache();
+}
+export async function retireLegacyAudioCache(): Promise<void> {
+  const legacyDirectory = '/audio-cache';
+  try { await RNFS.unlink(RNFS.CachesDirectoryPath + legacyDirectory); } catch {}
 }

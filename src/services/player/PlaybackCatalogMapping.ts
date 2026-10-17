@@ -7,6 +7,8 @@ export interface CatalogRecording {
   readonly releaseTitle: string;
   readonly releaseId?: string;
   readonly cover?: string;
+  readonly smallCover?: string;
+  readonly verySmallCover?: string;
   readonly isLiked?: boolean;
 }
 export const CatalogPlaybackPolicy = Object.freeze({ streamRoute: 'Stream?id=', pathSeparator: '/', firstEntryIndex: 0 });
@@ -18,6 +20,8 @@ export class PlaybackCatalogMapping {
     return { recordingIdentifier: recording.id, mediaAddress: address + CatalogPlaybackPolicy.streamRoute + encodeURIComponent(recording.id),
       title: recording.title, artist: recording.artistName, album: recording.releaseTitle,
       artworkAddress: recording.cover || this.placeholderArtwork,
+      ...(recording.smallCover === undefined ? {} : { smallArtworkAddress: recording.smallCover }),
+      ...(recording.verySmallCover === undefined ? {} : { thumbnailArtworkAddress: recording.verySmallCover }),
       ...(recording.releaseId === undefined && albumIdentifier === undefined ? {} : { albumIdentifier: recording.releaseId ?? albumIdentifier! }),
       ...(playlistIdentifier === undefined ? {} : { playlistIdentifier }),
       ...(recording.isLiked === undefined ? {} : { isLiked: recording.isLiked }),

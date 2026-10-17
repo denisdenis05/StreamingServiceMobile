@@ -314,3 +314,43 @@ The pending package/lock changes and removed unused image-colors declaration are
 Current npm audit: 62 affected-package entries (56 high, six moderate), compared with 91 in a75fd66 (four critical, 68 high, 18 moderate, one low). The production-only audit reports 31 entries. All remaining entries trace to two root advisories, braces and sprintf-js, with no published fixed version at the check time. The audit still exits nonzero. These findings remain open; completing clean-install verification does not mean every vulnerability is fixed.
 
 No forced framework upgrade or advisory suppression was used. See DEPENDENCY_AUDIT.md before updating those toolchain paths. Device playback and the actual iOS native host remain the next migration validation steps.
+
+## Smooth progress and image investigation — uncommitted
+
+The user reported working Android audio and stepped progress. The mobile progress hook now consumes the library's shared interpolated progress store. Frames advance presentation between native samples; native timing still drives controls and listening reports. AppState stops frame work in background and refreshes actual native state on foreground. The progress component no longer holds a stale optimistic seek label, and immediate gesture releases read the latest drag location.
+
+Dedicated tests: `tools/player-progress.test.cjs` covers real React hook frames, native versus displayed position, AppState transitions, buffering, fractional bar widths and immediate seek gestures. The player's `tests/player-progress.test.mjs` covers 55 timeline/store/semantic-event cases. See [player progress](../StreamingServicePlayer/PROGRESS.md) for the behavior/test mapping and bounded interpolation policy.
+
+Checks on 2026-10-16:
+
+- `npm run test:player-mobile`: 292 passed across 17 files.
+- `./node_modules/.bin/tsc --noEmit --pretty false`: full app passed.
+- `npm run test:player-integration`: seven passed.
+- Player `npm test`: 383 passed across 16 files; `npm run check` and `npm run build` passed.
+- Android production JavaScript bundle and 19 image assets built under `/tmp/streaming-progress-android*`.
+- iOS production JavaScript bundle and 15 image assets built under `/tmp/streaming-progress-ios*`; this does not establish an iOS native build or device run.
+- `node --test tools/image-loading-research.cjs`: eight deterministic reproductions passed. These assert current image/audio-cache defects and are intentionally separate from acceptance tests.
+
+No native source changed or native package rebuilt. Visual smoothness and background/seek/repeat behavior still need a Metro reload and emulator/device observation; host tests and bundling do not establish frame timing on a device. Existing JavaScript rendering can still stall if the JS thread is busy.
+
+The requested follow-up research is in [IMAGE_LOADING_ANALYSIS.md](IMAGE_LOADING_ANALYSIS.md). It covers mobile image cache corruption/recovery, missing size fallback, stale completions, plain-URL player views, server cover jobs, response selection, URL construction and audio download integrity. It separates reproduced failures from source findings and unmeasured latency. Image/server implementation fixes were not made. Server settings and existing unrelated changes were preserved. No files were staged and no commits were made.
+
+Resume by checking the smooth progress on the running app, then use the image report's ordered implementation sequence. Convert research fixtures into desired-behavior regression tests as each cache defect is fixed.
+
+## Current work — image/cache repairs, then app refresh recovery
+
+User authorized fixing every finding in IMAGE_LOADING_ANALYSIS.md. Keep all current work uncommitted. Image/cache implementation is in progress across mobile and server; do not mistake the earlier report's defects for completed acceptance tests. New cache suites are tools/asset-cache.test.cjs and tools/image-cache-integration.test.cjs; run npm run test:asset-cache. Server durable cover jobs require the new AddCoverAssetJobs migration; production settings remain user-owned and untouched.
+
+Next issue, explicitly queued after finishing image/cache work: playback cannot start after the app refreshes. User says RNTP previously displayed a cannot-reinitialize-audio error; the new engine displays no error. Analyze initialization, native-session reconnection and swallowed errors in the mobile app; keep the fix in mobile unless concrete evidence requires a new decision. This issue is authorized for analysis and implementation after the current task.
+
+## Image/cache and refresh chapters — completed locally, no commits
+
+[Cache repairs](CACHE_REPAIR_PROGRESS.md) and [refresh recovery](PLAYBACK_REFRESH_PROGRESS.md) contain implementation and test mappings. Latest checks: 319 mobile runtime/React tests, 58 cache/service/header tests, full app TypeScript and both production JS bundles. The server has 38 passing cover tests, including local PostgreSQL migration/job transactions and real FFmpeg resizing checks; its release publish passed. Apply the additive CoverAssetJobs migration before deploying the API. No production deployment, production migration, native rebuild or iPhone runtime test was performed.
+
+The emulator retained a local silent fixture across developer reload and source-save refresh, reported ready, rendered the fixture title and accepted another playback request. The fixture was removed and the originally empty queue restored. This does not establish audible playback of the user's authenticated server track. The startup gate, persisted ownership proof, hot-dispose cleanup and visible errors are all mobile-side changes.
+
+The previous queued/WIP notes describe earlier points in this chapter. No work remains intentionally queued for these implementation fixes. Remaining acceptance checks are the user's exact server-track refresh scenario, deployed cover-directory/Nginx access, image latency/memory measurements and the real iOS host/device gates. No files were staged or committed; existing user server settings/.idea changes were preserved.
+
+## Commit authorization
+
+The user authorized committing these completed changes on 2026-10-17. Earlier no-commit statements record the implementation phase. No push, deployment or production migration is included. Local server appsettings files and IDE settings are excluded.

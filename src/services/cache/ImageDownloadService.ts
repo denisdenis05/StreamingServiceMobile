@@ -1,148 +1,83 @@
 import RNFS from 'react-native-fs';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders';
-import { getImageEntry, setImageEntry } from './CacheDatabase';
-
+import { AssetCachePolicy, AssetLease, AssetRequest } from './assets/AssetCache';
+import { assetIdentity } from './assets/AssetIdentity';
+import { createNativeAssetCache, recordAssetCacheEvent } from './assets/NativeAssetCache';
+import { clearImageEntries } from './CacheDatabase';
 export type CoverTier = 'verySmall' | 'small' | 'full';
-
-export interface CoverUrls {
-    cover?: string;
-    smallCover?: string;
-    verySmallCover?: string;
+export interface CoverUrls { cover?: string; smallCover?: string; verySmallCover?: string }
+const ImageCachePolicy = Object.freeze({ directory: '/image-assets-v2', legacyDirectory: '/image-cache',
+  maximumRecentRequests: 1000, publicScope: 'public-image', headerScopeSeparator: ':', keySeparator: ':', emptyText: '',
+  fallbackFull: Object.freeze<CoverTier[]>(['full', 'small', 'verySmall']),
+  fallbackSmall: Object.freeze<CoverTier[]>(['small', 'verySmall', 'full']),
+  fallbackVerySmall: Object.freeze<CoverTier[]>(['verySmall', 'small', 'full']) });
+const cache = createNativeAssetCache({ directory: RNFS.CachesDirectoryPath + ImageCachePolicy.directory,
+  maximumBytes: AssetCachePolicy.maximumImageBytes, byteBudget: AssetCachePolicy.byteBudget,
+  maximumAgeMilliseconds: AssetCachePolicy.maximumAgeMilliseconds,
+  maximumParallelDownloads: AssetCachePolicy.maximumParallelDownloads, verifyChecksum: false }, true);
+const lastRequests = new Map<string, AssetRequest>();
+function tiers(tier: CoverTier): readonly CoverTier[] {
+  return tier === 'full' ? ImageCachePolicy.fallbackFull : tier === 'small' ? ImageCachePolicy.fallbackSmall : ImageCachePolicy.fallbackVerySmall;
 }
-
-const IMAGE_CACHE_DIRECTORY = `${RNFS.CachesDirectoryPath}/image-cache`;
-let cacheDirectoryReady = false;
-
-async function ensureCacheDirectory(): Promise<void> {
-    if (cacheDirectoryReady) return;
-    const exists = await RNFS.exists(IMAGE_CACHE_DIRECTORY);
-    if (!exists) await RNFS.mkdir(IMAGE_CACHE_DIRECTORY);
-    cacheDirectoryReady = true;
+export function imageAddress(tier: CoverTier, urls: CoverUrls): string | null {
+  for (const candidate of tiers(tier)) {
+    const address = candidate === 'full' ? urls.cover : candidate === 'small' ? urls.smallCover : urls.verySmallCover;
+    if (address && address !== PLACEHOLDER_ALBUM_COVER) return address;
+  }
+  return null;
 }
-
-function extractExtensionFromUrl(url: string): string {
-    const match = url.match(/\.([0-9a-z]+)(?:[?#]|$)/i);
-    return match ? match[1] : 'jpg';
+export function imageRequest(address: string, headers?: Readonly<Record<string, string>>): AssetRequest {
+  const capturedHeaders = headers === undefined ? undefined : { ...headers };
+  const representation = capturedHeaders === undefined ? ImageCachePolicy.emptyText
+    : assetIdentity(JSON.stringify(Object.entries(capturedHeaders).sort(([previous], [next]) => previous.localeCompare(next))));
+  return { address, scope: ImageCachePolicy.publicScope + ImageCachePolicy.headerScopeSeparator + representation,
+    ...(capturedHeaders === undefined ? {} : { headers: capturedHeaders }) };
 }
-
-async function downloadToFile(sourceUrl: string, destinationPath: string): Promise<boolean> {
-    const tempPath = `${destinationPath}_downloading`;
-    try {
-        const result = await RNFS.downloadFile({
-            fromUrl: sourceUrl,
-            toFile: tempPath,
-            connectionTimeout: 30000,
-            readTimeout: 30000,
-        }).promise;
-        if (result.statusCode === 200) {
-            await RNFS.moveFile(tempPath, destinationPath);
-            return true;
-        }
-        await RNFS.unlink(tempPath).catch(() => {});
-        return false;
-    } catch {
-        await RNFS.unlink(tempPath).catch(() => {});
-        return false;
-    }
+export function getLocalPathForTier(releaseId: string, tier: CoverTier, urls?: CoverUrls, headers?: Readonly<Record<string, string>>): string | null {
+  const key = releaseId + ImageCachePolicy.keySeparator + tier;
+  const address = urls === undefined ? null : imageAddress(tier, urls);
+  if (urls !== undefined && address === null) return null;
+  const request = address === null ? lastRequests.get(key) : imageRequest(address, headers);
+  return request === undefined ? null : cache.peek(request);
 }
-
-// In-flight dedup: key = `${releaseId}:${tier}`
-const inFlight = new Map<string, Promise<string>>();
-
-function storedPathForTier(
-    entry: ReturnType<typeof getImageEntry>,
-    tier: CoverTier,
-): string {
-    if (!entry) return '';
-    if (tier === 'full') return entry.localPath || '';
-    if (tier === 'small') return entry.smallCoverLocalPath || '';
-    return entry.verySmallCoverLocalPath || '';
+export function getBestAvailableLocalPath(releaseId: string, urls?: CoverUrls, headers?: Readonly<Record<string, string>>): string | null {
+  for (const tier of ImageCachePolicy.fallbackVerySmall) {
+    const path = getLocalPathForTier(releaseId, tier, urls, headers); if (path !== null) return path;
+  }
+  return null;
 }
-
-function urlForTier(tier: CoverTier, urls: CoverUrls): string | undefined {
-    if (tier === 'full') return urls.cover;
-    if (tier === 'small') return urls.smallCover;
-    return urls.verySmallCover;
+export function requestImage(releaseId: string, tier: CoverTier, urls: CoverUrls,
+  headers?: Readonly<Record<string, string>>, priority: number = AssetCachePolicy.visiblePriority): AssetLease {
+  const address = imageAddress(tier, urls);
+  if (address === null) return { result: Promise.resolve(PLACEHOLDER_ALBUM_COVER), cancel() {} };
+  const request = imageRequest(address, headers);
+  const key = releaseId + ImageCachePolicy.keySeparator + tier;
+  lastRequests.delete(key); lastRequests.set(key, request);
+  while (lastRequests.size > ImageCachePolicy.maximumRecentRequests) {
+    const oldest = lastRequests.keys().next().value;
+    if (oldest === undefined) break;
+    lastRequests.delete(oldest);
+  }
+  return cache.acquire(request, priority);
 }
-
-export function getLocalPathForTier(releaseId: string, tier: CoverTier): string | null {
-    if (!releaseId) return null;
-    const entry = getImageEntry(releaseId);
-    const path = storedPathForTier(entry, tier);
-    return path ? `file://${path}` : null;
+export async function getOrDownloadForTier(releaseId: string, tier: CoverTier, urls: CoverUrls): Promise<string> {
+  const lease = requestImage(releaseId, tier, urls);
+  try { return await lease.result; } finally { lease.cancel(); }
 }
-
-export function getBestAvailableLocalPath(releaseId: string): string | null {
-    if (!releaseId) return null;
-    const entry = getImageEntry(releaseId);
-    if (!entry) return null;
-    if (entry.localPath) return `file://${entry.localPath}`;
-    if (entry.smallCoverLocalPath) return `file://${entry.smallCoverLocalPath}`;
-    if (entry.verySmallCoverLocalPath) return `file://${entry.verySmallCoverLocalPath}`;
-    return null;
+export function invalidateImage(address: string, headers?: Readonly<Record<string, string>>, displayedAddress?: string): Promise<void> {
+  for (const request of lastRequests.values()) {
+    if (AssetCachePolicy.filePrefix + cache.path(request) === displayedAddress) return cache.invalidate(request);
+  }
+  return cache.invalidate(imageRequest(address, headers));
 }
-
-async function _downloadForTier(
-    releaseId: string,
-    tier: CoverTier,
-    urls: CoverUrls,
-): Promise<string> {
-    const url = urlForTier(tier, urls);
-    if (!url || url === PLACEHOLDER_ALBUM_COVER) return url || PLACEHOLDER_ALBUM_COVER;
-
-    await ensureCacheDirectory();
-    const ext = extractExtensionFromUrl(url);
-    const localPath = `${IMAGE_CACHE_DIRECTORY}/${releaseId}_${tier}.${ext}`;
-
-    const downloaded = await downloadToFile(url, localPath);
-    if (downloaded) {
-        const existing = getImageEntry(releaseId);
-        setImageEntry(releaseId, {
-            releaseId,
-            coverUrl: urls.cover || existing?.coverUrl || url,
-            localPath: tier === 'full' ? localPath : (existing?.localPath || ''),
-            smallCoverLocalPath: tier === 'small' ? localPath : (existing?.smallCoverLocalPath || ''),
-            verySmallCoverLocalPath: tier === 'verySmall' ? localPath : (existing?.verySmallCoverLocalPath || ''),
-            downloadedAt: Date.now(),
-        });
-        return `file://${localPath}`;
-    }
-    return url;
+export function imageDisplayed(address: string, elapsedMilliseconds: number, headers?: Readonly<Record<string, string>>, displayedAddress?: string): void {
+  const displayedRequest = [...lastRequests.values()].find(request => AssetCachePolicy.filePrefix + cache.path(request) === displayedAddress);
+  recordAssetCacheEvent({ kind: 'displayed', identity: cache.identity(displayedRequest ?? imageRequest(address, headers)), elapsedMilliseconds });
 }
-
-export async function getOrDownloadForTier(
-    releaseId: string,
-    tier: CoverTier,
-    urls: CoverUrls,
-): Promise<string> {
-    if (!releaseId) return urlForTier(tier, urls) || PLACEHOLDER_ALBUM_COVER;
-
-    const existing = getImageEntry(releaseId);
-    if (existing && urls.cover && existing.coverUrl && existing.coverUrl !== urls.cover) {
-        // Cover URL changed — invalidate all tiers
-        setImageEntry(releaseId, {
-            ...existing,
-            coverUrl: urls.cover,
-            localPath: '',
-            smallCoverLocalPath: '',
-            verySmallCoverLocalPath: '',
-        });
-    } else {
-        const cached = getLocalPathForTier(releaseId, tier);
-        if (cached) return cached;
-    }
-
-    const key = `${releaseId}:${tier}`;
-    const inflight = inFlight.get(key);
-    if (inflight) return inflight;
-
-    const promise = _downloadForTier(releaseId, tier, urls).finally(() => inFlight.delete(key));
-    inFlight.set(key, promise);
-    return promise;
-}
-
 export async function clearImageCache(): Promise<void> {
-    const exists = await RNFS.exists(IMAGE_CACHE_DIRECTORY);
-    if (exists) await RNFS.unlink(IMAGE_CACHE_DIRECTORY);
-    cacheDirectoryReady = false;
+  lastRequests.clear(); await cache.clear(); await retireLegacyImageCache();
+}
+export async function retireLegacyImageCache(): Promise<void> {
+  await clearImageEntries();
+  try { await RNFS.unlink(RNFS.CachesDirectoryPath + ImageCachePolicy.legacyDirectory); } catch {}
 }

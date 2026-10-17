@@ -93,6 +93,10 @@ const Library = ({ navigation, route }: { navigation: any; route: any }) => {
                 onPress={() => handlePress(item)}
               >
                 <LibraryItemImage
+                  releaseId={item.id}
+                  cover={item.cover}
+                  smallCover={item.smallCover}
+                  verySmallCover={item.verySmallCover}
                   source={{ uri: item.cover || PLACEHOLDER_ALBUM_COVER }}
                 />
                 <LibraryItemInfo>

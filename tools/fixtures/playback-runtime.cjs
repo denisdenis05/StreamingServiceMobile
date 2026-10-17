@@ -9,6 +9,7 @@ const RuntimeFixture = Object.freeze({ token: 'fixture-access-token', nextToken:
   playName: 'play', stopName: 'stop', nextName: 'next', previousName: 'previous', seekName: 'seek' });
 function environment() {
   const model = new QueueReferenceModel(DefaultQueuePolicy, new QueueEntryValidator(DefaultQueuePolicy), { shuffle: entries => [...entries].reverse() });
+  let playbackError = null;
   let state = model.createEmptyState(); let sequence = RuntimeFixture.initial; let content = RuntimeFixture.initial;
   let control = RuntimeFixture.initial; let queueIdentity = RuntimeFixture.initial; let authentication = Fixture.account;
   let engine = Fixture.engine; let identifier = RuntimeFixture.initial; let suggestionCalls = RuntimeFixture.initial;
@@ -21,10 +22,10 @@ function environment() {
   const snapshot = () => ({ cursor: cursor(), queueLength: state.playbackOrder.length, currentEntry:
     state.canonicalEntries.find(entry => entry.entryIdentifier === state.activeEntryIdentifier) ?? null,
     repeatMode: state.repeatMode, shuffled: state.shuffled, playbackIntent: state.playbackIntent,
-    state: state.playbackIntent === PlaybackIntent.Play ? PlaybackState.Playing : PlaybackState.Paused,
+    state: playbackError !== null ? PlaybackState.Failed : state.playbackIntent === PlaybackIntent.Play ? PlaybackState.Playing : PlaybackState.Paused,
     positionMilliseconds: RuntimeFixture.initial, durationMilliseconds: RuntimeFixture.durationMilliseconds,
     bufferedAheadMilliseconds: RuntimeFixture.initial, sampledAtMonotonicMilliseconds: sequence,
-    canSeek: true, canNext: true, canPrevious: true, interruption: PlaybackInterruption.None, error: null,
+    canSeek: true, canNext: true, canPrevious: true, interruption: PlaybackInterruption.None, error: playbackError,
     playbackRate: RuntimeFixture.normalRate, volume: RuntimeFixture.normalVolume });
   const emit = event => { for (const listener of [...listeners]) listener(event); };
   const publish = () => { sequence += RuntimeFixture.increment; emit({ type: PlayerEventType.State, snapshot: snapshot() }); };
@@ -89,6 +90,7 @@ function environment() {
   });
   return { runtime, native, operations, reports, failures, credentials, snapshot, publish,
     login: () => runtime.updateAuthentication({ restored: true, accountIdentifier: Fixture.account, accessToken: RuntimeFixture.token }),
+    nativeFailure(failure) { playbackError = failure; publish(); },
     setCache(operation) { cacheOperation = operation; }, setSuggestions(operation) { suggestions = operation; },
     setConfigure(operation) { configureOperation = operation; }, setReporting(operation) { reportingOperation = operation; },
     get suggestionCalls() { return suggestionCalls; }, get listenerCount() { return listeners.size; },
