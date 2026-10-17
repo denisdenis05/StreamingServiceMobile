@@ -8,7 +8,7 @@ const NativeAssetPolicy = Object.freeze({ initialCount: 0, countIncrement: 1, se
   maximumImageTransferMilliseconds: 120000, maximumAudioTransferMilliseconds: 1800000,
   maximumImagePixels: 16000000, maximumImageHeaderBytes: 262144, base64Encoding: 'base64', identityRadix: 36, unknownLength: 0, textPrefixBytes: 64,
   asciiEncoding: 'ascii', contentTypeHeader: 'content-type', contentLengthHeader: 'content-length',
-  missingFileCode: 'ENOENT', emptyText: '', imagePrefix: 'image/', audioPrefix: 'audio/', videoPrefix: 'video/',
+  missingFileCode: 'ENOENT', unspecifiedFileCode: 'EUNSPECIFIED', emptyText: '', imagePrefix: 'image/', audioPrefix: 'audio/', videoPrefix: 'video/',
   binaryContentType: 'application/octet-stream', flacContentType: 'application/flac', oggContentType: 'application/ogg',
   imageFailure: 'The file is not a supported image.', audioFailure: 'The file is not a supported audio download.' });
 let sequence: number = NativeAssetPolicy.initialCount;
@@ -43,7 +43,14 @@ function missingFile(failure: unknown): boolean {
   return typeof failure === 'object' && failure !== null && 'code' in failure && failure.code === NativeAssetPolicy.missingFileCode;
 }
 async function removeFile(path: string): Promise<void> {
-  try { await RNFS.unlink(path); } catch (failure) { if (!missingFile(failure)) throw failure; }
+  if (!await RNFS.exists(path)) return;
+  try { await RNFS.unlink(path); }
+  catch (failure) {
+    if (missingFile(failure)) return;
+    if (typeof failure === 'object' && failure !== null && 'code' in failure
+      && failure.code === NativeAssetPolicy.unspecifiedFileCode && !await RNFS.exists(path)) return;
+    throw failure;
+  }
 }
 function contentHeader(headers: Record<string, string | number>, name: string): string {
   const key = Object.keys(headers).find(header => header.toLowerCase() === name);

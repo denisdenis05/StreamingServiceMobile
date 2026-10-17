@@ -43,3 +43,7 @@ The [image pipeline review](../StreamingServiceServer/IMAGE_CACHE_REVIEW.md) ide
 ## Transfer lifetime follow-up implemented
 
 [IMAGE_TRANSFER_REPAIR_PROGRESS.md](IMAGE_TRANSFER_REPAIR_PROGRESS.md) records the RNFS patch, watchdog, isolated native attempt paths, cleanup/error handling and tests. The current cache suite has 71 passing tests, playback suite 319, and patch/dependency checks 11. Android RNFS compilation and unsigned xtool downloader harness packaging passed; native heap/device execution remains unverified. Mobile review M4/M8 remain separate performance work.
+
+## Missing-destination regression corrected
+
+The screenshot investigation reproduced Android EUNSPECIFIED on unlinking an absent publication destination. Cleanup now checks existence and handles a concurrent removal without suppressing permission errors. The cache suite passed 73 tests, playback 319 and full TypeScript/Android production bundling passed. Actual emulator cache requests for the two failing but valid local thumbnails now succeed. [Diagnosis and separate server 404 recovery](../StreamingServiceServer/MISSING_COVER_DIAGNOSIS.md) documents read-only database evidence and the remaining deployment requirement. No database values were changed.

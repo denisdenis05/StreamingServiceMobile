@@ -7,7 +7,7 @@ const { AssetCachePolicy } = require('../.build/assets/AssetCache');
 const { imageHeaderDimensions } = require('../.build/assets/ImageHeaderDimensions');
 function fixture(image = true) {
   let dependencies; let options; let complete; let dimensions = [100, 100]; let decoderCalls = 0; const stopped = [];
-  const filesystem = { CachesDirectoryPath: '/cache', async unlink() {}, async moveFile() {},
+  const filesystem = { CachesDirectoryPath: '/cache', async exists() { return true; }, async unlink() {}, async moveFile() {},
     downloadFile(value) { options = value; return { jobId: 7, promise: new Promise(resolve => { complete = resolve; }) }; },
     stopDownload(identifier) { stopped.push(identifier); }, async read(path, length, position, encoding) {
       if (encoding !== 'base64') return 'ID3-valid-audio';
@@ -115,4 +115,18 @@ test('a canceled native attempt cannot overwrite a later retry through delayed w
   files.set(attempts[0].options.toFile, 'retired'); attempts[0].resolve({ statusCode: 200, bytesWritten: 7 });
   for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
   assertion.equal(files.get('/cache/retry'), 'current'); assertion.equal(files.has(attempts[0].options.toFile), false);
+});
+test('publishing a fresh image does not unlink an absent destination on Android RNFS', async () => {
+  const scenario = fixture(); let removals = 0; let moves = 0;
+  scenario.filesystem.exists = async () => false;
+  scenario.filesystem.unlink = async () => { removals += 1; throw Object.assign(new Error('File does not exist'), { code: 'EUNSPECIFIED' }); };
+  scenario.filesystem.moveFile = async () => { moves += 1; };
+  await scenario.dependencies.filesystem.move('/cache/new.partial', '/cache/new.asset');
+  assertion.equal(removals, 0); assertion.equal(moves, 1);
+});
+test('Android generic missing-file error is tolerated only after confirming a concurrent removal', async () => {
+  const scenario = fixture(); let checks = 0;
+  scenario.filesystem.exists = async () => ++checks === 1;
+  scenario.filesystem.unlink = async () => { throw Object.assign(new Error('File does not exist'), { code: 'EUNSPECIFIED' }); };
+  await scenario.dependencies.filesystem.remove('/cache/raced'); assertion.equal(checks, 2);
 });
