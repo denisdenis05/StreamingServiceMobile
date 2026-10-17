@@ -23,7 +23,8 @@ import { SearchEntrySkeleton } from '../../components/SearchEntry/SearchEntry.re
 import { useApi } from '../../hooks/useApi.ts';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { catalogPlaybackMapping } from '../../services/NativeAudioRuntime';
-import { useData } from '../../services/DataProvider.tsx';
+import { useData, useDataScope } from '../../services/DataProvider.tsx';
+import { LatestRequestScope, LatestRequest } from '../../services/data/LatestRequestScope';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render';
 import { menuOptions } from '../../constants/navigation.tsx';
 import { colors } from '../../constants/styling.tsx';
@@ -91,6 +92,10 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
   );
 
   const query = searchState?.query || '';
+  const accountScope = useDataScope();
+  const requests = useMemo(() => new LatestRequestScope(), []);
+  const activeRequest = useRef<LatestRequest | null>(null);
+  const [resultIdentity, setResultIdentity] = useState<{ scope: object; query: string } | null>(null);
   const setQuery = (q: string) => updateData({ query: q });
 
   // Three separate buckets keep ordering stable as async responses arrive:
@@ -141,7 +146,21 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     });
   }, [navigation]);
 
+  useEffect(() => { setMenuVisible(false); setSelectedTrack(null); }, [accountScope]);
+
   useEffect(() => {
+    const operation = requests.replace();
+    activeRequest.current = operation;
+    activeQueryRef.current = query;
+    hasMoreTracksRef.current = false;
+    setHasMoreTracks(false);
+    pageRef.current = 1;
+    setPage(1);
+    knownRef.current = new Set();
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    setLoading(false);
+    setResultIdentity(null);
     if (query.length < MIN_QUERY_LENGTH) {
       setDbItems([]);
       setFuzzyItems([]);
@@ -151,13 +170,16 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       setHasMoreTracks(false);
       pageRef.current = 1;
       setPage(1);
-      return;
+      return () => { if (operation.isCurrent()) requests.cancel(); };
     }
 
     const thisQuery = query;
     activeQueryRef.current = query;
 
     const timer = setTimeout(async () => {
+      if (!operation.isCurrent()) return;
+      setResultIdentity({ scope: accountScope, query: thisQuery });
+      setDbItems([]);
       setLoading(true);
       pageRef.current = 1;
       setPage(1);
@@ -166,10 +188,10 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
 
       try {
         const res = await api.get('Metadata/search/db', {
-          params: { query: thisQuery, page: 1, pageSize: PAGE_SIZE },
+          params: { query: thisQuery, page: 1, pageSize: PAGE_SIZE }, signal: operation.signal,
         });
 
-        if (activeQueryRef.current !== thisQuery) return;
+        if (!operation.isCurrent()) return;
 
         const tier1: SearchItem[] = [
           ...toTrackItems(res.data.tracks ?? []),
@@ -193,16 +215,17 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
       } catch {
         // DB search failed — show empty state
       } finally {
-        if (activeQueryRef.current === thisQuery) setLoading(false);
+        if (operation.isCurrent()) setLoading(false);
       }
 
       // External (MusicBrainz) fires in the background; results are appended
       // at the END once they resolve, deduplicated against whatever DB items
       // exist at that point (including any pages loaded in the meantime).
+      if (!operation.isCurrent()) return;
       api
-        .get('Metadata/search', { params: { query: thisQuery, limit: 10 } })
+        .get('Metadata/search', { params: { query: thisQuery, limit: 10 }, signal: operation.signal })
         .then(res => {
-          if (activeQueryRef.current !== thisQuery) return;
+          if (!operation.isCurrent()) return;
 
           const known = knownRef.current;
           const ext: SearchItem[] = [
@@ -222,11 +245,12 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
         .catch(() => {});
     }, DEBOUNCE_MS);
 
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => { clearTimeout(timer); if (operation.isCurrent()) requests.cancel(); };
+  }, [query, accountScope, requests, api]);
 
   const loadMoreTracks = useCallback(async () => {
-    if (!hasMoreTracksRef.current || loadingMoreRef.current) return;
+    const operation = activeRequest.current;
+    if (operation === null || !operation.isCurrent() || !hasMoreTracksRef.current || loadingMoreRef.current) return;
 
     const thisQuery = activeQueryRef.current;
     loadingMoreRef.current = true;
@@ -235,10 +259,10 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     try {
       const nextPage = pageRef.current + 1;
       const res = await api.get('Metadata/search/db', {
-        params: { query: thisQuery, page: nextPage, pageSize: PAGE_SIZE },
+        params: { query: thisQuery, page: nextPage, pageSize: PAGE_SIZE }, signal: operation.signal,
       });
 
-      if (activeQueryRef.current !== thisQuery) return;
+      if (!operation.isCurrent()) return;
 
       const newTracks = toTrackItems(
         (res.data.tracks ?? []).filter((t: Track) => !knownRef.current.has(t.id)),
@@ -254,14 +278,21 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
     } catch {
       // Pagination failure is non-fatal
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (operation.isCurrent()) { loadingMoreRef.current = false; setLoadingMore(false); }
     }
   }, []);
 
   const displayItems = useMemo(
-    () => [...dbItems, ...fuzzyItems, ...externalItems],
-    [dbItems, fuzzyItems, externalItems],
+    () => {
+      if (resultIdentity?.scope !== accountScope || resultIdentity.query !== query) return [];
+      const known = new Set<string>();
+      addToKnown(known, [...dbItems, ...fuzzyItems]);
+      const remainingExternal = externalItems.filter(item => !known.has(item.data.id)
+        && !known.has(item.kind === 'track' ? trackSig(item.data as Track)
+          : item.kind === 'album' ? albumSig(item.data as Album) : artistSig(item.data as Artist)));
+      return [...dbItems, ...fuzzyItems, ...remainingExternal];
+    },
+    [dbItems, fuzzyItems, externalItems, resultIdentity, accountScope, query],
   );
 
   const renderItem = useCallback(
@@ -334,7 +365,7 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
 
       <Navbar navigation={navigation} route={route} />
 
-      {menuVisible && (
+      {menuVisible && resultIdentity?.scope === accountScope && (
         <ContextMenu
           visible={menuVisible}
           onClose={() => setMenuVisible(false)}

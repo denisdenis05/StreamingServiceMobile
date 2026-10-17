@@ -1,132 +1,33 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { authenticationSession } from './AuthenticationService';
+import { AccountQueryStore, QueryFetcher, QuerySnapshot } from './data/AccountQueryStore';
 
-const globalCache: Record<string, any> = {};
-const subscribers: Record<string, Set<(data: any) => void>> = {};
-const activePromises: Record<string, Promise<any> | undefined> = {};
-const fetchTriggers: Record<string, Set<() => void>> = {};
+const queryStore = new AccountQueryStore(() => Date.now());
+queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier);
+const unsubscribeAuthentication = authenticationSession.subscribe(() => queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier));
+declare const module: { readonly hot?: { dispose(callback: () => void): void } };
+module.hot?.dispose(() => { unsubscribeAuthentication(); queryStore.clear(); });
+export const invalidateCache = (key: string): void => queryStore.invalidate(key);
+export const useDataScope = (): object => useSyncExternalStore(queryStore.subscribeScope, queryStore.getScope, queryStore.getScope);
 
-export const invalidateCache = (key: string) => {
-  delete globalCache[key];
-  fetchTriggers[key]?.forEach(trigger => trigger());
-};
-
-export const useData = <T,>(
-    key: string,
-    fetcher?: () => Promise<T>,
-    initialData?: T
-) => {
-    const isValidKey = !!(key && typeof key === 'string' && key.trim().length > 0);
-
-    if (isValidKey && initialData !== undefined && !(key in globalCache)) {
-        globalCache[key] = initialData;
-    }
-
-    const [data, setData] = useState<T | null>(isValidKey ? (globalCache[key] ?? null) : null);
-    const [loading, setLoading] = useState<boolean>(
-        isValidKey && !(key in globalCache) && !!fetcher
-    );
-    const [error, setError] = useState<Error | null>(null);
-
-    const fetcherRef = useRef(fetcher);
-    useEffect(() => {
-        fetcherRef.current = fetcher;
-    }, [fetcher]);
-
-    useEffect(() => {
-        if (!isValidKey) return;
-
-        if (!subscribers[key]) {
-            subscribers[key] = new Set();
-        }
-
-        const callback = (newData: T) => {
-            setData(newData);
-        };
-        subscribers[key].add(callback);
-
-        return () => {
-            if (subscribers[key]) {
-                subscribers[key].delete(callback);
-                if (subscribers[key].size === 0) {
-                    delete subscribers[key];
-                }
-            }
-        };
-    }, [key, isValidKey]);
-
-    useEffect(() => {
-        if (!isValidKey) return;
-
-        const loadData = async () => {
-            if (globalCache[key] !== undefined && globalCache[key] !== null) {
-                setLoading(false);
-                setData(globalCache[key]);
-                return;
-            }
-
-            if (!fetcherRef.current) {
-                setLoading(false);
-                return;
-            }
-
-            if (activePromises[key]) {
-                try {
-                    setLoading(true);
-                    await activePromises[key];
-                    const cached = globalCache[key];
-                    if (cached !== undefined) setData(cached);
-                } catch (err) {
-                    setError(err as Error);
-                } finally {
-                    setLoading(false);
-                }
-                return;
-            }
-
-            setLoading(true);
-            const promise = fetcherRef.current();
-            activePromises[key] = promise;
-
-            try {
-                const result = await promise;
-                globalCache[key] = result;
-
-                if (subscribers[key]) {
-                    subscribers[key].forEach(cb => cb(result));
-                }
-                setData(result);
-            } catch (err) {
-                console.error(`DataProvider fetch error for key "${key}":`, err);
-                setError(err as Error);
-            } finally {
-                setLoading(false);
-                delete activePromises[key];
-            }
-        };
-
-        // Register for invalidation so mounted components refetch when cache is cleared
-        if (!fetchTriggers[key]) fetchTriggers[key] = new Set();
-        fetchTriggers[key].add(loadData);
-
-        loadData();
-
-        return () => {
-            fetchTriggers[key]?.delete(loadData);
-            if (fetchTriggers[key]?.size === 0) delete fetchTriggers[key];
-        };
-    }, [key, isValidKey]);
-
-    const updateData = useCallback(
-        (newData: T) => {
-            if (!isValidKey) return;
-            globalCache[key] = newData;
-            if (subscribers[key]) {
-                subscribers[key].forEach(cb => cb(newData));
-            }
-            setData(newData);
-        },
-        [key, isValidKey]
-    );
-
-    return { data, loading, error, updateData };
-};
+export function useData<Value>(key: string, fetcher?: QueryFetcher<Value>, initialData?: Value) {
+  const scope = useDataScope();
+  const valid = key.trim().length > 0;
+  const fetcherReference = useRef(fetcher);
+  const initialReference = useRef(initialData);
+  fetcherReference.current = fetcher;
+  initialReference.current = initialData;
+  const [state, setState] = useState(() => ({ key, scope, snapshot: queryStore.read<Value>(key) }));
+  const hasFetcher = fetcher !== undefined;
+  useEffect(() => {
+    if (!valid) return;
+    return queryStore.observe<Value>(key, scope, snapshot => setState({ key, scope, snapshot }),
+      hasFetcher ? signal => fetcherReference.current!(signal) : undefined, initialReference.current);
+  }, [key, scope, valid, hasFetcher]);
+  const updateData = useCallback((value: Value) => {
+    if (valid) queryStore.update(key, scope, value);
+  }, [key, scope, valid]);
+  const snapshot: QuerySnapshot<Value> = valid && state.key === key && state.scope === scope
+    ? state.snapshot : { data: null, loading: hasFetcher, error: null };
+  return { ...snapshot, updateData };
+}

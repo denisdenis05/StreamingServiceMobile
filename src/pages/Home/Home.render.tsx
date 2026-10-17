@@ -73,8 +73,8 @@ const SKELETON_ITEMS = Array.from({ length: 6 });
 
 const RecentQuickGrid = ({ navigation }: { navigation: any }) => {
   const api = useApi();
-  const fetchRecent = async () => {
-    const res = await api.get('Recommendation/recent-quick?count=6');
+  const fetchRecent = async (signal: AbortSignal) => {
+    const res = await api.get('Recommendation/recent-quick?count=6', { signal });
     return res.data;
   };
 
@@ -148,8 +148,8 @@ type RecommendationSection = {
 
 const HomeSection = ({ section, navigation }: { section: RecommendationSection; navigation: any }) => {
   const api = useApi();
-  const fetchSection = async () => {
-    const res = await api.get(`Recommendation/section/${section.id}`);
+  const fetchSection = async (signal: AbortSignal) => {
+    const res = await api.get(`Recommendation/section/${section.id}`, { signal });
     return res.data;
   };
 
@@ -179,8 +179,8 @@ const HomeSection = ({ section, navigation }: { section: RecommendationSection; 
 
 const Home = ({ navigation, route }: { navigation: any; route: any }) => {
   const api = useApi();
-  const fetchSections = async () => {
-    const res = await api.get(`Recommendation/sections`);
+  const fetchSections = async (signal: AbortSignal) => {
+    const res = await api.get(`Recommendation/sections`, { signal });
     return res.data;
   };
 

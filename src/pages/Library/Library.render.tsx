@@ -42,8 +42,8 @@ const LibraryItemSkeleton = () => (
 
 const Library = ({ navigation, route }: { navigation: any; route: any }) => {
   const api = useApi();
-  const fetchLibrary = async () => {
-    const res = await api.get('Library');
+  const fetchLibrary = async (signal: AbortSignal) => {
+    const res = await api.get('Library', { signal });
     return res.data;
   };
 
