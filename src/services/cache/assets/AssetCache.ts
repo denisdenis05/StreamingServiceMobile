@@ -8,7 +8,7 @@ export const AssetCachePolicy = Object.freeze({ initialCount: 0, countIncrement:
   firstServerFailureStatus: 500, throttledStatus: 429, requestTimeoutStatus: 408,
   missingMessage: 'The requested asset is unavailable.', visiblePriority: 0, prefetchPriority: 1,
   byteBudget: 268435456, maximumImageBytes: 20971520, maximumAudioBytes: 1073741824,
-  maximumAgeMilliseconds: 2592000000, maximumParallelDownloads: 3, maximumDownloadAttempts: 2, retryDelayMilliseconds: 500 });
+  maximumAgeMilliseconds: 2592000000, maximumParallelDownloads: 3, maximumDownloadAttempts: 2, evictionDelayMilliseconds: 500, retryDelayMilliseconds: 500 });
 export interface AssetRequest { readonly address: string; readonly scope: string; readonly headers?: Readonly<Record<string, string>> }
 export interface AssetFile { readonly path: string; readonly size: number; readonly modifiedMilliseconds: number; readonly isFile: boolean }
 export interface AssetFilesystem {
@@ -48,6 +48,7 @@ export class AssetCache {
   private readonly previews = new Map<string, string>();
   private readonly pins = new Map<string, number>();
   private readonly accessTimes = new Map<string, number>();
+  private cleanup: AssetDelay | null = null;
   private generation = {};
   private activeDownloads: number = AssetCachePolicy.initialCount;
   private mutation: Promise<unknown> = Promise.resolve();
@@ -81,6 +82,7 @@ export class AssetCache {
       rejectLease(new Error(AssetCachePolicy.canceledMessage));
       const remaining = (this.pins.get(identity) ?? AssetCachePolicy.initialCount) - AssetCachePolicy.countIncrement;
       if (remaining <= AssetCachePolicy.initialCount) this.pins.delete(identity); else this.pins.set(identity, remaining);
+      if (remaining <= AssetCachePolicy.initialCount) this.scheduleCleanup();
       owned.references -= AssetCachePolicy.countIncrement;
       if (owned.references === AssetCachePolicy.initialCount && this.work.get(identity) === owned) {
         owned.canceled = true; owned.download?.cancel(); owned.retryDelay?.cancel(); owned.reject(new Error(AssetCachePolicy.canceledMessage));
@@ -114,6 +116,7 @@ export class AssetCache {
   }
   async clear(): Promise<void> {
     this.generation = {};
+    this.cleanup?.cancel(); this.cleanup = null;
     for (const work of this.work.values()) {
       work.canceled = true; work.download?.cancel(); work.retryDelay?.cancel(); work.reject(new Error(AssetCachePolicy.canceledMessage));
     }
@@ -175,7 +178,7 @@ export class AssetCache {
         } finally { await this.dependencies.filesystem.remove(temporaryManifest); }
         const address = AssetCachePolicy.filePrefix + this.pathForIdentity(work.identity);
         this.previews.set(work.identity, address); this.accessTimes.set(work.identity, this.dependencies.nowMilliseconds());
-        await this.evict();
+        this.scheduleCleanup();
       });
       this.assertCurrent(work); this.report('complete', work.identity, started);
       return AssetCachePolicy.filePrefix + this.pathForIdentity(work.identity);
@@ -232,6 +235,18 @@ export class AssetCache {
         await this.dependencies.filesystem.remove(file.path);
       }
     }
+  }
+  private scheduleCleanup(): void {
+    if (this.cleanup !== null || this.configuration.evictExisting === false) return;
+    const generation = this.generation;
+    const operation = this.dependencies.delay(AssetCachePolicy.evictionDelayMilliseconds);
+    this.cleanup = operation;
+    void operation.result.then(async () => {
+      if (generation !== this.generation) return;
+      await this.exclusive(() => this.evict());
+    }).catch(() => {
+      if (generation === this.generation) this.report('failure', this.configuration.directory, this.dependencies.nowMilliseconds());
+    }).finally(() => { if (this.cleanup === operation) this.cleanup = null; });
   }
   private identityFromPath(path: string): string { return path.substring(this.configuration.directory.length + AssetCachePolicy.countIncrement,
     path.length - AssetCachePolicy.assetSuffix.length); }

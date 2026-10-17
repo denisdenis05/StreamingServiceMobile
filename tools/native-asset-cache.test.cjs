@@ -7,7 +7,7 @@ const { AssetCachePolicy } = require('../.build/assets/AssetCache');
 const { imageHeaderDimensions } = require('../.build/assets/ImageHeaderDimensions');
 function fixture(image = true) {
   let dependencies; let options; let complete; let dimensions = [100, 100]; let decoderCalls = 0; const stopped = [];
-  const filesystem = { CachesDirectoryPath: '/cache',
+  const filesystem = { CachesDirectoryPath: '/cache', async unlink() {}, async moveFile() {},
     downloadFile(value) { options = value; return { jobId: 7, promise: new Promise(resolve => { complete = resolve; }) }; },
     stopDownload(identifier) { stopped.push(identifier); }, async read(path, length, position, encoding) {
       if (encoding !== 'base64') return 'ID3-valid-audio';
@@ -21,6 +21,7 @@ function fixture(image = true) {
   runInNewContext(compiled, { exports: module.exports, module, setTimeout, clearTimeout, require(name) {
     if (name === 'react-native-fs') return filesystem;
     if (name === 'react-native') return { Image: { getSize(address, success) { decoderCalls += 1; success(...dimensions); } } };
+    if (name === './AssetTransferDeadline') return require('../.build/assets/AssetTransferDeadline');
     if (name === './ImageHeaderDimensions') return { imageHeaderDimensions };
     if (name === './AssetCache') return { AssetCachePolicy, AssetCache: class { constructor(value) { dependencies = value; } } };
     throw new Error(name);
@@ -90,4 +91,28 @@ test('oversized encoded dimensions are rejected before the native decoder is cal
   const original = scenario.dependencies.validate;
   await assertion.rejects(original('/cache/large', {contentType:'image/png'}));
   assertion.equal(scenario.decoderCalls, 0);
+});
+test('native filesystem cleanup reports permission failures instead of pretending files were removed', async () => {
+  const scenario = fixture(); scenario.filesystem.unlink = async () => { throw Object.assign(new Error('denied'), { code: 'EACCES' }); };
+  await assertion.rejects(scenario.dependencies.filesystem.remove('/cache/image'));
+  scenario.filesystem.unlink = async () => { throw Object.assign(new Error('missing'), { code: 'ENOENT' }); };
+  await scenario.dependencies.filesystem.remove('/cache/missing');
+});
+test('a canceled native attempt cannot overwrite a later retry through delayed writes', async () => {
+  const scenario = fixture(); const files = new Map(); const attempts = [];
+  scenario.filesystem.unlink = async path => { files.delete(path); };
+  scenario.filesystem.moveFile = async (source, destination) => { files.set(destination, files.get(source)); files.delete(source); };
+  scenario.filesystem.downloadFile = options => {
+    let resolve; const promise = new Promise(complete => { resolve = complete; });
+    attempts.push({ options, resolve }); return { jobId: attempts.length, promise };
+  };
+  const request = { address: 'https://images.invalid/late-writer' };
+  const first = scenario.dependencies.download(request, '/cache/retry', 1000);
+  first.cancel(); await assertion.rejects(first.result);
+  const second = scenario.dependencies.download(request, '/cache/retry', 1000);
+  assertion.notEqual(attempts[0].options.toFile, attempts[1].options.toFile);
+  files.set(attempts[1].options.toFile, 'current'); attempts[1].resolve({ statusCode: 200, bytesWritten: 7 }); await second.result;
+  files.set(attempts[0].options.toFile, 'retired'); attempts[0].resolve({ statusCode: 200, bytesWritten: 7 });
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+  assertion.equal(files.get('/cache/retry'), 'current'); assertion.equal(files.has(attempts[0].options.toFile), false);
 });

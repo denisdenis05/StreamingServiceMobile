@@ -24,16 +24,16 @@ function compile(filename, dependencies) {
 }
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 function serviceEnvironment(filename = Fixture.service) {
-  const caches = []; const removed = [];
+  const caches = []; const removed = []; const events = [];
   const service = compile(filename, { 'react-native-fs': { CachesDirectoryPath: '/cache', async unlink(path) { removed.push(path); } },
     '../../constants/placeholders': { PLACEHOLDER_ALBUM_COVER: Fixture.placeholder },
     './assets/AssetCache': { AssetCachePolicy }, './assets/AssetIdentity': { assetIdentity },
-    './assets/NativeAssetCache': { createNativeAssetCache(configuration) {
+    './assets/NativeAssetCache': { recordAssetCacheEvent(event) { events.push(event); }, createNativeAssetCache(configuration) {
       const requests = []; const cache = { configuration, requests, peek: () => null, identity: request => assetIdentity(JSON.stringify(request)), path: request => configuration.directory + '/' + assetIdentity(JSON.stringify(request)),
         find: async () => null, async clear() { cache.cleared = true; }, async invalidate() {},
         acquire(request) { requests.push(request); return { result: Promise.resolve(Fixture.local), cancel() {} }; } }; caches.push(cache); return cache;
     } }, './CacheDatabase': { clearImageEntries() {} } });
-  return { service, caches, removed };
+  return { service, caches, removed, events };
 }
 test('requested image tiers fall back to available URLs, including cover-only playlists', () => {
   const { service } = serviceEnvironment();
@@ -155,4 +155,13 @@ test('retiring legacy caches removes unverified files without clearing current a
   assertion.deepEqual(images.removed, ['/cache/image-cache']); assertion.equal(images.caches[Fixture.zero].cleared, undefined);
   const audio = serviceEnvironment(Fixture.audio); await audio.service.retireLegacyAudioCache();
   assertion.deepEqual(audio.removed, ['/cache/audio-cache']);
+});
+test('image display telemetry uses the path index without scanning and rehashing other requests', () => {
+  const scenario = serviceEnvironment();
+  scenario.service.requestImage('album', Fixture.tier, { cover: Fixture.address });
+  const cache = scenario.caches[0]; const path = AssetCachePolicy.filePrefix + cache.path(cache.requests[0]);
+  let pathLookups = 0; const original = cache.path;
+  cache.path = request => { pathLookups += 1; return original(request); };
+  scenario.service.imageDisplayed(Fixture.address, 100, undefined, path);
+  assertion.equal(pathLookups, 0); assertion.equal(scenario.events[0].kind, 'displayed');
 });

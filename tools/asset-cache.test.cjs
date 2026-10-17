@@ -174,3 +174,18 @@ test('audio quota rejects a new download instead of deleting files a native queu
   await scenario.complete(Fixture.one); await assertion.rejects(second.result);
   assertion.notEqual(await scenario.cache.find(scenario.request), null); assertion.equal(await scenario.cache.find(changed), null); second.cancel();
 });
+test('releasing the last display pin schedules eviction without another download', async () => {
+  const scenario = environment({ byteBudget: Fixture.bytes }); const first = scenario.cache.acquire(scenario.request);
+  const secondRequest = { ...scenario.request, address: Fixture.changed }; const second = scenario.cache.acquire(secondRequest);
+  await scenario.complete(); await first.result; await scenario.complete(Fixture.one); await second.result;
+  assertion.equal(scenario.files.has(scenario.cache.path(scenario.request)), true);
+  first.cancel(); await flush(); assertion.equal(scenario.files.has(scenario.cache.path(scenario.request)), false);
+  assertion.equal(scenario.files.has(scenario.cache.path(secondRequest)), true); second.cancel();
+});
+test('publishing an image does not wait for slow background directory eviction', async () => {
+  const scenario = environment(); const listing = deferred(); let scans = Fixture.zero;
+  scenario.dependencies.filesystem.list = () => { scans += Fixture.one; return listing.promise; };
+  const lease = scenario.cache.acquire(scenario.request); await scenario.complete();
+  assertion.equal(await lease.result, AssetCachePolicy.filePrefix + scenario.cache.path(scenario.request));
+  assertion.equal(scans, Fixture.one); listing.resolve([]); lease.cancel(); await flush();
+});

@@ -16,6 +16,7 @@ const cache = createNativeAssetCache({ directory: RNFS.CachesDirectoryPath + Ima
   maximumAgeMilliseconds: AssetCachePolicy.maximumAgeMilliseconds,
   maximumParallelDownloads: AssetCachePolicy.maximumParallelDownloads, verifyChecksum: false }, true);
 const lastRequests = new Map<string, AssetRequest>();
+const requestsByPath = new Map<string, AssetRequest>();
 function tiers(tier: CoverTier): readonly CoverTier[] {
   return tier === 'full' ? ImageCachePolicy.fallbackFull : tier === 'small' ? ImageCachePolicy.fallbackSmall : ImageCachePolicy.fallbackVerySmall;
 }
@@ -52,6 +53,13 @@ export function requestImage(releaseId: string, tier: CoverTier, urls: CoverUrls
   if (address === null) return { result: Promise.resolve(PLACEHOLDER_ALBUM_COVER), cancel() {} };
   const request = imageRequest(address, headers);
   const key = releaseId + ImageCachePolicy.keySeparator + tier;
+  const path = AssetCachePolicy.filePrefix + cache.path(request);
+  requestsByPath.delete(path); requestsByPath.set(path, request);
+  while (requestsByPath.size > ImageCachePolicy.maximumRecentRequests) {
+    const oldest = requestsByPath.keys().next().value;
+    if (oldest === undefined) break;
+    requestsByPath.delete(oldest);
+  }
   lastRequests.delete(key); lastRequests.set(key, request);
   while (lastRequests.size > ImageCachePolicy.maximumRecentRequests) {
     const oldest = lastRequests.keys().next().value;
@@ -65,17 +73,15 @@ export async function getOrDownloadForTier(releaseId: string, tier: CoverTier, u
   try { return await lease.result; } finally { lease.cancel(); }
 }
 export function invalidateImage(address: string, headers?: Readonly<Record<string, string>>, displayedAddress?: string): Promise<void> {
-  for (const request of lastRequests.values()) {
-    if (AssetCachePolicy.filePrefix + cache.path(request) === displayedAddress) return cache.invalidate(request);
-  }
-  return cache.invalidate(imageRequest(address, headers));
+  const displayedRequest = displayedAddress === undefined ? undefined : requestsByPath.get(displayedAddress);
+  return cache.invalidate(displayedRequest ?? imageRequest(address, headers));
 }
 export function imageDisplayed(address: string, elapsedMilliseconds: number, headers?: Readonly<Record<string, string>>, displayedAddress?: string): void {
-  const displayedRequest = [...lastRequests.values()].find(request => AssetCachePolicy.filePrefix + cache.path(request) === displayedAddress);
+  const displayedRequest = displayedAddress === undefined ? undefined : requestsByPath.get(displayedAddress);
   recordAssetCacheEvent({ kind: 'displayed', identity: cache.identity(displayedRequest ?? imageRequest(address, headers)), elapsedMilliseconds });
 }
 export async function clearImageCache(): Promise<void> {
-  lastRequests.clear(); await cache.clear(); await retireLegacyImageCache();
+  lastRequests.clear(); requestsByPath.clear(); await cache.clear(); await retireLegacyImageCache();
 }
 export async function retireLegacyImageCache(): Promise<void> {
   await clearImageEntries();

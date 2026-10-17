@@ -35,3 +35,11 @@ Image header parsing is covered with real FFmpeg-generated fixtures and malforme
 ## Commit authorization
 
 The user authorized committing these completed changes on 2026-10-17. Earlier no-commit statements record the implementation phase. No push, deployment or production migration is included. Local server appsettings files and IDE settings are excluded.
+
+## Follow-up review: unresolved transfer lifetime and performance issues
+
+The [image pipeline review](../StreamingServiceServer/IMAGE_CACHE_REVIEW.md) identifies failed-download listener retention, terminal native downloader retention and conditional iOS Promise/slot hangs in the installed RNFS dependency. It also identifies full decoding during validation, directory scans before image delivery and synchronous telemetry searches. Existing mocked transfer tests did not cover these native lifetime paths. These are open findings; this source review did not change runtime code, run tests or measure device memory.
+
+## Transfer lifetime follow-up implemented
+
+[IMAGE_TRANSFER_REPAIR_PROGRESS.md](IMAGE_TRANSFER_REPAIR_PROGRESS.md) records the RNFS patch, watchdog, isolated native attempt paths, cleanup/error handling and tests. The current cache suite has 71 passing tests, playback suite 319, and patch/dependency checks 11. Android RNFS compilation and unsigned xtool downloader harness packaging passed; native heap/device execution remains unverified. Mobile review M4/M8 remain separate performance work.
