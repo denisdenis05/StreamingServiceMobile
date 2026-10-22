@@ -9,6 +9,7 @@ export interface SpotifyApplicationAccount {
 export interface SpotifyDeviceSelection {
   getDeviceIdentifier(): string | null;
   nextRequestIdentifier(): string;
+  readonly refreshAccountWhenDeviceUnavailable?: boolean;
 }
 
 export class SpotifyIntegrationConnection {
@@ -50,8 +51,10 @@ export class SpotifyIntegrationConnection {
     if (!resumed || !runtime || !deviceSelection) return;
     try {
       const deviceIdentifier = deviceSelection.getDeviceIdentifier();
-      if (deviceIdentifier === null) return;
-      void runtime.sessions.refreshSession(deviceIdentifier, deviceSelection.nextRequestIdentifier())
+      if (deviceIdentifier === null && !deviceSelection.refreshAccountWhenDeviceUnavailable) return;
+      const refresh = deviceIdentifier === null ? runtime.sessions.refreshCurrentSession(deviceSelection.nextRequestIdentifier())
+        : runtime.sessions.refreshSession(deviceIdentifier, deviceSelection.nextRequestIdentifier());
+      void refresh
         .catch(() => this.reportForegroundFailure());
     } catch { this.reportForegroundFailure(); }
   }

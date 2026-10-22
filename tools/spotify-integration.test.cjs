@@ -26,6 +26,7 @@ const Names = Object.freeze({
   lateResolution: 'Account change discards a catalog resolution that finishes late',
   foreground: 'Foreground transition requests one passive refresh of the selected device',
   noDevice: 'Foreground transition without a selected device performs no network operation',
+  accountRefresh: 'Opted-in foreground resumption refreshes account membership without a selected device',
   failedSelection: 'A failing device selection cannot escape the application foreground callback',
 });
 
@@ -134,4 +135,15 @@ test(Names.failedSelection, () => {
     nextRequestIdentifier: () => Fixture.recordingIdentifier });
   state.connection.setActive(false); state.connection.setActive(true);
   assertion.equal(failures, Fixture.singleRefreshCount); state.connection.dispose();
+});
+
+test(Names.accountRefresh, () => {
+  const state = fixture();
+  const runtime = state.connection.connect(state.dependencies, { getDeviceIdentifier: () => null,
+    nextRequestIdentifier: () => Fixture.recordingIdentifier, refreshAccountWhenDeviceUnavailable: true });
+  let requests = Fixture.noObserversCount;
+  runtime.sessions.refreshCurrentSession = async () => { requests += Fixture.singleRefreshCount; };
+  runtime.sessions.refreshSession = async () => assertion.fail();
+  state.connection.setActive(false); state.connection.setActive(true); state.connection.setActive(true);
+  assertion.equal(requests, Fixture.singleRefreshCount); state.connection.dispose();
 });

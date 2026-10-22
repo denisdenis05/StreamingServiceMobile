@@ -5,6 +5,7 @@ import { useApi } from '../../hooks/useApi.ts';
 import { Alert, Linking } from 'react-native';
 import { useAuth } from '../../hooks/AuthContext';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
+import { SpotifyJamCopy, SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
 
 const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
   const [lastFmConnected, setLastFmConnected] = useState(false);
@@ -98,6 +99,7 @@ const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
   return (
     <PageContainer>
       <ContentContainer>
+        <DefaultButton title={SpotifyJamCopy.title} onPress={() => navigation.navigate(SpotifyJamRoute)} />
         <LastFmButton
           connected={lastFmConnected}
           loading={lastFmLoading}

@@ -1,5 +1,42 @@
 # Spotify library integration
 
+## Mobile personal-test chapter — 2026-10-22
+
+The user authorized a mobile implementation and installable APK. The Profile page
+now opens Spotify Jam. Implemented temporary-token connection, verified private
+profile lookup, passive initial/account refresh, device selection, create/share,
+experimental join/leave, host end confirmation and typed failure handling.
+Short Spotify share links resolve through a credential-free public page reader.
+The end dialog is fenced against a replaced Jam; initial membership must be read
+before changes are allowed. Device API failures do not block Jam creation.
+
+Applied the project skill throughout. The collaborating agent implemented and
+tested library membership/current-account operations, verified the passive
+endpoint and share-link format, and reviewed mobile ownership/confirmation flows.
+No player engine, audio synchronization or server code changed in this chapter.
+
+Validation: `npm run test:spotify` passed 65 Node cases and 11 rendered-screen
+cases; full app TypeScript passed. Library source checks/build and 162 cases
+passed. Seven workspace player checks and 319 player-mobile cases passed.
+The live production controller/gateway/library cycle created/refreshed/ended an
+owned Jam and confirmed absence on a Node host; this is not Android execution.
+Private profile/current-session probes and two public share-link samples passed.
+All temporary Jams were removed. Public profile/device discovery returned 429.
+
+The ARM64 release APK is packaged with embedded Hermes output and the existing
+test signing key. Final artifact, checksum and install instructions are in
+`SPOTIFY_JAM_APK.md` and `build/spotify-jam/`. No attached Android device was
+available for installation or audible testing. Join/leave remain unverified
+against a second account; playback synchronization and browser sign-in remain
+unfinished. No user credential is included in the package.
+
+Next: install and exercise this APK on a controlled phone, supply a second
+controlled Spotify account for guest tests, then implement the protocol and player
+bridge gates described in the library's PLAYBACK_SYNC_PLAN.md. Keep tokens out of
+persisted evidence; changes are committed only in their owning repositories.
+
+## Earlier integration checkpoint
+
 Implemented on 2026-10-21 under the workspace streaming-service-quality rules.
 
 The mobile app links the sibling `StreamingServiceSpotifyJam` package through

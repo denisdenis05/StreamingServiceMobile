@@ -1,0 +1,23 @@
+export const SpotifyJamRoute = 'SpotifyJam';
+export const SpotifyJamCopy = Object.freeze({
+  title: 'Spotify Jam', back: 'Back', introduction: 'Create a Jam, share an invitation, or join someone on Spotify.',
+  testBuild: 'Personal test connection',
+  tokenExplanation: 'Connect with a current Spotify access token. It stays in memory and is cleared on disconnect, app restart or app-account change. Browser sign-in is not configured in this build.',
+  tokenPlaceholder: 'Spotify access token', connect: 'Connect Spotify', disconnect: 'Disconnect Spotify',
+  connected: 'Connected as ', busy: 'Contacting Spotify…', create: 'Create Jam', join: 'Join Jam (experimental)',
+  invitePlaceholder: 'Jam invitation link or join token', joinHelp: 'Paste a Spotify Jam share link, full open.spotify.com link, spotify:socialsession URI, or join token.',
+  controlMode: 'Control the shared queue', remoteMode: 'Remote membership on selected Spotify device',
+  playbackNotice: 'This build manages Jam sessions. Playing audio together through the StreamingService player is not available yet. Remote membership is experimental.',
+  devices: 'Spotify device', reloadDevices: 'Reload devices', noDevices: 'Open Spotify on a device, then reload. Device access also requires playback-state permission on your token.',
+  deviceIssuePrefix: 'Device discovery: ',
+  manualDevicePlaceholder: 'Device ID (optional)', selectDevice: 'Use device ID', activeDevice: ' · Active in Spotify', selectedDevice: ' · Selected',
+  noSession: 'No Jam loaded', ownedSession: 'You are hosting this Jam', guestSession: 'You joined this Jam',
+  inactiveSession: 'This Jam is inactive', participants: 'Participants', refresh: 'Refresh Jam',
+  share: 'Share invitation', end: 'End Jam', leave: 'Leave Jam',
+  disconnectNotice: 'Disconnecting this app does not end or leave the Jam.',
+  endTitle: 'End this Jam?', endMessage: 'This ends the shared session for everyone.', cancel: 'Cancel',
+  sessionChanged: 'The Jam changed while confirmation was open. Review the current session before ending it.',
+  shareTitle: 'Join my Spotify Jam', shareFailure: 'The invitation could not be shared. Try again when the session is ready.',
+  working: 'Working', noneSelected: 'A device is optional for creating, joining in control mode, and refreshing your Jam.',
+  uncertainty: 'The last action has an unknown outcome. Refresh your Jam before another change.',
+});

@@ -22,6 +22,8 @@ import CreatePlaylist from './src/pages/CreatePlaylist';
 import AddToPlaylist from './src/pages/AddToPlaylist';
 import Library from './src/pages/Library/Library.render.tsx';
 import PlaylistViewer from './src/pages/PlaylistViewer/PlaylistViewer.render.tsx';
+import SpotifyJam from './src/pages/SpotifyJam/SpotifyJam.render';
+import { SpotifyJamRoute } from './src/pages/SpotifyJam/SpotifyJam.copy';
 
 const Stack = createNativeStackNavigator();
 
@@ -145,6 +147,7 @@ const InnerApp = () => {
         options={{ animation: 'slide_from_bottom' }}
       />
       <Stack.Screen name="Library" component={Library} />
+      <Stack.Screen name={SpotifyJamRoute} component={SpotifyJam} />
       <Stack.Screen
         name="Profile"
         component={Profile}
