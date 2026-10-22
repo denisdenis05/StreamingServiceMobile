@@ -3,16 +3,18 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "npm run prepare:player && react-native run-android",
-    "ios": "npm run prepare:player && react-native run-ios",
+    "android": "npm run prepare:player && npm run prepare:spotify && react-native run-android",
+    "ios": "npm run prepare:player && npm run prepare:spotify && react-native run-ios",
     "lint": "eslint .",
-    "start": "npm run prepare:player && react-native start",
+    "start": "npm run prepare:player && npm run prepare:spotify && react-native start",
     "test": "jest",
     "postinstall": "patch-package --error-on-fail",
     "test:dependency-security": "node --test tools/dependency-security.test.cjs tools/player-metro-patch.test.cjs tools/player-metro-assets.test.cjs",
     "format": "prettier --write \"src/**/*.{js,ts,jsx,tsx}\"",
     "format:check": "prettier --check \"src/**/*.{js,ts,jsx,tsx}\"",
     "prepare:player": "npm --prefix ../StreamingServicePlayer run build && npm --prefix ../StreamingServicePlayer run generate:specs",
+    "prepare:spotify": "npm --prefix ../StreamingServiceSpotifyJam run build",
+    "test:spotify": "npm run prepare:spotify && tsc --project tsconfig.spotify.json && node --test tools/spotify-integration.test.cjs",
     "test:player-integration": "node tools/player-integration.test.cjs",
     "test:player-android-build": "node tools/player-android-build.test.cjs",
     "test:player-android-app": "node tools/player-android-app.test.cjs",
@@ -41,7 +43,8 @@
     "react-native-screens": "~4.18.0",
     "react-native-svg": "^15.12.0",
     "react-native-toast-message": "^2.3.3",
-    "streaming-service-player": "file:../StreamingServicePlayer"
+    "streaming-service-player": "file:../StreamingServicePlayer",
+    "streaming-service-spotify-jam": "file:../StreamingServiceSpotifyJam"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
