@@ -57,6 +57,11 @@ export class SpotifyMobileController {
   }
 
   getSnapshot = (): SpotifyMobileSnapshot => this.snapshot;
+  isApplicationAccount(identifier: string | null): boolean {
+    const account = this.dependencies.account.getSnapshot();
+    return identifier !== null && this.snapshot.connected && account.isLoggedIn
+      && account.accountIdentifier === identifier && this.applicationAccountIdentifier === identifier;
+  }
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };

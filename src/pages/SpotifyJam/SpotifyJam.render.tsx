@@ -9,12 +9,18 @@ import { SpotifyMobileOperation } from '../../services/spotify/SpotifyMobileCont
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyJamCopy } from './SpotifyJam.copy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
+import SpotifyRecordingQueue from './SpotifyRecordingQueue.render';
+import { spotifyRouteSongSelection } from '../../services/spotify/SpotifySongSelection';
 
 const InputPolicy = Object.freeze({ capitalization: 'none', autoComplete: 'off',
   cancelStyle: 'cancel', destructiveStyle: 'destructive' } as const);
-interface SpotifyJamNavigation { readonly navigation: { goBack(): void }; }
+interface SpotifyJamNavigation {
+  readonly navigation: { goBack(): void };
+  readonly route?: { readonly params?: unknown };
+}
 
-export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
+export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) {
+  const selection = spotifyRouteSongSelection(route?.params);
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   const [clientIdentifier, setClientIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [queueTrack, setQueueTrack] = useState<string>(SpotifyMobilePolicy.emptyText);
@@ -97,6 +103,7 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
           maxLength={ClientIdentifierCharacters} editable={!busy} style={styles.input} />
         <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !clientIdentifier.trim()} />
       </View> : <>
+        {selection && selection.recordings.length > SpotifyMobilePolicy.emptyCount && <SpotifyRecordingQueue selection={selection} />}
         <View style={styles.section}>
           <DefaultText>{SpotifyJamCopy.connected + snapshot.displayName}</DefaultText>
           <DefaultButton title={SpotifyJamCopy.disconnect} onPress={disconnect} style={styles.neutral} />

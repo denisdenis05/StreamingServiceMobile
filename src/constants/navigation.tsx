@@ -4,6 +4,7 @@ import LibraryIcon from '../../assets/icons/libraryIcon.tsx';
 import CreateIcon from '../../assets/icons/createIcon.tsx';
 
 import MusicNoteIcon from '../../assets/icons/musicNoteIcon.tsx';
+import { spotifyJamMenuAction } from '../services/SpotifyJamMenuAction';
 
 type NavLabel = 'Home' | 'Search' | 'Library' | 'Create';
 
@@ -36,6 +37,7 @@ export const createActionButtons: ActionItem[] = [
 ];
 
 export const menuOptions: ActionItem[] = [
+  spotifyJamMenuAction,
   {
     label: 'Add to playlist',
     icon: MusicNoteIcon,

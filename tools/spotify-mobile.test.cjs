@@ -593,3 +593,11 @@ test(BrowserProfileFixture.unauthorizedName, async () => {
   const gateway = new SpotifyMobileGateway({ execute: async () => ({ status: SpotifyMobilePolicy.unauthorizedStatus, body: {} }) });
   await assertion.rejects(gateway.inspectLogin(Fixture.token, new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
 });
+
+const SelectionAccountNames = Object.freeze({ current: 'Recording selections require the current authenticated application account',
+  replacement: 'App-account replacement invalidates the old recording selection owner' });
+test(SelectionAccountNames.current, async () => { const state = fixture();
+  assertion.equal(state.controller.isApplicationAccount(Fixture.applicationAccount), false); await state.controller.connect(Fixture.token);
+  assertion.equal(state.controller.isApplicationAccount(Fixture.applicationAccount), true); assertion.equal(state.controller.isApplicationAccount(null), false); state.controller.dispose(); });
+test(SelectionAccountNames.replacement, async () => { const state = fixture(); await state.controller.connect(Fixture.token);
+  state.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true }); assertion.equal(state.controller.isApplicationAccount(Fixture.applicationAccount), false); state.controller.dispose(); });

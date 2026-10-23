@@ -8,6 +8,7 @@ import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
 import { FetchSpotifyInvitationReader, SpotifyInvitationResolver } from './spotify/SpotifyInvitationResolver';
 import { TEMPORARY_API_URL } from '../constants/placeholders';
 import { spotifyLoginBrowser, spotifyProofKeys } from './SpotifyLoginPlatform';
+import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore';
 
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
   identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.' });
@@ -56,4 +57,8 @@ export const spotifyMobile = new SpotifyMobileController({
 });
 
 declare const module: { readonly hot?: { dispose(callback: () => void): void } };
-module.hot?.dispose(() => spotifyMobile.dispose());
+export const spotifyRecordingQueue = new SpotifyRecordingQueueStore({
+  getCoordinator: () => spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime?.recordingQueue ?? null : null,
+  subscribeConnection: spotifyMobile.subscribe, nextIdentifier,
+});
+module.hot?.dispose(() => { spotifyRecordingQueue.dispose(); spotifyMobile.dispose(); });

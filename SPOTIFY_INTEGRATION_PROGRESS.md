@@ -105,3 +105,32 @@ separately. Live private session operations worked with desktop-session
 credentials; standalone mobile credential acquisition, guest joining, push
 updates, and real-device foreground/transport behavior remain open. A Spotify
 catalog probe returned HTTP 429. See the library PROGRESS.md and VALIDATION.md.
+
+## App recording selection — 2026-10-23
+
+The shared song context menu now includes Add to Spotify Jam. It carries copied,
+bounded ID/title/author records and the originating StreamingService account.
+After login, choose a country and app recording, inspect Spotify candidates, then
+explicitly select the matching recording. Matching never starts audio or queues
+implicitly. Different versions, conflicting recording codes and unavailable
+candidates are blocked. A changed country requires matching again.
+
+The library runtime owns the recording selection coordinator; a mobile store
+switches it with the connection. App-account replacement, changed Jam/host and
+disposal clear stale selections and subscriptions. Before dispatch, cancellation
+prevents confirmation/enqueue. After a queue write starts, the workflow keeps it
+pending until its real receipt to prevent cancellation from implying rollback.
+
+Validation: npm run test:spotify passed 99 Node and 24 rendered-screen cases;
+full app TypeScript passed. Library npm test passed 235 cases, including 21
+new recording workflow cases. Dedicated new suites are tools/spotify-recording-
+queue.test.cjs and tools/spotify-recording-screen.test.tsx. The existing manual
+Spotify-reference queue flow remains available. APK regeneration is deferred
+until the remaining authorized chapters are integrated; the previous APK does
+not include these source changes yet. No physical/catalog/queue claim is made.
+
+Remaining authorized work continues in the library DEVELOPMENT_SEQUENCE.md:
+host/shared observation, guest routing, membership recovery, playback authority,
+secure login storage and platform lifecycle. Private-auth and cross-account live
+gates remain unresolved; the user has authorized development, not fabricated
+protocol success.
