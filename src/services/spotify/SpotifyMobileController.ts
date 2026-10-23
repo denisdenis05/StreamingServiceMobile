@@ -30,6 +30,7 @@ export interface SpotifyMobileDependencies {
   readonly connect: (identity: SpotifyMobileIdentity, credentials: SpotifyCredentialProvider, selection: SpotifyDeviceSelection) => JamSessionClient;
   readonly disconnect: () => void;
   readonly createLogin?: (configuration: SpotifyLoginConfiguration) => SpotifyLoginProvider;
+  readonly membershipRefreshed?: () => void;
   readonly resolveInvitation?: (invitation: string, cancellation: AbortSignal) => Promise<string>;
 }
 
@@ -148,6 +149,7 @@ export class SpotifyMobileController {
       getDeviceIdentifier: () => this.snapshot.selectedDeviceIdentifier,
       nextRequestIdentifier: this.dependencies.nextIdentifier,
       refreshAccountWhenDeviceUnavailable: true,
+      preferAccountRefresh: true,
     });
     this.stopSessionObservation = this.sessions.subscribe(() => this.observeSession(lifetime));
     this.publish({ ...this.snapshot, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),
@@ -156,6 +158,7 @@ export class SpotifyMobileController {
     if (!this.current(lifetime)) return;
     this.publish({ ...this.snapshot, operation: SpotifyMobileOperation.Idle, failure: refresh.failure });
     if (!refresh.applied) return;
+    this.dependencies.membershipRefreshed?.();
     await this.reloadDevices();
   }
 
@@ -202,7 +205,11 @@ export class SpotifyMobileController {
   }
 
   refreshSession(): Promise<boolean> {
-    return this.run(SpotifyMobileOperation.Refreshing, sessions => sessions.refreshCurrentSession(this.dependencies.nextIdentifier()));
+    const lifetime = this.cancellation;
+    return this.run(SpotifyMobileOperation.Refreshing, sessions => sessions.refreshCurrentSession(this.dependencies.nextIdentifier())).then(applied => {
+      if (applied && this.current(lifetime)) this.dependencies.membershipRefreshed?.();
+      return applied;
+    });
   }
 
   async addToQueue(reference: string): Promise<boolean> {

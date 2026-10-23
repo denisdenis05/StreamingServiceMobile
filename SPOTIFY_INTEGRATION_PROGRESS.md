@@ -134,3 +134,35 @@ host/shared observation, guest routing, membership recovery, playback authority,
 secure login storage and platform lifecycle. Private-auth and cross-account live
 gates remain unresolved; the user has authorized development, not fabricated
 protocol success.
+
+## Host queue observation — 2026-10-23
+
+Added a focused-screen queue view backed by the library host observer. It retains
+repeated tracks and episode positions and labels stale results. The public queue
+response has no stable Jam occurrence IDs or revisions; the UI does not invent
+those identities or settle uncertain writes from track counts.
+
+The mobile queue store counts observing views and switches subscriptions when
+the runtime changes. Blur closes observation. Background suspends reads, and
+foreground activation waits for successful passive membership reconciliation.
+Manual membership recovery can re-enable observation only for the current ready
+foreground runtime. The extra OAuth read-currently-playing scope is requested.
+
+Validation: npm run test:spotify passed 113 Node and 29 rendered-screen cases;
+full app TypeScript passed. Dedicated suites are tools/spotify-hosted-queue.test.cjs
+and tools/spotify-hosted-screen.test.tsx, with foreground/manual-recovery cases in
+the existing integration/controller suites. Host wire, polling, timing and
+cancellation cases belong to the library's hosted-queue-observation suite.
+No native code changed; a final APK rebuild remains pending later chapters.
+
+This is host-account observation, not a verified guest shared queue transport.
+No new public/private Spotify request was made from the mobile implementation.
+Private authentication/fresh guest routing still require usable credentials and
+protocol evidence. Continue the authorized membership recovery, playback,
+secure storage and platform chapters; do not mark those finished from these tests.
+
+Host observation review also fixed a reentrant observer replacement and opted the
+mobile foreground path into account-current membership reads even when a device
+is selected. This prevents a stale device choice from clearing the actual account
+Jam. Both have dedicated regressions. Library validation passed 276 cases,
+including 41 host-observation cases. No live queue read is claimed.

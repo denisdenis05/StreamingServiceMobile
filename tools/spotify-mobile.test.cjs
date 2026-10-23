@@ -122,7 +122,7 @@ function fixture() {
   let connectedSessions = null;
   let provider;
   const calls = [];
-  const state = { inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
+  const state = { membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
@@ -131,6 +131,7 @@ function fixture() {
   const controller = new SpotifyMobileController({
     account: { getSnapshot: () => applicationAccount, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     gateway: { inspect: (...values) => state.inspect(...values), devices: (...values) => state.devices(...values) },
+    membershipRefreshed: () => { state.membershipRefreshes += Fixture.sequenceIncrement; },
     createLogin: configuration => state.login(configuration),
     clock: { nowMilliseconds: () => nowMilliseconds },
     nextIdentifier: () => { sequence += Fixture.sequenceIncrement; return Fixture.identifierPrefix + sequence; },
@@ -601,3 +602,11 @@ test(SelectionAccountNames.current, async () => { const state = fixture();
   assertion.equal(state.controller.isApplicationAccount(Fixture.applicationAccount), true); assertion.equal(state.controller.isApplicationAccount(null), false); state.controller.dispose(); });
 test(SelectionAccountNames.replacement, async () => { const state = fixture(); await state.controller.connect(Fixture.token);
   state.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true }); assertion.equal(state.controller.isApplicationAccount(Fixture.applicationAccount), false); state.controller.dispose(); });
+
+const MembershipRecoveryNames = Object.freeze({ confirmed: 'Successful initial and manual membership reads notify queue recovery',
+  failed: 'Failed membership reads cannot resume queue observation' });
+test(MembershipRecoveryNames.confirmed, async () => { const state = fixture(); await state.controller.connect(Fixture.token);
+  assertion.equal(state.state.membershipRefreshes, Fixture.singleCall); await state.controller.refreshSession();
+  assertion.equal(state.state.membershipRefreshes, Fixture.connectionAndRefreshCount); state.controller.dispose(); });
+test(MembershipRecoveryNames.failed, async () => { const state = fixture(); state.state.read = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unauthorized); };
+  await state.controller.connect(Fixture.token); assertion.equal(state.state.membershipRefreshes, Fixture.noCalls); state.controller.dispose(); });
