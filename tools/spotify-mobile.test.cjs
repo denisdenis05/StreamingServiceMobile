@@ -126,10 +126,12 @@ function fixture() {
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
-    end: async () => undefined, leave: async () => undefined };
+    end: async () => undefined, leave: async () => undefined, queue: async () => undefined,
+    login: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); } };
   const controller = new SpotifyMobileController({
     account: { getSnapshot: () => applicationAccount, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     gateway: { inspect: (...values) => state.inspect(...values), devices: (...values) => state.devices(...values) },
+    createLogin: configuration => state.login(configuration),
     clock: { nowMilliseconds: () => nowMilliseconds },
     nextIdentifier: () => { sequence += Fixture.sequenceIncrement; return Fixture.identifierPrefix + sequence; },
     connect(identity, credentials) {
@@ -142,7 +144,7 @@ function fixture() {
         join: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Joining, values }); return state.join(...values); },
         end: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Ending, values }); return state.end(...values); },
         leave: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Leaving, values }); return state.leave(...values); },
-      });
+      }, { addToQueue: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Queueing, values }); return state.queue(...values); } });
       return connectedSessions;
     },
     disconnect() { connectedSessions?.detachAccount(); connectedSessions = null; },
@@ -458,4 +460,136 @@ test(Names.invalidRedirect, async () => {
   const reader = new FetchSpotifyInvitationReader(async () => ({ url: Fixture.unsafeLink, status: Fixture.successStatus, text: async () => assertion.fail() }),
     { schedule: () => () => undefined });
   await assertion.rejects(reader.read(Fixture.shortLink, new AbortController().signal), { code: library.IntegrationFailureCode.InvalidInput });
+});
+
+const LoginFixture = Object.freeze({ clientIdentifier: '0123456789abcdef0123456789abcdef', redirectAddress: 'streamingservicespotify://callback',
+  trackIdentifier: '0123456789abcdefghijkl', trackUri: 'spotify:track:0123456789abcdefghijkl',
+  trackAddress: 'https://open.spotify.com/track/0123456789abcdefghijkl?si=share', tokenExpirationMilliseconds: 99999999 });
+const LoginNames = Object.freeze({ login: 'Mobile login establishes a library credential provider and reads membership',
+  logout: 'Application logout cancels browser login and clears its provider', mismatch: 'Login refuses a different inspected Spotify account',
+  late: 'A late browser completion cannot reconnect a logged out application account', queue: 'Mobile host queue normalizes a Spotify track URL and submits once',
+  invalid: 'Invalid track input cannot reach the host queue', retired: 'Login provider cannot supply credentials after disconnection',
+  rejectedReceipt: 'Clearing a global failure cannot turn a rejected queue command into acceptance',
+  acceptedReceipt: 'An unrelated global failure cannot turn an accepted queue command into rejection',
+  absentReceipt: 'Clearing a connection failure cannot make an unsent queue command appear accepted' });
+function browserLogin() {
+  const calls = { logout: Fixture.noCalls };
+  const credentials = { accountIdentifier: Fixture.spotifyAccount, accessToken: Fixture.token, expiresAtMilliseconds: LoginFixture.tokenExpirationMilliseconds };
+  const provider = { login: async () => credentials, getCredentials: async () => credentials, renewCredentials: async () => credentials,
+    logout: () => { calls.logout += Fixture.sequenceIncrement; } };
+  return { provider, calls };
+}
+function loginConfiguration() { return { clientIdentifier: LoginFixture.clientIdentifier, redirectAddress: LoginFixture.redirectAddress, scopes: [] }; }
+test(LoginNames.login, async () => { const state = fixture(); const login = browserLogin(); state.state.login = () => login.provider;
+  await state.controller.login(loginConfiguration()); assertion.ok(state.controller.getSnapshot().connected);
+  assertion.equal((await state.provider().getCredentials(new AbortController().signal)).accessToken, Fixture.token);
+  assertion.equal(state.calls[Fixture.firstPosition].operation, SpotifyMobileOperation.Refreshing); state.controller.dispose();
+});
+test(LoginNames.logout, async () => { const state = fixture(); const login = browserLogin(); state.state.login = () => login.provider;
+  await state.controller.login(loginConfiguration()); state.changeAccount({ accountIdentifier: null, isLoggedIn: false });
+  assertion.equal(login.calls.logout, Fixture.singleCall); assertion.equal(state.controller.getSnapshot().connected, false); state.controller.dispose();
+});
+test(LoginNames.mismatch, async () => { const state = fixture(); const login = browserLogin(); state.state.login = () => login.provider;
+  state.state.inspect = async () => ({ accountIdentifier: Fixture.otherSpotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin });
+  await state.controller.login(loginConfiguration()); assertion.equal(state.controller.getSnapshot().connected, false);
+  assertion.equal(state.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized); state.controller.dispose();
+});
+test(LoginNames.late, async () => { const state = fixture(); const login = browserLogin(); const pending = deferred();
+  login.provider.login = () => pending.promise; state.state.login = () => login.provider;
+  const attempt = state.controller.login(loginConfiguration()); state.changeAccount({ accountIdentifier: null, isLoggedIn: false });
+  pending.resolve(await login.provider.getCredentials()); await attempt;
+  assertion.equal(state.controller.getSnapshot().connected, false); assertion.equal(login.calls.logout, Fixture.singleCall); state.controller.dispose();
+});
+test(LoginNames.retired, async () => { const state = fixture(); const login = browserLogin(); state.state.login = () => login.provider;
+  await state.controller.login(loginConfiguration()); const provider = state.provider(); state.controller.disconnect();
+  await assertion.rejects(provider.getCredentials(new AbortController().signal), { code: library.IntegrationFailureCode.Superseded }); state.controller.dispose();
+});
+test(LoginNames.queue, async () => { const state = fixture(); state.state.read = async () => {
+  const response = sessionResponse(); response.session.hostDeviceIdentifier = Fixture.deviceIdentifier; return response; };
+  await state.controller.connect(Fixture.token); assertion.equal(await state.controller.addToQueue(LoginFixture.trackAddress), true);
+  const call = state.calls.find(call => call.operation === SpotifyMobileOperation.Queueing);
+  assertion.equal(call.values[Fixture.firstPosition], LoginFixture.trackIdentifier); assertion.equal(call.values[Fixture.singleCall], Fixture.deviceIdentifier);
+  state.controller.dispose();
+});
+test(LoginNames.invalid, async () => { const state = fixture(); await state.controller.connect(Fixture.token);
+  assertion.equal(await state.controller.addToQueue(Fixture.unsafeLink), false);
+  assertion.equal(state.calls.filter(call => call.operation === SpotifyMobileOperation.Queueing).length, Fixture.noCalls); state.controller.dispose();
+});
+
+test(LoginNames.rejectedReceipt, async () => {
+  const state = fixture(); state.state.read = async () => {
+    const response = sessionResponse(); response.session.hostDeviceIdentifier = Fixture.deviceIdentifier; return response;
+  };
+  await state.controller.connect(Fixture.token);
+  state.state.queue = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Forbidden); };
+  let cleared = false;
+  const stop = state.controller.subscribe(() => {
+    const snapshot = state.controller.getSnapshot();
+    if (!cleared && snapshot.operation === SpotifyMobileOperation.Idle && snapshot.failure === library.IntegrationFailureCode.Forbidden) {
+      cleared = true; state.controller.selectDevice(Fixture.deviceIdentifier);
+    }
+  });
+  assertion.equal(await state.controller.addToQueue(LoginFixture.trackAddress), false);
+  assertion.equal(cleared, true); assertion.equal(state.controller.getSnapshot().failure, null); stop(); state.controller.dispose();
+});
+
+test(LoginNames.acceptedReceipt, async () => {
+  const state = fixture(); state.state.read = async () => {
+    const response = sessionResponse(); response.session.hostDeviceIdentifier = Fixture.deviceIdentifier; return response;
+  };
+  await state.controller.connect(Fixture.token); let changed = false;
+  const stop = state.controller.subscribe(() => {
+    if (!changed && state.controller.getSnapshot().operation === SpotifyMobileOperation.Idle) {
+      changed = true; state.controller.selectDevice(Fixture.emptyText);
+    }
+  });
+  assertion.equal(await state.controller.addToQueue(LoginFixture.trackAddress), true);
+  assertion.equal(changed, true); assertion.equal(state.controller.getSnapshot().failure, library.IntegrationFailureCode.InvalidInput);
+  stop(); state.controller.dispose();
+});
+
+test(LoginNames.absentReceipt, async () => {
+  const state = fixture(); let cleared = false;
+  const stop = state.controller.subscribe(() => {
+    if (!cleared && state.controller.getSnapshot().failure === library.IntegrationFailureCode.Unauthorized) {
+      cleared = true; state.controller.selectDevice(Fixture.deviceIdentifier);
+    }
+  });
+  assertion.equal(await state.controller.addToQueue(LoginFixture.trackAddress), false);
+  assertion.equal(cleared, true); assertion.equal(state.calls.length, Fixture.noCalls); stop(); state.controller.dispose();
+});
+
+const QueueReference = Object.freeze({ implementation: '../.build/spotify/SpotifyQueueTrack',
+  valid: 'Spotify track IDs, URIs and share links normalize using the actual mobile URL implementation',
+  invalid: 'Foreign origins, credentials, nontrack links and invalid queue references are rejected',
+  foreign: 'https://example.com/track/0123456789abcdefghijkl', credentials: 'https://user@open.spotify.com/track/0123456789abcdefghijkl',
+  insecure: 'http://open.spotify.com/track/0123456789abcdefghijkl', album: 'https://open.spotify.com/album/0123456789abcdefghijkl',
+  port: 'https://open.spotify.com:444/track/0123456789abcdefghijkl', malformed: 'spotify:track:invalid' });
+const { spotifyQueueTrackIdentifier } = require(QueueReference.implementation);
+test(QueueReference.valid, () => { for (const input of [LoginFixture.trackIdentifier, LoginFixture.trackUri, LoginFixture.trackAddress]) assertion.equal(spotifyQueueTrackIdentifier(input), LoginFixture.trackIdentifier); });
+test(QueueReference.invalid, () => { for (const input of [QueueReference.foreign, QueueReference.credentials, QueueReference.insecure, QueueReference.album, QueueReference.port, QueueReference.malformed]) {
+  assertion.throws(() => spotifyQueueTrackIdentifier(input), { code: library.IntegrationFailureCode.InvalidInput });
+} });
+
+const BrowserProfileFixture = Object.freeze({ name: 'Browser login uses the official profile and prefers stable account identity',
+  legacyIdentifier: 'legacy-account', displayName: 'OAuth listener', resolverHost: 'gew4-spclient.spotify.com',
+  unauthorizedName: 'Browser login profile failures remain typed and do not become anonymous success' });
+test(BrowserProfileFixture.name, async () => {
+  const requests = [];
+  const gateway = new SpotifyMobileGateway({ execute: async request => {
+    requests.push(request);
+    return { status: Fixture.successStatus, body: request.address === SpotifyMobilePolicy.oauthProfileAddress
+      ? { account_id: Fixture.stableAccount, id: BrowserProfileFixture.legacyIdentifier, display_name: BrowserProfileFixture.displayName }
+      : { spclient: [BrowserProfileFixture.resolverHost] } };
+  } });
+  const identity = await gateway.inspectLogin(Fixture.token, new AbortController().signal);
+  assertion.equal(identity.accountIdentifier, Fixture.stableAccount); assertion.equal(identity.displayName, BrowserProfileFixture.displayName);
+  const profile = requests.find(request => request.address === SpotifyMobilePolicy.oauthProfileAddress);
+  assertion.equal(profile.headers[SpotifyMobilePolicy.authorizationHeader], SpotifyMobilePolicy.bearerPrefix + Fixture.token);
+  const resolver = requests.find(request => request.address === SpotifyMobilePolicy.resolverAddress);
+  assertion.equal(resolver.headers[SpotifyMobilePolicy.authorizationHeader], undefined);
+});
+test(BrowserProfileFixture.unauthorizedName, async () => {
+  const gateway = new SpotifyMobileGateway({ execute: async () => ({ status: SpotifyMobilePolicy.unauthorizedStatus, body: {} }) });
+  await assertion.rejects(gateway.inspectLogin(Fixture.token, new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
 });

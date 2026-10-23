@@ -23,8 +23,6 @@ class DeepLinkHandler {
   }
 
   private handleDeepLink(url: string) {
-    console.log('Deep link received:', url);
-
     if (url.startsWith('trackplayer://notification.click')) {
       this.notifyListeners('notification_click', {});
       return;

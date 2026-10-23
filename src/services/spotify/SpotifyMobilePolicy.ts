@@ -1,6 +1,7 @@
 import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
 
 export const SpotifyMobilePolicy = Object.freeze({
+  oauthProfileAddress: 'https://api.spotify.com/v1/me',
   profileAddress: 'https://api-partner.spotify.com/pathfinder/v1/query', devicesAddress: 'https://api.spotify.com/v1/me/player/devices',
   profileOperation: 'profileAttributes', profileQueryHash: '53bcb064f6cd18c23f752bc324a791194d20df612d8e1239c735144ab0399ced',
   operationParameter: 'operationName', variablesParameter: 'variables', extensionsParameter: 'extensions', persistedQueryVersion: 1,
@@ -17,17 +18,17 @@ export const SpotifyMobilePolicy = Object.freeze({
 });
 
 export const SpotifyFailureMessages: Readonly<Record<IntegrationFailureCode, string>> = Object.freeze({
-  [IntegrationFailureCode.InvalidInput]: 'Check the token, device or full Jam invitation and try again.',
+  [IntegrationFailureCode.InvalidInput]: 'Check the client ID, song link, device or Jam invitation and try again.',
   [IntegrationFailureCode.InvalidResponse]: 'Spotify returned an unexpected response. Refresh before trying another action.',
   [IntegrationFailureCode.Canceled]: 'The request was cancelled.',
   [IntegrationFailureCode.Superseded]: 'The connection changed. Try again with the current account.',
-  [IntegrationFailureCode.Unauthorized]: 'The Spotify token expired or was rejected. Connect again with a current token.',
-  [IntegrationFailureCode.Forbidden]: 'Spotify did not allow that action. Check your account, token permissions and Jam role.',
+  [IntegrationFailureCode.Unauthorized]: 'Spotify authorization expired or was rejected. Log in again.',
+  [IntegrationFailureCode.Forbidden]: 'Spotify did not allow that action. Check your account, approved permissions and Jam role.',
   [IntegrationFailureCode.NotFound]: 'Spotify could not find that Jam or device. Check the invitation and try again.',
   [IntegrationFailureCode.RateLimited]: 'Spotify is limiting requests. Wait before trying again.',
   [IntegrationFailureCode.Network]: 'Spotify could not be reached. Check your connection and try again.',
   [IntegrationFailureCode.Deadline]: 'Spotify took too long to respond. Try refreshing the session.',
   [IntegrationFailureCode.Unsupported]: 'That operation is not available for this connection.',
-  [IntegrationFailureCode.UnknownOutcome]: 'The action may have reached Spotify. Refresh your Jam before another action.',
+  [IntegrationFailureCode.UnknownOutcome]: 'The action may have reached Spotify. Refresh the Jam. If a queue request remains uncertain, reconnect without repeating it.',
   [IntegrationFailureCode.Backpressure]: 'Another Spotify action is pending. Wait for it to finish.',
 });

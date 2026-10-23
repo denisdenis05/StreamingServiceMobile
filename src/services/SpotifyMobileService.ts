@@ -1,5 +1,5 @@
 import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore,
-  QueryableRecordingCatalog, RecordingNamespace, StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
+  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { createApplicationNetworkClient } from './ApplicationNetworkClient';
 import { spotifyIntegration } from './SpotifyIntegration';
@@ -7,11 +7,13 @@ import { SpotifyMobileController } from './spotify/SpotifyMobileController';
 import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
 import { FetchSpotifyInvitationReader, SpotifyInvitationResolver } from './spotify/SpotifyInvitationResolver';
 import { TEMPORARY_API_URL } from '../constants/placeholders';
+import { spotifyLoginBrowser, spotifyProofKeys } from './SpotifyLoginPlatform';
 
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
   identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.' });
 const clock = { nowMilliseconds: () => Date.now() };
 const requests = new FetchHttpExecutor(new SystemScheduler());
+const gateway = new SpotifyMobileGateway(requests);
 const invitationResolver = new SpotifyInvitationResolver(new FetchSpotifyInvitationReader(fetch, new SystemScheduler()));
 const identifierPrefix = Date.now().toString(MobileCompositionPolicy.identifierRadix) + MobileCompositionPolicy.identifierSeparator
   + Math.random().toString(MobileCompositionPolicy.identifierRadix);
@@ -23,7 +25,10 @@ function nextIdentifier(): string {
 }
 
 export const spotifyMobile = new SpotifyMobileController({
-  account: authenticationSession, gateway: new SpotifyMobileGateway(requests), clock, nextIdentifier,
+  account: authenticationSession, gateway, clock, nextIdentifier,
+  createLogin: configuration => new SpotifyLoginSession({ configuration, proofKeys: spotifyProofKeys,
+    browser: spotifyLoginBrowser, requests, clock,
+    resolveAccount: async (accessToken, cancellation) => (await gateway.inspectLogin(accessToken, cancellation)).accountIdentifier }),
   connect(identity, credentials, selection) {
     const account = authenticationSession.getSnapshot();
     if (account.accountIdentifier === null || account.token === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
@@ -44,7 +49,7 @@ export const spotifyMobile = new SpotifyMobileController({
       endpoints: { resolveServiceOrigin: async () => identity.serviceOrigin },
       recordings: new QueryableRecordingCatalog(MobileCompositionPolicy.catalogPrefix + TEMPORARY_API_URL,
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
-      experimentalMembership: true }, selection).sessions;
+      experimentalMembership: true, enableHostedQueue: true }, selection).sessions;
   },
   disconnect: () => spotifyIntegration.disconnect(),
   resolveInvitation: (invitation, cancellation) => invitationResolver.resolve(invitation, cancellation),

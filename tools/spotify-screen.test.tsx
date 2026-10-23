@@ -12,9 +12,9 @@ const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
   screen: '../src/pages/SpotifyJam/SpotifyJam.render', container: '../src/components/PageContainer' });
 const Methods = Object.freeze({ alert: 'alert', share: 'share' } as const);
 const Fixture = Object.freeze({ spotifyAccount: 'spotify-account', displayName: 'Listener', deviceIdentifier: 'device', deviceName: 'Phone',
-  sessionIdentifier: 'session', otherSessionIdentifier: 'replacement-session', token: 'temporary-test-token', invitation: 'spotify:socialsession:invitation-test',
+  sessionIdentifier: 'session', otherSessionIdentifier: 'replacement-session', token: 'temporary-test-token', clientIdentifier: '0123456789abcdef0123456789abcdef', trackIdentifier: '0123456789abcdefghijkl', invitation: 'spotify:socialsession:invitation-test',
   firstPosition: 0, confirmationPosition: 1, alertButtonsArgumentIndex: 2, singleInvocationCount: 1 });
-const Names = Object.freeze({ connect: 'Connect clears the masked credential input and submits only after a press',
+const Names = Object.freeze({ connect: 'Login opens only on a press and supplies the public client identifier and callback',
   create: 'Connected screen creates a Jam only when requested', join: 'Join sends the invitation in the selected membership mode',
   host: 'Host end requires the shared-session confirmation', guest: 'Guest sees leave instead of end',
   changedConfirmation: 'End confirmation cannot end a Jam that replaced the displayed session',
@@ -25,7 +25,7 @@ const Names = Object.freeze({ connect: 'Connect clears the masked credential inp
 
 let snapshot: SpotifyMobileSnapshot;
 const controller = {
-  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), disconnect: jest.fn(),
+  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
   createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
@@ -59,11 +59,11 @@ afterEach(async () => {
 
 test(Names.connect, async () => {
   snapshot = connection(false); await render();
-  expect(controller.connect).not.toHaveBeenCalled(); expect(input(SpotifyJamCopy.tokenPlaceholder).props.secureTextEntry).toBe(true);
-  await act(async () => input(SpotifyJamCopy.tokenPlaceholder).props.onChangeText(Fixture.token));
+  expect(controller.login).not.toHaveBeenCalled();
+  await act(async () => input(SpotifyJamCopy.clientIdentifierPlaceholder).props.onChangeText(Fixture.clientIdentifier));
   await act(async () => button(SpotifyJamCopy.connect).props.onPress());
-  expect(controller.connect).toHaveBeenCalledWith(Fixture.token);
-  expect(input(SpotifyJamCopy.tokenPlaceholder).props.value).toBe(SpotifyMobilePolicy.emptyText);
+  expect(controller.login).toHaveBeenCalledWith({ clientIdentifier: Fixture.clientIdentifier,
+    redirectAddress: SpotifyJamCopy.redirectAddress, scopes: Object.values(SpotifyJamCopy.loginScopes) });
 });
 test(Names.create, async () => {
   await render(); expect(controller.createSession).not.toHaveBeenCalled();
@@ -116,4 +116,43 @@ test(Names.disconnect, async () => {
 test(Names.navigation, async () => {
   await render(); await act(async () => button(SpotifyJamCopy.back).props.onPress()); expect(navigation.goBack).toHaveBeenCalled();
   await act(async () => button(SpotifyJamCopy.reloadDevices).props.onPress()); expect(controller.reloadDevices).toHaveBeenCalled();
+});
+
+const QueueNames = Object.freeze({ target: 'Host queue action requires a host device from the Jam',
+  accepted: 'Acknowledged queue submission clears the track field', failure: 'Failed queue submission retains the track for correction' });
+test(QueueNames.target, async () => {
+  snapshot = connection(true, true); await render();
+  await act(async () => input(SpotifyJamCopy.queuePlaceholder).props.onChangeText(Fixture.trackIdentifier));
+  expect(button(SpotifyJamCopy.addToQueue).props.disabled).toBe(true);
+});
+test(QueueNames.accepted, async () => {
+  const connected = connection(true, true);
+  snapshot = { ...connected, session: { ...connected.session!, session: { ...connected.session!.session!, hostDeviceIdentifier: Fixture.deviceIdentifier } } };
+  controller.addToQueue.mockResolvedValue(true); await render();
+  await act(async () => input(SpotifyJamCopy.queuePlaceholder).props.onChangeText(Fixture.trackIdentifier));
+  expect(button(SpotifyJamCopy.addToQueue).props.disabled).toBe(false);
+  await act(async () => button(SpotifyJamCopy.addToQueue).props.onPress());
+  expect(controller.addToQueue).toHaveBeenCalledWith(Fixture.trackIdentifier);
+  expect(input(SpotifyJamCopy.queuePlaceholder).props.value).toBe(SpotifyMobilePolicy.emptyText);
+});
+test(QueueNames.failure, async () => {
+  const connected = connection(true, true);
+  snapshot = { ...connected, session: { ...connected.session!, session: { ...connected.session!.session!, hostDeviceIdentifier: Fixture.deviceIdentifier } } };
+  controller.addToQueue.mockResolvedValue(false); await render();
+  await act(async () => input(SpotifyJamCopy.queuePlaceholder).props.onChangeText(Fixture.trackIdentifier));
+  await act(async () => button(SpotifyJamCopy.addToQueue).props.onPress());
+  expect(input(SpotifyJamCopy.queuePlaceholder).props.value).toBe(Fixture.trackIdentifier);
+});
+
+const QueueReceiptReplacementName = 'Queue acceptance from an old Jam disappears after session replacement';
+test(QueueReceiptReplacementName, async () => {
+  const connected = connection(true, true);
+  snapshot = { ...connected, session: { ...connected.session!, session: { ...connected.session!.session!, hostDeviceIdentifier: Fixture.deviceIdentifier } } };
+  controller.addToQueue.mockResolvedValue(true); await render();
+  await act(async () => input(SpotifyJamCopy.queuePlaceholder).props.onChangeText(Fixture.trackIdentifier));
+  await act(async () => button(SpotifyJamCopy.addToQueue).props.onPress());
+  expect(JSON.stringify(rendered.toJSON()).includes(SpotifyJamCopy.queueAccepted)).toBe(true);
+  snapshot = { ...snapshot, session: { ...snapshot.session!, session: { ...snapshot.session!.session!, identifier: Fixture.otherSessionIdentifier } } };
+  await act(async () => rendered.update(<SpotifyJam navigation={navigation} />));
+  expect(JSON.stringify(rendered.toJSON()).includes(SpotifyJamCopy.queueAccepted)).toBe(false);
 });

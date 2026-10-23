@@ -1,3 +1,36 @@
+# Browser login and host queue chapter — 2026-10-23
+
+Implemented library-owned PKCE login with secure Android proof generation,
+existing browser authorization sessions, official profile verification and
+in-memory renewal. The screen now takes the public client ID and opens Spotify;
+it does not require a pasted token. Registered callback:
+`streamingservicespotify://callback`. No real developer client ID was supplied,
+so live OAuth login/private Jam access remains unverified.
+
+Added guarded host queue submission for Spotify track links/URIs/IDs. It uses the
+Jam's actual host identity, rejects missing hosts/guests and preserves uncertainty
+without automatic retries. Starting playback in Spotify and refreshing is required
+when creation returns no host. No shared queue observation or synchronized audio
+is claimed. Experimental join remains available for later controlled validation.
+
+Validation: `npm run test:spotify` passed 87 Node and 15 screen cases;
+`./node_modules/.bin/tsc --noEmit` passed. Library suite passed 214 cases across
+12 files. Android `:app:testReleaseUnitTest` passed three proof-key cases.
+Feature mapping and setup details are in SPOTIFY_JAM_APK.md. No phone was attached.
+
+Final Android `:app:testReleaseUnitTest :app:assembleRelease` passed. APK signature
+verification passed using the existing debug certificate. The copied ARM64 APK
+is 29,159,665 bytes and contains a 1,940,156-byte Hermes bundle. SHA-256:
+`85e8b6fcee4b04d3d0aaca09414f89e36050d218a11c4546dfdf7d69a1e973ab`.
+Archive, signing and checksum evidence are beside the ignored build artifact.
+Review fixes have dedicated tests for browser close exceptions, queue command
+results under subscriber reentrancy and receipt removal after Jam replacement.
+
+Next: configure a real Spotify developer client ID and accepted callback; verify
+browser login, passive private membership, owned create/share and host queue on a
+physical phone; then use a second controlled account to test join/leave and shared
+queue propagation. OAuth credentials are not assumed to authorize private Jam.
+
 # Spotify library integration
 
 ## Mobile personal-test chapter — 2026-10-22

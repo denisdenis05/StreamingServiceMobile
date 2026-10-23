@@ -16,7 +16,9 @@ interface SpotifyJamNavigation { readonly navigation: { goBack(): void }; }
 
 export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
-  const [accessToken, setAccessToken] = useState<string>(SpotifyMobilePolicy.emptyText);
+  const [clientIdentifier, setClientIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
+  const [queueTrack, setQueueTrack] = useState<string>(SpotifyMobilePolicy.emptyText);
+  const [queueReceipt, setQueueReceipt] = useState<typeof snapshot.session>(null);
   const [invitation, setInvitation] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [deviceIdentifier, setDeviceIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [mode, setMode] = useState(JamJoinMode.Control);
@@ -28,12 +30,12 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
 
   function connect(): void {
-    const token = accessToken;
-    setAccessToken(SpotifyMobilePolicy.emptyText);
-    void spotifyMobile.connect(token);
+    void spotifyMobile.login({ clientIdentifier: clientIdentifier.trim(), redirectAddress: SpotifyJamCopy.redirectAddress,
+      scopes: Object.values(SpotifyJamCopy.loginScopes) });
   }
   function disconnect(): void {
-    setAccessToken(SpotifyMobilePolicy.emptyText);
+    setQueueReceipt(null);
+    setQueueTrack(SpotifyMobilePolicy.emptyText);
     setInvitation(SpotifyMobilePolicy.emptyText);
     setDeviceIdentifier(SpotifyMobilePolicy.emptyText);
     spotifyMobile.disconnect();
@@ -63,6 +65,17 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
     setInvitation(SpotifyMobilePolicy.emptyText);
     void spotifyMobile.joinSession(address, mode);
   }
+  async function queue(): Promise<void> {
+    setQueueReceipt(null);
+    const expectedSession = spotifyMobile.getSnapshot().session;
+    if (await spotifyMobile.addToQueue(queueTrack)) {
+      const current = spotifyMobile.getSnapshot().session;
+      if (current?.accountIdentifier !== expectedSession?.accountIdentifier
+        || current?.session?.identifier !== expectedSession?.session?.identifier) return;
+      setQueueTrack(SpotifyMobilePolicy.emptyText);
+      setQueueReceipt(current);
+    }
+  }
 
   return <PageContainer>
     <ScrollView style={styles.page} contentContainerStyle={styles.content} keyboardShouldPersistTaps={KeyboardTapPolicy}>
@@ -75,12 +88,14 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
       {busy && <View style={styles.row}><ActivityIndicator /><DefaultText>{SpotifyJamCopy.busy}</DefaultText></View>}
       {!snapshot.connected ? <View style={styles.section}>
         <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.testBuild}</DefaultText>
-        <DefaultText style={styles.explanation}>{SpotifyJamCopy.tokenExplanation}</DefaultText>
-        <TextInput value={accessToken} onChangeText={setAccessToken} placeholder={SpotifyJamCopy.tokenPlaceholder}
-          accessibilityLabel={SpotifyJamCopy.tokenPlaceholder} secureTextEntry autoCorrect={false}
+        <DefaultText style={styles.explanation}>{SpotifyJamCopy.loginExplanation}</DefaultText>
+        <DefaultText style={styles.explanation}>{SpotifyJamCopy.registrationNotice}</DefaultText>
+        <DefaultText>{SpotifyJamCopy.redirectAddress}</DefaultText>
+        <TextInput value={clientIdentifier} onChangeText={setClientIdentifier} placeholder={SpotifyJamCopy.clientIdentifierPlaceholder}
+          accessibilityLabel={SpotifyJamCopy.clientIdentifierPlaceholder} autoCorrect={false}
           autoCapitalize={InputPolicy.capitalization} autoComplete={InputPolicy.autoComplete}
-          maxLength={SpotifyMobilePolicy.maximumTokenCharacters} editable={!busy} style={styles.input} />
-        <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !accessToken.trim()} />
+          maxLength={ClientIdentifierCharacters} editable={!busy} style={styles.input} />
+        <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !clientIdentifier.trim()} />
       </View> : <>
         <View style={styles.section}>
           <DefaultText>{SpotifyJamCopy.connected + snapshot.displayName}</DefaultText>
@@ -116,6 +131,17 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
             {session.participants.map(participant => <DefaultText key={participant.identifier}>{participant.displayName}</DefaultText>)}
             <DefaultButton title={SpotifyJamCopy.share} onPress={() => { void share(); }}
               disabled={busy || snapshot.session?.status !== JamConnectionStatus.Ready} />
+            {session.ownedByCurrentAccount && <View style={styles.section}>
+              <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.queueHeading}</DefaultText>
+              <DefaultText style={styles.explanation}>{SpotifyJamCopy.queueNotice}</DefaultText>
+              {!session.hostDeviceIdentifier && <DefaultText>{SpotifyJamCopy.queueNoHost}</DefaultText>}
+              <TextInput value={queueTrack} onChangeText={setQueueTrack} placeholder={SpotifyJamCopy.queuePlaceholder}
+                accessibilityLabel={SpotifyJamCopy.queuePlaceholder} autoCapitalize={InputPolicy.capitalization}
+                autoCorrect={false} editable={!busy} maxLength={SpotifyMobilePolicy.maximumInvitationCharacters} style={styles.input} />
+              <DefaultButton title={SpotifyJamCopy.addToQueue} onPress={() => { void queue(); }}
+                disabled={!canMutate || !session.active || !session.hostDeviceIdentifier || !queueTrack.trim()} />
+              {queueReceipt !== null && queueReceipt === snapshot.session && <DefaultText>{SpotifyJamCopy.queueAccepted}</DefaultText>}
+            </View>}
             {shareFailure && <DefaultText style={styles.error}>{SpotifyJamCopy.shareFailure}</DefaultText>}
             {session.ownedByCurrentAccount ? <DefaultButton title={SpotifyJamCopy.end} onPress={end} disabled={!canMutate} />
               : <DefaultButton title={SpotifyJamCopy.leave} onPress={() => { void spotifyMobile.leaveSession(); }} disabled={!canMutate} />}
@@ -140,3 +166,4 @@ export default function SpotifyJam({ navigation }: SpotifyJamNavigation) {
 
 const KeyboardTapPolicy = 'handled';
 const AlertRole = 'alert';
+const ClientIdentifierCharacters = 32;

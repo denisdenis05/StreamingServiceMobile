@@ -17,6 +17,7 @@ export interface SpotifyMobileDevice {
 
 export interface SpotifyAccountGateway {
   inspect(accessToken: string, cancellation: AbortSignal): Promise<SpotifyMobileIdentity>;
+  inspectLogin?(accessToken: string, cancellation: AbortSignal): Promise<SpotifyMobileIdentity>;
   devices(accessToken: string, cancellation: AbortSignal): Promise<readonly SpotifyMobileDevice[]>;
 }
 
@@ -44,6 +45,25 @@ export class SpotifyMobileGateway implements SpotifyAccountGateway {
       this.read(SpotifyMobilePolicy.resolverAddress, null, cancellation),
     ]);
     const profile = spotifyObject(spotifyObject(spotifyObject(spotifyObject(profileValue).data).me).profile);
+    const accountIdentifier = spotifyText(profile.username);
+    const displayName = typeof profile.name === SpotifyMobilePolicy.stringType && (profile.name as string).trim()
+      ? profile.name as string : accountIdentifier;
+    return this.identity(accountIdentifier, displayName, resolverValue);
+  }
+
+  async inspectLogin(accessToken: string, cancellation: AbortSignal): Promise<SpotifyMobileIdentity> {
+    const [profileValue, resolverValue] = await Promise.all([
+      this.read(SpotifyMobilePolicy.oauthProfileAddress, accessToken, cancellation),
+      this.read(SpotifyMobilePolicy.resolverAddress, null, cancellation),
+    ]);
+    const profile = spotifyObject(profileValue);
+    const accountIdentifier = spotifyText(profile.account_id ?? profile.id);
+    const displayName = typeof profile.display_name === SpotifyMobilePolicy.stringType && (profile.display_name as string).trim()
+      ? profile.display_name as string : accountIdentifier;
+    return this.identity(accountIdentifier, displayName, resolverValue);
+  }
+
+  private identity(accountIdentifier: string, displayName: string, resolverValue: unknown): SpotifyMobileIdentity {
     const resolved = spotifyObject(resolverValue);
     if (!Array.isArray(resolved.spclient)) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
     const host = spotifyText(resolved.spclient[SpotifyMobilePolicy.firstPosition]);
@@ -52,9 +72,6 @@ export class SpotifyMobileGateway implements SpotifyAccountGateway {
     catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
     if (!origin.hostname.endsWith(SpotifyMobilePolicy.serviceSuffix) || origin.username || origin.password
       || origin.port || origin.pathname !== SpotifyMobilePolicy.slash || origin.search || origin.hash) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-    const accountIdentifier = spotifyText(profile.username);
-    const displayName = typeof profile.name === SpotifyMobilePolicy.stringType && (profile.name as string).trim()
-      ? profile.name as string : accountIdentifier;
     return Object.freeze({ accountIdentifier, displayName, serviceOrigin: origin.origin });
   }
 
