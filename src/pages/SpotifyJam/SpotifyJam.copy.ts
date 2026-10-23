@@ -2,7 +2,8 @@ export const SpotifyJamRoute = 'SpotifyJam';
 export const SpotifyJamCopy = Object.freeze({
   title: 'Spotify Jam', back: 'Back', introduction: 'Create a Jam, share an invitation, or join someone on Spotify.',
   testBuild: 'Personal test connection',
-  loginExplanation: 'Sign in on Spotify’s page. Credentials stay in memory until disconnect, app restart or app-account change.',
+  loginExplanation: 'Sign in on Spotify’s page. Renewable login is stored securely on this device. Disconnect forgets it.',
+  restore: 'Restore saved Spotify login', forget: 'Forget saved Spotify login',
   clientIdentifierPlaceholder: 'Spotify developer application client ID',
   registrationNotice: 'For this personal build, register the callback below in your Spotify developer application, then enter its public client ID.',
   redirectAddress: 'streamingservicespotify://callback',

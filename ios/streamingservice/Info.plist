@@ -30,6 +30,14 @@
 				<string>streamingservice</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>streamingservicespotify</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>streamingservicespotify</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>

@@ -25,7 +25,7 @@ const Names = Object.freeze({ connect: 'Login opens only on a press and supplies
 
 let snapshot: SpotifyMobileSnapshot;
 const controller = {
-  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
+  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
   createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
@@ -158,3 +158,10 @@ test(QueueReceiptReplacementName, async () => {
   await act(async () => rendered.update(<SpotifyJam navigation={navigation} />));
   expect(JSON.stringify(rendered.toJSON()).includes(SpotifyJamCopy.queueAccepted)).toBe(false);
 });
+
+const SavedScreenNames = Object.freeze({ automatic: 'Opening a disconnected Jam screen attempts saved login without browser sign-in',
+  forget: 'A disconnected screen can explicitly forget the saved Spotify login' });
+test(SavedScreenNames.automatic, async () => { snapshot = connection(false); await render();
+  expect(controller.restore).toHaveBeenCalledTimes(Fixture.singleInvocationCount); expect(controller.login).not.toHaveBeenCalled(); });
+test(SavedScreenNames.forget, async () => { snapshot = connection(false); await render();
+  await act(async () => button(SpotifyJamCopy.forget).props.onPress()); expect(controller.disconnect).toHaveBeenCalled(); });

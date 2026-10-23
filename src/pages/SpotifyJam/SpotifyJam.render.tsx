@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, TextInput, View } from 'react-native';
 import { JamConnectionStatus, JamJoinMode } from 'streaming-service-spotify-jam';
 import PageContainer from '../../components/PageContainer';
@@ -24,6 +24,10 @@ interface SpotifyJamNavigation {
 export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) {
   const selection = spotifyRouteSongSelection(route?.params);
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
+  useEffect(() => {
+    const current = spotifyMobile.getSnapshot();
+    if (!current.connected && current.operation === SpotifyMobileOperation.Idle) void spotifyMobile.restore();
+  }, []);
   const [clientIdentifier, setClientIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [queueTrack, setQueueTrack] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [queueReceipt, setQueueReceipt] = useState<typeof snapshot.session>(null);
@@ -104,6 +108,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
           autoCapitalize={InputPolicy.capitalization} autoComplete={InputPolicy.autoComplete}
           maxLength={ClientIdentifierCharacters} editable={!busy} style={styles.input} />
         <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !clientIdentifier.trim()} />
+        <DefaultButton title={SpotifyJamCopy.restore} onPress={() => { void spotifyMobile.restore(); }} disabled={busy} style={styles.neutral} />
+        <DefaultButton title={SpotifyJamCopy.forget} onPress={disconnect} disabled={busy} style={styles.neutral} />
       </View> : <>
         <SpotifyJamMembership />
         <SpotifyHostedQueue />

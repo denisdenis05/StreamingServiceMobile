@@ -1,3 +1,58 @@
+# Secure saved login and iOS boundary — 2026-10-23
+
+Saved refresh credentials now use pinned react-native-keychain 10.0.0. Android
+selects AES-GCM Keystore and iOS uses device-only, noncloud Keychain options.
+Nonsecret revocation markers prevent automatic restore after a failed physical
+removal; no Spotify credential is placed in AsyncStorage. Account-scoped storage
+leases serialize older saves, forget and replacement login. Opening the Jam screen
+restores a saved login without browser interaction or a repeated client-ID entry.
+Explicit disconnect/forget waits for storage acknowledgement; errors are visible.
+App logout removes the old account's grant even if Spotify was never opened.
+Cold account restoration and hot reload preserve the appropriate saved grant.
+
+The iOS native proof-key implementation and callback are registered in the actual
+Xcode project. Thirteen portable proof-factory tests passed; Swift source checks,
+Apple SDK compilation and Objective-C syntax checking against real React Native
+headers passed. Full iOS CocoaPods/Hermes linking/device execution is not claimed.
+
+Validation: library npm test passed 342 cases across 16 files, including 28 saved
+login cases. Mobile npm run test:spotify passed 145 Node and 37 Jest cases, and
+full app TypeScript passed. npm run test:spotify-ios passed 13 host cases plus
+Darwin Swift/Objective-C checks. The npm install audit reported zero known
+vulnerabilities; only react-native-keychain and its lockfile entry were added.
+Android release build, signing and final artifact results are recorded below.
+
+New dedicated files are library tests/saved-login.test.mjs, mobile
+tools/spotify-secure-storage.test.cjs and tools/spotify-secure-platform.test.ts,
+with saved-login lifecycle cases in the existing controller/screen suites.
+Native tests are tools/spotify-ios-proof-tests.swift and the existing Android
+SpotifyProofKeyFactoryTest. No actual Keychain/Keystore/device login was exercised.
+
+All work remains local. Private guest queue commands, fresh cross-account
+playback, native follower authority and background shared-playback transport are
+unfinished. A registered OAuth client, two controlled clients and an enabled
+desktop debugging endpoint are the required next protocol evidence. Earlier
+source/probe results are not promoted to verified admission or synchronized audio.
+
+Final packaging: forced `:app:createBundleReleaseJsAndAssets --rerun-tasks`
+passed, followed by `:app:testReleaseUnitTest :app:assembleRelease
+-PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain` (612 tasks).
+All three Android proof-key unit cases passed. The packaged native modules include
+react-native-keychain. `apksigner verify --verbose --print-certs` passed with the
+existing debug certificate. The copied ARM64 APK is 29,767,576 bytes;
+its embedded Hermes bundle is 2,000,744 bytes. SHA-256:
+`998e22d0bee0fb4c5b0bc07d8f3efebdf139ed9a11b706ca7df5da06468cc7fb`.
+Artifact, checksum, archive summary and signing report are under ignored
+`build/spotify-jam/`. `adb devices` reported no attached device, so no install,
+OS storage execution or audible playback result is claimed.
+
+Repeatable checks: `npm run test:spotify`,
+`./node_modules/.bin/tsc --noEmit --pretty false`, and
+`npm run test:spotify-ios`. Library `npm test` includes architecture checks and
+strict compilation. Library `npm pack --dry-run --json --cache
+/tmp/spotify-jam-npm-cache` reviewed 99 files, including secure-login contracts,
+compiled output and documentation; no package was published.
+
 # Browser login and host queue chapter — 2026-10-23
 
 Implemented library-owned PKCE login with secure Android proof generation,

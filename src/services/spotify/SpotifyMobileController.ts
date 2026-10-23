@@ -7,7 +7,7 @@ import { spotifyInvitationToken } from './SpotifyInvitation';
 import { spotifyQueueTrackIdentifier } from './SpotifyQueueTrack';
 
 export enum SpotifyMobileOperation {
-  Idle = 'idle', Connecting = 'connecting', Devices = 'devices', Creating = 'creating',
+  Idle = 'idle', Connecting = 'connecting', Disconnecting = 'disconnecting', Devices = 'devices', Creating = 'creating',
   Queueing = 'queueing', Joining = 'joining', Refreshing = 'refreshing', Ending = 'ending', Leaving = 'leaving',
 }
 
@@ -30,6 +30,8 @@ export interface SpotifyMobileDependencies {
   readonly connect: (identity: SpotifyMobileIdentity, credentials: SpotifyCredentialProvider, selection: SpotifyDeviceSelection) => JamSessionClient;
   readonly disconnect: () => void;
   readonly createLogin?: (configuration: SpotifyLoginConfiguration) => SpotifyLoginProvider;
+  readonly restoreLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal) => Promise<SpotifyLoginProvider | null>;
+  readonly forgetSavedLogin?: (applicationAccountIdentifier: string) => Promise<void>;
   readonly membershipRefreshed?: () => void;
   readonly resolveInvitation?: (invitation: string, cancellation: AbortSignal) => Promise<string>;
 }
@@ -49,11 +51,26 @@ export class SpotifyMobileController {
   private sessions: JamSessionClient | null = null;
   private applicationAccountIdentifier: string | null = null;
   private disposed = false;
+  private observedApplicationAccountIdentifier: string | null;
 
   constructor(private readonly dependencies: SpotifyMobileDependencies) {
+    const initialAccount = dependencies.account.getSnapshot();
+    this.observedApplicationAccountIdentifier = initialAccount.isLoggedIn ? initialAccount.accountIdentifier : null;
     this.stopAccountObservation = dependencies.account.subscribe(() => {
       const account = dependencies.account.getSnapshot();
-      if (!account.isLoggedIn || account.accountIdentifier !== this.applicationAccountIdentifier) this.disconnect();
+      const retiredAccountIdentifier = this.observedApplicationAccountIdentifier;
+      this.observedApplicationAccountIdentifier = account.isLoggedIn ? account.accountIdentifier : null;
+      if (this.applicationAccountIdentifier !== null && (!account.isLoggedIn || account.accountIdentifier !== this.applicationAccountIdentifier)) {
+        this.disconnect();
+      } else if (retiredAccountIdentifier !== this.observedApplicationAccountIdentifier) {
+        if (this.applicationAccountIdentifier === null) this.retireConnection(false);
+        if (retiredAccountIdentifier !== null) {
+          const lifetime = this.cancellation;
+          void this.forgetAccount(retiredAccountIdentifier).catch(() => {
+            if (!this.dependencies.account.getSnapshot().isLoggedIn) this.cleanupFailed(lifetime);
+          });
+        }
+      }
     });
   }
 
@@ -122,8 +139,40 @@ export class SpotifyMobileController {
       await this.establish(identity, login, lifetime);
     } catch (failure) {
       if (!this.current(lifetime)) return;
-      this.disconnect();
-      this.fail(this.failureCode(failure));
+      const code = this.failureCode(failure);
+      this.retireConnection(code === IntegrationFailureCode.Unauthorized || code === IntegrationFailureCode.InvalidResponse);
+      this.fail(code);
+    }
+  }
+
+  async restore(): Promise<void> {
+    const account = this.dependencies.account.getSnapshot();
+    if (this.disposed || !account.isLoggedIn || account.accountIdentifier === null) return this.fail(IntegrationFailureCode.Unauthorized);
+    if (!this.dependencies.restoreLogin) return;
+    this.retireConnection(false);
+    this.applicationAccountIdentifier = account.accountIdentifier;
+    const lifetime = this.cancellation;
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting });
+    try {
+      const login = await this.dependencies.restoreLogin(account.accountIdentifier, lifetime.signal);
+      if (!this.current(lifetime)) { login?.dispose?.(); return; }
+      if (login === null) { this.publish(EmptySnapshot); return; }
+      if (!login.restore) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+      this.loginSession = login;
+      const credentials = await login.restore(lifetime.signal);
+      if (!this.current(lifetime)) return;
+      const identity = this.dependencies.gateway.inspectLogin
+        ? await this.dependencies.gateway.inspectLogin(credentials.accessToken, lifetime.signal)
+        : await this.dependencies.gateway.inspect(credentials.accessToken, lifetime.signal);
+      if (!this.current(lifetime)) return;
+      if (identity.accountIdentifier !== credentials.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+      this.credentials = credentials;
+      await this.establish(identity, login, lifetime);
+    } catch (failure) {
+      if (!this.current(lifetime)) return;
+      const code = this.failureCode(failure);
+      this.retireConnection(code === IntegrationFailureCode.Unauthorized || code === IntegrationFailureCode.InvalidResponse);
+      this.fail(code);
     }
   }
 
@@ -231,26 +280,57 @@ export class SpotifyMobileController {
     return this.sessions?.getInvitation()?.address ?? null;
   }
 
-  disconnect(): void {
+  disconnect(): void { this.retireConnection(true); }
+
+  private retireConnection(forgetSaved: boolean): void {
+    const provider = this.loginSession;
+    const account = this.dependencies.account.getSnapshot();
+    const retiredAccountIdentifier = this.applicationAccountIdentifier ?? (account.isLoggedIn ? account.accountIdentifier : null);
     this.cancellation.abort();
     this.cancellation = new AbortController();
+    const lifetime = this.cancellation;
     this.stopSessionObservation?.();
     this.stopSessionObservation = null;
     this.sessions = null;
-    this.loginSession?.logout();
     this.loginSession = null;
     this.credentialProvider = null;
     this.credentials = null;
     this.applicationAccountIdentifier = null;
+    const cleanup: Promise<unknown>[] = [];
+    try {
+      if (forgetSaved) {
+        if (provider) cleanup.push(Promise.resolve(provider.logout()));
+      } else provider?.dispose?.();
+    } catch (failure) { cleanup.push(Promise.reject(failure)); }
+    if (forgetSaved && retiredAccountIdentifier !== null && this.dependencies.forgetSavedLogin) {
+      cleanup.push(this.forgetAccount(retiredAccountIdentifier));
+    }
     this.dependencies.disconnect();
-    this.publish(EmptySnapshot);
+    if (cleanup.length === EmptyCleanupCount) { this.publish(EmptySnapshot); return; }
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Disconnecting });
+    void Promise.allSettled(cleanup).then(results => {
+      if (!this.current(lifetime) || this.snapshot.operation !== SpotifyMobileOperation.Disconnecting) return;
+      const failed = results.some(result => result.status === RejectedCleanupStatus);
+      this.publish({ ...EmptySnapshot, failure: failed ? IntegrationFailureCode.CredentialStorage : this.snapshot.failure });
+    });
+  }
+
+  private forgetAccount(accountIdentifier: string): Promise<void> {
+    try { return this.dependencies.forgetSavedLogin?.(accountIdentifier) ?? Promise.resolve(); }
+    catch (failure) { return Promise.reject(failure); }
+  }
+
+  private cleanupFailed(lifetime: AbortController): void {
+    void Promise.resolve().then(() => {
+      if (this.current(lifetime) && !this.snapshot.connected && this.snapshot.operation === SpotifyMobileOperation.Idle) this.fail(IntegrationFailureCode.CredentialStorage);
+    });
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.stopAccountObservation();
-    this.disconnect();
+    this.retireConnection(false);
     this.listeners.clear();
   }
 
@@ -315,3 +395,6 @@ export class SpotifyMobileController {
     }
   }
 }
+
+const EmptyCleanupCount = 0;
+const RejectedCleanupStatus = 'rejected';

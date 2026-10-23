@@ -122,7 +122,7 @@ function fixture() {
   let connectedSessions = null;
   let provider;
   const calls = [];
-  const state = { membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
+  const state = { forgetFailure: null, restores: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
@@ -131,6 +131,8 @@ function fixture() {
   const controller = new SpotifyMobileController({
     account: { getSnapshot: () => applicationAccount, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     gateway: { inspect: (...values) => state.inspect(...values), devices: (...values) => state.devices(...values) },
+    restoreLogin: (...parameters) => state.restores(...parameters),
+    forgetSavedLogin: async accountIdentifier => { state.forgottenAccounts.push(accountIdentifier); if (state.forgetFailure !== null) await state.forgetFailure; },
     membershipRefreshed: () => { state.membershipRefreshes += Fixture.sequenceIncrement; },
     createLogin: configuration => state.login(configuration),
     clock: { nowMilliseconds: () => nowMilliseconds },
@@ -474,9 +476,9 @@ const LoginNames = Object.freeze({ login: 'Mobile login establishes a library cr
   acceptedReceipt: 'An unrelated global failure cannot turn an accepted queue command into rejection',
   absentReceipt: 'Clearing a connection failure cannot make an unsent queue command appear accepted' });
 function browserLogin() {
-  const calls = { logout: Fixture.noCalls };
+  const calls = { logout: Fixture.noCalls, disposed: Fixture.noCalls };
   const credentials = { accountIdentifier: Fixture.spotifyAccount, accessToken: Fixture.token, expiresAtMilliseconds: LoginFixture.tokenExpirationMilliseconds };
-  const provider = { login: async () => credentials, getCredentials: async () => credentials, renewCredentials: async () => credentials,
+  const provider = { login: async () => credentials, restore: async () => credentials, dispose: () => { calls.disposed += Fixture.sequenceIncrement; }, getCredentials: async () => credentials, renewCredentials: async () => credentials,
     logout: () => { calls.logout += Fixture.sequenceIncrement; } };
   return { provider, calls };
 }
@@ -610,3 +612,76 @@ test(MembershipRecoveryNames.confirmed, async () => { const state = fixture(); a
   assertion.equal(state.state.membershipRefreshes, Fixture.connectionAndRefreshCount); state.controller.dispose(); });
 test(MembershipRecoveryNames.failed, async () => { const state = fixture(); state.state.read = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unauthorized); };
   await state.controller.connect(Fixture.token); assertion.equal(state.state.membershipRefreshes, Fixture.noCalls); state.controller.dispose(); });
+
+const SavedLoginNames = Object.freeze({ restore: 'Saved login restores its provider and passively loads membership without browser login',
+  missing: 'Missing saved login quietly leaves the regular login form available',
+  dispose: 'Disposal retires memory credentials without deleting the saved login',
+  explicit: 'Explicit disconnection forgets the owning app account saved login',
+  late: 'A provider restored after app logout is disposed and cannot reconnect',
+  unusedLogout: 'App logout forgets a saved login even when no Spotify connection was opened',
+  cleanup: 'Rejected credential cleanup is handled as a storage failure without an unhandled promise' });
+test(SavedLoginNames.restore, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  login.provider.login = async () => assertion.fail(); await current.controller.restore(); assertion.equal(current.controller.getSnapshot().connected, true);
+  assertion.equal(current.state.forgottenAccounts.length, Fixture.noCalls); current.controller.dispose(); });
+test(SavedLoginNames.missing, async () => { const current = fixture(); await current.controller.restore();
+  assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(current.controller.getSnapshot().failure, null); current.controller.dispose(); });
+test(SavedLoginNames.dispose, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  await current.controller.restore(); current.controller.dispose(); assertion.equal(login.calls.logout, Fixture.noCalls);
+  assertion.equal(login.calls.disposed, Fixture.singleCall); assertion.equal(current.state.forgottenAccounts.length, Fixture.noCalls); });
+test(SavedLoginNames.explicit, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  await current.controller.restore(); current.controller.disconnect(); await Promise.resolve(); assertion.equal(login.calls.logout, Fixture.singleCall);
+  assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose(); });
+test(SavedLoginNames.late, async () => { const current = fixture(); const pending = deferred(); const login = browserLogin(); current.state.restores = () => pending.promise;
+  const restoring = current.controller.restore(); current.changeAccount({ accountIdentifier: null, isLoggedIn: false }); pending.resolve(login.provider); await restoring;
+  assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(login.calls.disposed, Fixture.singleCall);
+  assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose(); });
+test(SavedLoginNames.unusedLogout, async () => { const current = fixture(); current.changeAccount({ accountIdentifier: null, isLoggedIn: false }); await Promise.resolve();
+  assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose(); });
+test(SavedLoginNames.cleanup, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  login.provider.logout = async () => { throw new Error(Fixture.rawFailure); }; await current.controller.restore(); current.controller.disconnect();
+  await waitForSavedLoginIdle(current.controller);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.CredentialStorage); current.controller.dispose(); });
+
+function waitForSavedLoginIdle(controller) {
+  if (controller.getSnapshot().operation === SpotifyMobileOperation.Idle) return Promise.resolve();
+  return new Promise(resolve => { const stop = controller.subscribe(() => {
+    if (controller.getSnapshot().operation === SpotifyMobileOperation.Idle) { stop(); resolve(); }
+  }); });
+}
+const PendingForgetName = 'Disconnect remains busy until durable credential removal finishes';
+test(PendingForgetName, async () => { const current = fixture(); const login = browserLogin(); const pending = deferred();
+  current.state.restores = async () => login.provider; await current.controller.restore(); login.provider.logout = () => pending.promise;
+  current.controller.disconnect(); assertion.equal(current.controller.getSnapshot().operation, SpotifyMobileOperation.Disconnecting);
+  pending.resolve(); await waitForSavedLoginIdle(current.controller); assertion.equal(current.controller.getSnapshot().failure, null); current.controller.dispose(); });
+
+const ColdRestorationName = 'Restoring the application account on cold startup does not erase its saved Spotify login';
+test(ColdRestorationName, async () => { let account = { accountIdentifier: null, isLoggedIn: false }; const listeners = new Set(); const forgotten = [];
+  const controller = new SpotifyMobileController({ account: { getSnapshot: () => account,
+    subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } }, gateway: { inspect: async () => assertion.fail(), devices: async () => [] },
+    clock: { nowMilliseconds: () => Fixture.initialClockMilliseconds }, nextIdentifier: () => Fixture.identifierPrefix,
+    connect: () => assertion.fail(), disconnect: () => undefined, forgetSavedLogin: async accountIdentifier => { forgotten.push(accountIdentifier); } });
+  account = { accountIdentifier: Fixture.applicationAccount, isLoggedIn: true }; for (const listener of [...listeners]) listener();
+  assertion.equal(forgotten.length, Fixture.noCalls); account = { accountIdentifier: null, isLoggedIn: false };
+  for (const listener of [...listeners]) listener(); await Promise.resolve(); assertion.deepEqual(forgotten, [Fixture.applicationAccount]); controller.dispose(); });
+
+const SavedLoginFailureName = 'Durable cleanup completion does not erase the authentication failure that triggered it';
+test(SavedLoginFailureName, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  login.provider.restore = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unauthorized); };
+  await current.controller.restore(); await waitForSavedLoginIdle(current.controller);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized); current.controller.dispose(); });
+
+const RetiredSavedCleanupName = 'A failed cleanup for a previously unconnected account cannot poison its replacement account';
+const SavedAsyncPolicy = Object.freeze({ microtaskTurns: 20, firstTurn: 0, turnIncrement: 1 });
+test(RetiredSavedCleanupName, async () => { const current = fixture(); const pending = deferred(); current.state.forgetFailure = pending.promise;
+  current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true });
+  pending.reject(new Error(Fixture.rawFailure));
+  for (let turn = SavedAsyncPolicy.firstTurn; turn < SavedAsyncPolicy.microtaskTurns; turn += SavedAsyncPolicy.turnIncrement) await Promise.resolve();
+  assertion.equal(current.controller.getSnapshot().failure, null); assertion.equal(current.controller.getSnapshot().connected, false); current.controller.dispose(); });
+
+const ReentrantSavedRestoreName = 'An earlier account observer can restore the replacement account without being retired by a later observer';
+test(ReentrantSavedRestoreName, async () => { const current = fixture(); const login = browserLogin(); current.state.restores = async () => login.provider;
+  const accountCallbacks = [...current.listeners]; current.listeners.clear(); let restoring;
+  current.listeners.add(() => { restoring = current.controller.restore(); }); for (const listener of accountCallbacks) current.listeners.add(listener);
+  current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true }); await restoring;
+  assertion.equal(current.controller.getSnapshot().connected, true); assertion.equal(current.controller.isApplicationAccount(Fixture.otherAccount), true);
+  assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose(); });

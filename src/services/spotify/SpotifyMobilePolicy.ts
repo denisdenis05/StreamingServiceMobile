@@ -18,6 +18,7 @@ export const SpotifyMobilePolicy = Object.freeze({
 });
 
 export const SpotifyFailureMessages: Readonly<Record<IntegrationFailureCode, string>> = Object.freeze({
+  [IntegrationFailureCode.CredentialStorage]: 'Saved Spotify login could not be accessed. Unlock the device or sign in again.',
   [IntegrationFailureCode.InvalidInput]: 'Check the client ID, song link, device or Jam invitation and try again.',
   [IntegrationFailureCode.InvalidResponse]: 'Spotify returned an unexpected response. Refresh before trying another action.',
   [IntegrationFailureCode.Canceled]: 'The request was cancelled.',
