@@ -3,13 +3,14 @@ import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAs
 import { authenticationSession } from './AuthenticationService';
 import { createApplicationNetworkClient } from './ApplicationNetworkClient';
 import { spotifyIntegration } from './SpotifyIntegration';
-import { SpotifyMobileController } from './spotify/SpotifyMobileController';
+import { SpotifyMobileController, SpotifyMobileOperation } from './spotify/SpotifyMobileController';
 import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
 import { FetchSpotifyInvitationReader, SpotifyInvitationResolver } from './spotify/SpotifyInvitationResolver';
 import { TEMPORARY_API_URL } from '../constants/placeholders';
 import { spotifyLoginBrowser, spotifyProofKeys } from './SpotifyLoginPlatform';
 import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore';
 import { SpotifyHostedQueueStore } from './spotify/SpotifyHostedQueueStore';
+import { SpotifyMembershipStore } from './spotify/SpotifyMembershipStore';
 
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
   identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.' });
@@ -28,7 +29,7 @@ function nextIdentifier(): string {
 
 export const spotifyMobile = new SpotifyMobileController({
   account: authenticationSession, gateway, clock, nextIdentifier,
-  membershipRefreshed: () => spotifyIntegration.resumeHostedQueue(),
+  membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),
   createLogin: configuration => new SpotifyLoginSession({ configuration, proofKeys: spotifyProofKeys,
     browser: spotifyLoginBrowser, requests, clock,
     resolveAccount: async (accessToken, cancellation) => (await gateway.inspectLogin(accessToken, cancellation)).accountIdentifier }),
@@ -53,6 +54,7 @@ export const spotifyMobile = new SpotifyMobileController({
       recordings: new QueryableRecordingCatalog(MobileCompositionPolicy.catalogPrefix + TEMPORARY_API_URL,
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
+      enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier,
       scheduler: new SystemScheduler() }, selection).sessions;
   },
   disconnect: () => spotifyIntegration.disconnect(),
@@ -68,4 +70,9 @@ export const spotifyHostedQueue = new SpotifyHostedQueueStore({
   getObserver: () => spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime?.hostedQueue ?? null : null,
   subscribeConnection: spotifyMobile.subscribe,
 });
-module.hot?.dispose(() => { spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose(); });
+export const spotifyMembership = new SpotifyMembershipStore({
+  getObserver: () => spotifyMobile.getSnapshot().connected && spotifyMobile.getSnapshot().operation !== SpotifyMobileOperation.Connecting
+    ? spotifyIntegration.runtime?.membership ?? null : null,
+  subscribeConnection: spotifyMobile.subscribe,
+});
+module.hot?.dispose(() => { spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose(); });

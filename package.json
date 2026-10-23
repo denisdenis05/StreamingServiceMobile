@@ -14,7 +14,7 @@
     "format:check": "prettier --check \"src/**/*.{js,ts,jsx,tsx}\"",
     "prepare:player": "npm --prefix ../StreamingServicePlayer run build && npm --prefix ../StreamingServicePlayer run generate:specs",
     "prepare:spotify": "npm --prefix ../StreamingServiceSpotifyJam run build",
-    "test:spotify": "npm run prepare:spotify && tsc --project tsconfig.spotify.json && node --test tools/spotify-integration.test.cjs tools/spotify-mobile.test.cjs tools/spotify-login-mobile.test.cjs tools/spotify-recording-queue.test.cjs tools/spotify-hosted-queue.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/spotify-screen.test.tsx tools/spotify-recording-screen.test.tsx tools/spotify-hosted-screen.test.tsx",
+    "test:spotify": "npm run prepare:spotify && tsc --project tsconfig.spotify.json && node --test tools/spotify-integration.test.cjs tools/spotify-mobile.test.cjs tools/spotify-login-mobile.test.cjs tools/spotify-recording-queue.test.cjs tools/spotify-hosted-queue.test.cjs tools/spotify-membership-mobile.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/spotify-screen.test.tsx tools/spotify-recording-screen.test.tsx tools/spotify-hosted-screen.test.tsx tools/spotify-membership-screen.test.tsx",
     "test:player-integration": "node tools/player-integration.test.cjs",
     "test:player-android-build": "node tools/player-android-build.test.cjs",
     "test:player-android-app": "node tools/player-android-app.test.cjs",

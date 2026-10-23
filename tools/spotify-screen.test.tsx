@@ -9,7 +9,7 @@ import { SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
-  screen: '../src/pages/SpotifyJam/SpotifyJam.render', hostedQueue: '../src/pages/SpotifyJam/SpotifyHostedQueue.render', container: '../src/components/PageContainer' });
+  screen: '../src/pages/SpotifyJam/SpotifyJam.render', membership: '../src/pages/SpotifyJam/SpotifyJamMembership.render', hostedQueue: '../src/pages/SpotifyJam/SpotifyHostedQueue.render', container: '../src/components/PageContainer' });
 const Methods = Object.freeze({ alert: 'alert', share: 'share' } as const);
 const Fixture = Object.freeze({ spotifyAccount: 'spotify-account', displayName: 'Listener', deviceIdentifier: 'device', deviceName: 'Phone',
   sessionIdentifier: 'session', otherSessionIdentifier: 'replacement-session', token: 'temporary-test-token', clientIdentifier: '0123456789abcdef0123456789abcdef', trackIdentifier: '0123456789abcdefghijkl', invitation: 'spotify:socialsession:invitation-test',
@@ -29,6 +29,7 @@ const controller = {
   createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
+jest.doMock(Imports.membership, () => ({ __esModule: true, default: () => null }));
 jest.doMock(Imports.hostedQueue, () => ({ __esModule: true, default: () => null }));
 jest.doMock(Imports.service, () => ({ spotifyMobile: controller }));
 jest.doMock(Imports.container, () => ({ __esModule: true, default: ({ children }: { children: React.ReactNode }) => children }));

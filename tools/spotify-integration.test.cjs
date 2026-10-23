@@ -155,8 +155,8 @@ const ObservationNames = Object.freeze({ resume: 'Queue observation resumes only
   failed: 'Failed membership reconciliation keeps queue observation suspended' });
 async function settleObservation() { for (let position = ObservationFixture.initialMicrotask; position < ObservationFixture.microtaskCount;
   position += ObservationFixture.nextMicrotask) await Promise.resolve(); }
-function deferredObservation() { let resolvePromise; const promise = new Promise(resolve => { resolvePromise = resolve; });
-  return { promise, resolve: resolvePromise }; }
+function deferredObservation() { let resolvePromise; let rejectPromise; const promise = new Promise((resolve, reject) => { resolvePromise = resolve; rejectPromise = reject; });
+  return { promise, resolve: resolvePromise, reject: rejectPromise }; }
 function observationSelection() { return { getDeviceIdentifier: () => null,
   nextRequestIdentifier: () => Fixture.recordingIdentifier, refreshAccountWhenDeviceUnavailable: true }; }
 test(ObservationNames.resume, async () => { const state = fixture(); const runtime = state.connection.connect(state.dependencies, observationSelection());
@@ -177,11 +177,11 @@ test(ObservationNames.failed, async () => { let failures = Fixture.noObserversCo
 
 const ManualRecoveryName = 'Manual membership recovery resumes queue observation only for a ready foreground runtime';
 test(ManualRecoveryName, () => { const state = fixture(); const runtime = state.connection.connect(state.dependencies); const states = [];
-  runtime.hostedQueue.setActive = active => states.push(active); state.connection.setActive(false); state.connection.resumeHostedQueue();
-  assertion.ok(states.every(active => active === false)); state.connection.setActive(true); state.connection.resumeHostedQueue();
+  runtime.hostedQueue.setActive = active => states.push(active); state.connection.setActive(false); state.connection.resumeObserversAfterMembership();
+  assertion.ok(states.every(active => active === false)); state.connection.setActive(true); state.connection.resumeObserversAfterMembership();
   assertion.equal(states.at(ObservationFixture.lastPosition), true);
   const snapshot = runtime.sessions.getSnapshot(); runtime.sessions.getSnapshot = () => ({ ...snapshot, status: library.JamConnectionStatus.Failed });
-  states.splice(ObservationFixture.firstPosition); state.connection.resumeHostedQueue(); assertion.equal(states.length, Fixture.noObserversCount); state.connection.dispose(); });
+  states.splice(ObservationFixture.firstPosition); state.connection.resumeObserversAfterMembership(); assertion.equal(states.length, Fixture.noObserversCount); state.connection.dispose(); });
 
 const PreferredAccountName = 'Account-based foreground refresh ignores a stale selected Spotify device';
 test(PreferredAccountName, async () => { const state = fixture(); const runtime = state.connection.connect(state.dependencies,
@@ -190,3 +190,39 @@ test(PreferredAccountName, async () => { const state = fixture(); const runtime 
     refreshes += Fixture.singleRefreshCount; return { applied: true, failure: null }; };
   runtime.sessions.refreshSession = async () => assertion.fail(); state.connection.setActive(false); state.connection.setActive(true); await settleObservation();
   assertion.equal(refreshes, Fixture.singleRefreshCount); state.connection.dispose(); });
+
+const MembershipForegroundNames = Object.freeze({ coalesced: 'Foreground membership resume coalesces its observer refresh before queue activation',
+  failed: 'Failed observed membership keeps the host queue inactive until an explicit successful recovery',
+  background: 'Backgrounding retires an unfinished observed membership refresh before queue activation' });
+const MembershipIdentifierPolicy = Object.freeze({ prefix: 'membership-observation-', initialSequence: 0, increment: 1 });
+function enableMembershipObservation(state) { let sequence = MembershipIdentifierPolicy.initialSequence;
+  state.dependencies.enableMembershipObservation = true;
+  state.dependencies.membershipRequestIdentifiers = () => { sequence += MembershipIdentifierPolicy.increment; return MembershipIdentifierPolicy.prefix + sequence; };
+}
+test(MembershipForegroundNames.coalesced, async () => { const state = fixture(); enableMembershipObservation(state);
+  const runtime = state.connection.connect(state.dependencies, { ...observationSelection(), preferAccountRefresh: true });
+  const states = []; let reads = Fixture.noObserversCount; const pending = deferredObservation(); runtime.hostedQueue.setActive = active => states.push(active);
+  runtime.sessions.refreshCurrentSession = () => { reads += Fixture.singleRefreshCount; return pending.promise; };
+  state.connection.setActive(false); runtime.membership.setObserving(true); state.connection.setActive(true); await settleObservation();
+  assertion.equal(reads, Fixture.singleRefreshCount); assertion.ok(states.every(active => active === false));
+  pending.resolve({ applied: true, failure: null }); await settleObservation(); assertion.equal(states.at(ObservationFixture.lastPosition), true); state.connection.dispose(); });
+test(MembershipForegroundNames.failed, async () => { const state = fixture(); enableMembershipObservation(state);
+  const runtime = state.connection.connect(state.dependencies, { ...observationSelection(), preferAccountRefresh: true }); const states = [];
+  runtime.hostedQueue.setActive = active => states.push(active); runtime.sessions.refreshCurrentSession = async () => ({ applied: false, failure: library.IntegrationFailureCode.Unauthorized });
+  state.connection.setActive(false); state.connection.setActive(true); await settleObservation(); assertion.ok(states.every(active => active === false));
+  runtime.sessions.refreshCurrentSession = async () => ({ applied: true, failure: null }); await runtime.membership.refresh(); await settleObservation();
+  assertion.equal(states.at(ObservationFixture.lastPosition), true); state.connection.dispose(); });
+test(MembershipForegroundNames.background, async () => { const state = fixture(); enableMembershipObservation(state);
+  const runtime = state.connection.connect(state.dependencies, { ...observationSelection(), preferAccountRefresh: true }); const states = []; const pending = deferredObservation();
+  runtime.hostedQueue.setActive = active => states.push(active); runtime.sessions.refreshCurrentSession = () => pending.promise;
+  state.connection.setActive(false); state.connection.setActive(true); await settleObservation(); state.connection.setActive(false);
+  pending.resolve({ applied: true, failure: null }); await settleObservation(); assertion.ok(states.every(active => active === false)); state.connection.dispose(); });
+
+const RetiredForegroundFailureName = 'A rejected foreground read cannot report a failure after background retirement';
+test(RetiredForegroundFailureName, async () => { let failures = Fixture.noObserversCount;
+  const state = fixture(() => { failures += Fixture.singleRefreshCount; }); enableMembershipObservation(state);
+  const runtime = state.connection.connect(state.dependencies, { ...observationSelection(), preferAccountRefresh: true });
+  const pending = deferredObservation(); runtime.membership.refresh = () => pending.promise;
+  state.connection.setActive(false); state.connection.setActive(true); state.connection.setActive(false);
+  pending.reject(new library.IntegrationFailure(library.IntegrationFailureCode.Network)); await settleObservation();
+  assertion.equal(failures, Fixture.noObserversCount); state.connection.dispose(); });

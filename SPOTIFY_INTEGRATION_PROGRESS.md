@@ -166,3 +166,29 @@ mobile foreground path into account-current membership reads even when a device
 is selected. This prevents a stale device choice from clearing the actual account
 Jam. Both have dedicated regressions. Library validation passed 276 cases,
 including 41 host-observation cases. No live queue read is claimed.
+
+
+## Membership observation and recovery — 2026-10-23
+
+Added focused membership observation, participant refresh controls and stale-state
+labels. The connection owner resumes through the membership observer and shares
+its pending read with foreground recovery. A successful observed refresh can
+recover host queue observation after a failure. Background, blur, account
+replacement and disposal retire callbacks and leases. Retired foreground errors
+cannot report failures into a new lifecycle. Shared view-store mechanics serve
+both queue and membership projections without duplicating subscription policy.
+
+Validation: npm run test:spotify passed 120 Node and 32 rendered-screen cases;
+full application TypeScript passed. Library npm test passed 314 cases across
+15 files, including 38 dedicated membership/passive-cancellation cases. Dedicated
+mobile membership suites are tools/spotify-membership-mobile.test.cjs and
+tools/spotify-membership-screen.test.tsx; integration regressions cover coalesced
+foreground reads, failure/recovery and stale callbacks. These are host tests;
+no guest admission or native/background transport success is claimed.
+
+Source changes still need the final APK rebuild after the remaining authorized
+chapters. Private guest routing and fresh cross-account playback are blocked on
+protocol evidence/credentials, not declared implemented by membership polling.
+Continue secure login persistence and iOS login boundaries while preserving that
+explicit gate. Do not wire the normal local player as a synchronized follower
+without native authority and a verified fresh playback source.

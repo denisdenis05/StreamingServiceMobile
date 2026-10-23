@@ -1,4 +1,4 @@
-import { IntegrationFailure, IntegrationFailureCode, JamConnectionStatus, SpotifyJamRuntime } from 'streaming-service-spotify-jam';
+import { IntegrationFailure, IntegrationFailureCode, JamConnectionStatus, MembershipObservationStatus, SpotifyJamRuntime } from 'streaming-service-spotify-jam';
 import type { SpotifyJamDependencies } from 'streaming-service-spotify-jam';
 
 export interface SpotifyApplicationAccount {
@@ -21,6 +21,7 @@ export class SpotifyIntegrationConnection {
   private deviceSelection: SpotifyDeviceSelection | null = null;
   private active = true;
   private foregroundLifetime: object = Object.freeze({});
+  private stopMembershipObservation: (() => void) | null = null;
 
   constructor(private readonly applicationAccount: SpotifyApplicationAccount,
     private readonly onForegroundFailure: () => void = () => undefined) {
@@ -32,9 +33,12 @@ export class SpotifyIntegrationConnection {
 
   get runtime(): SpotifyJamRuntime | null { return this.activeRuntime; }
 
-  resumeHostedQueue(): void {
+  resumeObserversAfterMembership(): void {
     const runtime = this.activeRuntime;
-    if (this.active && runtime?.sessions.getSnapshot().status === JamConnectionStatus.Ready) runtime.hostedQueue.setActive(true);
+    if (this.active && runtime?.sessions.getSnapshot().status === JamConnectionStatus.Ready) {
+      runtime.membership.setActive(true);
+      runtime.hostedQueue.setActive(true);
+    }
   }
 
   connect(dependencies: SpotifyJamDependencies, deviceSelection: SpotifyDeviceSelection | null = null): SpotifyJamRuntime {
@@ -48,6 +52,13 @@ export class SpotifyIntegrationConnection {
     this.activeRuntime = nextRuntime;
     this.deviceSelection = deviceSelection;
     nextRuntime.hostedQueue.setActive(this.active);
+    nextRuntime.membership.setActive(this.active);
+    this.stopMembershipObservation = nextRuntime.membership.subscribe(() => {
+      const membership = nextRuntime.membership.getSnapshot();
+      if (nextRuntime === this.activeRuntime && membership.status === MembershipObservationStatus.Ready && membership.failure === null) {
+        this.resumeObserversAfterMembership();
+      }
+    });
     return nextRuntime;
   }
 
@@ -57,27 +68,42 @@ export class SpotifyIntegrationConnection {
     this.active = active;
     const runtime = this.activeRuntime;
     const deviceSelection = this.deviceSelection;
-    if (!active) runtime?.hostedQueue.setActive(false);
+    if (!active) { runtime?.membership.setActive(false); runtime?.hostedQueue.setActive(false); }
     if (!resumed || !runtime || !deviceSelection) return;
     const foregroundLifetime = this.foregroundLifetime;
+    const reportFailure = () => {
+      if (runtime === this.activeRuntime && this.active && foregroundLifetime === this.foregroundLifetime) this.reportForegroundFailure();
+    };
     try {
       const preferAccount = deviceSelection.preferAccountRefresh === true;
+      if (preferAccount && runtime.membership.getSnapshot().enabled) {
+        runtime.membership.setActive(true);
+        void runtime.membership.refresh().then(() => {
+          if (runtime !== this.activeRuntime || !this.active || foregroundLifetime !== this.foregroundLifetime) return;
+          const membership = runtime.membership.getSnapshot();
+          if (membership.status === MembershipObservationStatus.Ready && membership.failure === null) this.resumeObserversAfterMembership();
+          else reportFailure();
+        }).catch(reportFailure);
+        return;
+      }
       const deviceIdentifier = preferAccount ? null : deviceSelection.getDeviceIdentifier();
       if (deviceIdentifier === null && !preferAccount && !deviceSelection.refreshAccountWhenDeviceUnavailable) return;
       const refresh = deviceIdentifier === null ? runtime.sessions.refreshCurrentSession(deviceSelection.nextRequestIdentifier())
         : runtime.sessions.refreshSession(deviceIdentifier, deviceSelection.nextRequestIdentifier());
       void refresh.then(result => {
         if (runtime !== this.activeRuntime || !this.active || foregroundLifetime !== this.foregroundLifetime) return;
-        if (result.applied) runtime.hostedQueue.setActive(true);
-        else this.reportForegroundFailure();
+        if (result.applied) this.resumeObserversAfterMembership();
+        else reportFailure();
       })
-        .catch(() => this.reportForegroundFailure());
-    } catch { this.reportForegroundFailure(); }
+        .catch(reportFailure);
+    } catch { reportFailure(); }
   }
 
   disconnect(): void {
     const previous = this.activeRuntime;
     this.activeRuntime = null;
+    this.stopMembershipObservation?.();
+    this.stopMembershipObservation = null;
     this.applicationAccountIdentifier = null;
     this.deviceSelection = null;
     previous?.dispose();
