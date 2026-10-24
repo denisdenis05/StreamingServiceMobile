@@ -1,4 +1,5 @@
-import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { compareSpotifyAuthorizationRedirect, IntegrationFailure, IntegrationFailureCode,
+  SpotifyAuthorizationRedirectComparison } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginBrowser } from 'streaming-service-spotify-jam';
 import type { Scheduler } from 'streaming-service-spotify-jam';
 import { URL } from 'react-native-url-polyfill';
@@ -16,6 +17,7 @@ export const SpotifyBrowserPolicy = Object.freeze({ success: 'success', abortEve
 
 export enum SpotifyAuthorizationReturnStatus {
   NotReceived = 'not-received', InvalidAddress = 'invalid-address', RedirectMismatch = 'redirect-mismatch',
+  SchemeMismatch = 'scheme-mismatch', HostMismatch = 'host-mismatch', PathMismatch = 'path-mismatch',
   MissingState = 'missing-state', DuplicateState = 'duplicate-state', StateMismatch = 'state-mismatch',
   UnsafeAddress = 'unsafe-address', Accepted = 'accepted',
 }
@@ -76,8 +78,12 @@ export class SpotifyLoginBrowserAdapter implements SpotifyLoginBrowser {
     const classify = (value: string): SpotifyAuthorizationReturnStatus => {
       try {
         const callback = new URL(value);
-        if (callback.protocol !== expected.protocol || callback.host !== expected.host || callback.pathname !== expected.pathname)
-          return SpotifyAuthorizationReturnStatus.RedirectMismatch;
+        switch (compareSpotifyAuthorizationRedirect(callback, expected)) {
+          case SpotifyAuthorizationRedirectComparison.SchemeMismatch: return SpotifyAuthorizationReturnStatus.SchemeMismatch;
+          case SpotifyAuthorizationRedirectComparison.HostMismatch: return SpotifyAuthorizationReturnStatus.HostMismatch;
+          case SpotifyAuthorizationRedirectComparison.PathMismatch: return SpotifyAuthorizationReturnStatus.PathMismatch;
+          case SpotifyAuthorizationRedirectComparison.Matched: break;
+        }
         if (callback.username || callback.password || callback.hash) return SpotifyAuthorizationReturnStatus.UnsafeAddress;
         const callbackStates = callback.searchParams.getAll(SpotifyBrowserPolicy.stateParameter);
         if (callbackStates.length < SpotifyBrowserPolicy.singleStateCount || !callbackStates[InitialPosition]) return SpotifyAuthorizationReturnStatus.MissingState;

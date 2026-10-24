@@ -1,3 +1,46 @@
+# Callback base mismatch follow-up — 2026-10-24
+
+The user reports automatic return followed by redirect-mismatch. The preceding
+combined category did not identify which URI component differed. A root slash
+is a candidate only; no actual callback URI was collected.
+
+Browser capture, startup recovery and library code extraction now share callback
+base comparison. Only empty and `/` response paths compare equally under the same
+custom scheme and nonempty authority. State, duplicate state, credentials,
+fragments and nonroot paths remain checked. Network/file and opaque schemes do
+not gain root compatibility. The registered redirect in authorization, secure
+configuration and token exchange is unchanged.
+
+Specific safe categories now distinguish scheme-mismatch, host-mismatch and
+path-mismatch. No callback/code/state value is exposed in those messages.
+
+| Functionality | Dedicated tests |
+| --- | --- |
+| Root slash event returns in both directions and native initial-intent recovery | `tools/spotify-authorization-recovery.test.cjs` |
+| Root callbacks preserve state, duplicate-state, credentials and fragment checks | `tools/spotify-authorization-recovery.test.cjs` |
+| Cold root callbacks in both directions, rejecting foreign scheme/host and nonroot paths | `tools/spotify-authorization-recovery.test.cjs` |
+| Specific mismatch component displayed beside login | `tools/spotify-screen.test.tsx` |
+| Shared comparison and original registered redirect retained during warm/resumed token exchange | Library `tests/authorization-redirect.test.mjs`, `tests/pending-authorization.test.mjs` |
+
+`npm run test:spotify` passed 219 Node and 57 Jest cases, including 30 browser/
+startup/navigation cases. `npx tsc --noEmit --pretty false` passed. Source checks
+ran during preparation. Library tests passed 454 cases across 21 files. The new
+warm-root regression rejects under the preceding library implementation and
+passes with current code. Package dry-run reviewed 117 files without publication.
+
+Release checks passed: `./gradlew :app:createBundleReleaseJsAndAssets
+--rerun-tasks -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain`,
+then `./gradlew :app:testReleaseUnitTest :app:assembleRelease
+-PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain`.
+The unchanged native callback-store/proof suites retain all fifteen passing
+cases. APK signature, only-ARM64 native libraries, Hermes header and new shared
+comparison/scheme/host/path diagnostic markers were verified. No ADB device is
+connected. The artifact hash is in SPOTIFY_JAM_APK.md and the build folder.
+
+The phone's exact mismatch remains unobserved; no live login success is claimed.
+Retry the rebuilt APK and report only the safe return category if failure remains.
+
+
 # Automatic Spotify callback retention — 2026-10-24
 
 The user confirmed Spotify returns to the app automatically, yet the login phase

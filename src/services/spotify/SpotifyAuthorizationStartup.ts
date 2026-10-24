@@ -1,4 +1,4 @@
-import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { compareSpotifyAuthorizationRedirect, IntegrationFailureCode, SpotifyAuthorizationRedirectComparison } from 'streaming-service-spotify-jam';
 import { SpotifyAuthenticationAction, SpotifyMobileOperation } from './SpotifyMobileController';
 import { URL } from 'react-native-url-polyfill';
 
@@ -58,7 +58,7 @@ export class SpotifyAuthorizationStartup {
     let callback: URL;
     try { callback = new URL(address); } catch { return; }
     const expected = new URL(this.dependencies.redirectAddress);
-    if (callback.protocol !== expected.protocol || callback.host !== expected.host || callback.pathname !== expected.pathname) return;
+    if (compareSpotifyAuthorizationRedirect(callback, expected) !== SpotifyAuthorizationRedirectComparison.Matched) return;
     const states = callback.searchParams.getAll(StartupPolicy.stateParameter);
     const state = states[InitialPosition];
     if (address.length > StartupPolicy.maximumCallbackCharacters || callback.username || callback.password || callback.hash

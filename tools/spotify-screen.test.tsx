@@ -192,3 +192,13 @@ test(ReturnDiagnosticsScreenName, async () => { snapshot = { ...connection(false
   authorizationReturnStatus: SpotifyAuthorizationReturnStatus.StateMismatch }; await render();
   expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.returnFailures[SpotifyAuthorizationReturnStatus.StateMismatch]);
   expect(controller.restore).not.toHaveBeenCalled(); });
+
+const RedirectComponentStatuses = Object.values({ scheme: SpotifyAuthorizationReturnStatus.SchemeMismatch,
+  host: SpotifyAuthorizationReturnStatus.HostMismatch, path: SpotifyAuthorizationReturnStatus.PathMismatch });
+const RedirectComponentScreenName = 'A rejected callback shows its specific safe %s category beside login';
+test.each(RedirectComponentStatuses)(RedirectComponentScreenName, async authorizationReturnStatus => {
+  snapshot = { ...connection(false), failure: IntegrationFailureCode.Canceled,
+    authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Authorizing, authorizationReturnStatus };
+  await render(); expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.returnFailures[authorizationReturnStatus]);
+  expect(controller.restore).not.toHaveBeenCalled();
+});

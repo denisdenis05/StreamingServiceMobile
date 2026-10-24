@@ -6,6 +6,22 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Callback base comparison build — 2026-10-24
+
+The latest build handles an empty/root slash difference in custom-scheme return
+paths consistently across browser capture, startup recovery and library exchange.
+The configured redirect sent to Spotify stays unchanged. Other paths, authorities,
+schemes, states and unsafe components remain checked. A slash difference is a
+candidate for the reported redirect-mismatch, not a measured phone result.
+If another mismatch remains, its safe status now identifies scheme, host or path.
+
+Current artifact: `29,828,992` bytes; SHA-256
+`85a128748e4a6d94b64de8679199f55192ddfe5f95b2b9ffc71fe4092e0831c5`. It contains an ARM64-only archive and
+`2,062,160`-byte Hermes bundle with shared redirect comparison
+and all three component diagnostic markers. Forced release bundling, assembly,
+native unit-test task and signature verification passed. The unchanged native
+suites retain all fifteen passing cases. No ADB device is connected.
+
 ## Automatic return follow-up — 2026-10-24
 
 The latest build adds an Android in-memory callback buffer captured before React
@@ -15,7 +31,7 @@ It preserves exact redirect/state validation. Return failures now show a safe
 Retry with the same client ID. If it still fails, report that category.
 Actual live login on the reporting phone remains unverified.
 
-Current artifact: `29,827,572` bytes; SHA-256
+Previous callback-buffer artifact: `29,827,572` bytes; SHA-256
 `da1706c625baa2e6b818fd348aa6ac2a5247fc801b35a2491fc734e85b0be6c9`. The embedded Hermes bundle is
 `2,060,740` bytes. Android assembly, all fifteen native
 unit tests and signature verification passed. Source checks, 214 service tests,
