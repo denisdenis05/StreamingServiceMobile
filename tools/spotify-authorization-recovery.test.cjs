@@ -6,13 +6,14 @@ const assert = require(Imports.assertion);
 const library = require(Imports.library);
 const UrlFixture = './fixtures/spotify-url.cjs';
 require(UrlFixture);
-const { SpotifyLoginBrowserAdapter, SpotifyBrowserPolicy } = require(Imports.browser);
+const { SpotifyLoginBrowserAdapter, SpotifyBrowserPolicy, SpotifyAuthorizationReturnStatus } = require(Imports.browser);
 const { SpotifyAuthorizationStartup } = require(Imports.startup);
 const { SpotifyAuthenticationAction, SpotifyMobileOperation } = require(Imports.controller);
 const { SpotifyAuthorizationNavigation } = require(Imports.navigation);
 const Fixture = Object.freeze({ authorize: 'https://accounts.spotify.com/authorize?state=active-state',
   redirect: 'streamingservicespotify://callback', callback: 'streamingservicespotify://callback?code=artificial-code&state=active-state',
   stale: 'streamingservicespotify://callback?code=artificial-old-code&state=old-state',
+  invalidAddress: 'invalid-return-address', unsafe: 'streamingservicespotify://callback?state=active-state#unexpected',
   duplicate: 'streamingservicespotify://callback?code=artificial-code&state=active-state&state=other-state',
   foreign: 'streamingservice://lastfm/callback?token=artificial-token', malformed: 'streamingservicespotify://callback?code=artificial-code',
   cancel: 'cancel', success: 'success', privateFailure: 'Sensitive browser detail', account: 'application-account',
@@ -21,6 +22,11 @@ const Fixture = Object.freeze({ authorize: 'https://accounts.spotify.com/authori
     dismissFirst: 'A callback delivered after browser cancellation still completes the current authorization',
     initial: 'A matching current Activity intent recovers a missed warm callback event',
     updatedIntent: 'Updated Activity intent is probed during the bounded redirect grace period',
+    delayedRead: 'A matching native callback probe completing after the grace deadline still finishes authorization',
+    diagnostics: 'Rejected callback diagnostics distinguish return failures without exposing address code or state',
+    diagnosticPriority: 'An older initial intent cannot hide the reason the actual callback event was rejected',
+    canceledProbe: 'Canceling while the final native return probe is pending prevents late login and removes capture',
+    canceledPreparation: 'Canceling pending native preparation cannot open the browser after its acknowledgement',
     stale: 'Old and duplicated state callbacks cannot authenticate a new browser flow',
     deadline: 'Genuine dismissal without a matching callback reports cancellation and removes subscriptions',
     abort: 'Account cancellation closes browser capture promptly without waiting for a redirect',
@@ -65,6 +71,39 @@ test(Fixture.names.initial, async () => { const current = browserFixture(); curr
   assert.equal(await authorize(current), Fixture.callback); });
 test(Fixture.names.updatedIntent, async () => { const current = browserFixture(); const authorizing = authorize(current); await flush(); current.pending.resolve({ type: Fixture.cancel }); await flush();
   current.state.initial = Fixture.callback; await current.advance(SpotifyBrowserPolicy.redirectProbeMilliseconds); assert.equal(await authorizing, Fixture.callback); });
+test(Fixture.names.delayedRead, async () => { const current = browserFixture(); const initial = deferred(); current.state.initial = initial.promise;
+  const authorizing = authorize(current); let completed = false; void authorizing.then(() => { completed = true; }, () => { completed = true; });
+  await flush(); current.pending.resolve({ type: Fixture.cancel }); await flush();
+  await current.advance(SpotifyBrowserPolicy.redirectGraceMilliseconds); assert.equal(completed, false);
+  initial.resolve(Fixture.callback); assert.equal(await authorizing, Fixture.callback);
+  assert.equal(current.browser.getReturnStatus(), SpotifyAuthorizationReturnStatus.Accepted); assert.equal(current.jobs.size, Fixture.zero); });
+test(Fixture.names.diagnostics, async () => { const scenarios = [
+  [null, SpotifyAuthorizationReturnStatus.NotReceived], [Fixture.invalidAddress, SpotifyAuthorizationReturnStatus.InvalidAddress],
+  [Fixture.foreign, SpotifyAuthorizationReturnStatus.RedirectMismatch], [Fixture.malformed, SpotifyAuthorizationReturnStatus.MissingState],
+  [Fixture.duplicate, SpotifyAuthorizationReturnStatus.DuplicateState], [Fixture.stale, SpotifyAuthorizationReturnStatus.StateMismatch],
+  [Fixture.unsafe, SpotifyAuthorizationReturnStatus.UnsafeAddress],
+];
+  for (const [address, expected] of scenarios) { const current = browserFixture(); const authorizing = authorize(current);
+    const canceled = assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled)); await flush();
+    if (address !== null) current.emit(address); current.pending.resolve({ type: Fixture.cancel }); await flush();
+    await current.advance(SpotifyBrowserPolicy.redirectGraceMilliseconds); await canceled;
+    assert.equal(current.browser.getReturnStatus(), expected); }
+});
+test(Fixture.names.diagnosticPriority, async () => { const current = browserFixture(); current.state.initial = Fixture.foreign;
+  const authorizing = authorize(current); const canceled = assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled));
+  await flush(); current.emit(Fixture.stale); current.pending.resolve({ type: Fixture.cancel }); await flush();
+  await current.advance(SpotifyBrowserPolicy.redirectGraceMilliseconds); await canceled;
+  assert.equal(current.browser.getReturnStatus(), SpotifyAuthorizationReturnStatus.StateMismatch); });
+test(Fixture.names.canceledProbe, async () => { const current = browserFixture(); const initial = deferred(); current.state.initial = initial.promise;
+  const authorizing = authorize(current); const canceled = assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled));
+  await flush(); current.pending.resolve({ type: Fixture.cancel }); await flush(); await current.advance(SpotifyBrowserPolicy.redirectGraceMilliseconds);
+  current.signal.abort(); await canceled; initial.resolve(Fixture.callback); await flush();
+  assert.equal(current.browser.getReturnStatus(), SpotifyAuthorizationReturnStatus.NotReceived);
+  assert.equal(current.jobs.size, Fixture.zero); assert.equal(current.listeners.size, Fixture.zero); });
+test(Fixture.names.canceledPreparation, async () => { const current = browserFixture(); const preparation = deferred();
+  current.platform.prepareAuthorization = () => preparation.promise; const authorizing = authorize(current);
+  const canceled = assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled)); await flush(); current.signal.abort();
+  preparation.resolve(); await canceled; assert.equal(current.state.opened, Fixture.zero); assert.equal(current.listeners.size, Fixture.zero); });
 test(Fixture.names.stale, async () => { const current = browserFixture(); const authorizing = authorize(current); let completed = false; void authorizing.then(() => { completed = true; });
   await flush(); current.emit(Fixture.stale); current.emit(Fixture.duplicate); await flush(); assert.equal(completed, false); current.emit(Fixture.callback); await authorizing; });
 test(Fixture.names.deadline, async () => { const current = browserFixture(); const authorizing = authorize(current); const canceled = assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled));

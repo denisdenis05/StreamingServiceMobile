@@ -10,6 +10,8 @@ const assertion = require(Imports.assertion);
 const { readFileSync } = require(Imports.filesystem);
 const UrlFixture = './fixtures/spotify-url.cjs';
 const polyfillModule = { exports: require(UrlFixture) };
+const BrowserReturnModule = '../.build/spotify/SpotifyLoginBrowser';
+const { SpotifyAuthorizationReturnStatus } = require(BrowserReturnModule);
 const { SpotifyMobileController, SpotifyMobileOperation, SpotifyAuthenticationAction } = require(Imports.controller);
 const { SpotifyMobileGateway } = require(Imports.gateway);
 const { spotifyInvitationToken } = require(Imports.invitation);
@@ -114,13 +116,14 @@ function fixture() {
   let connectedSessions = null;
   let provider;
   const calls = [];
-  const state = { forgetFailure: null, restores: async () => null, resumes: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
+  const state = { returnStatus: SpotifyAuthorizationReturnStatus.NotReceived, forgetFailure: null, restores: async () => null, resumes: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
     end: async () => undefined, leave: async () => undefined, queue: async () => undefined,
     login: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); } };
   const controller = new SpotifyMobileController({
+    authorizationReturnStatus: () => state.returnStatus,
     account: { getSnapshot: () => applicationAccount, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     gateway: { inspect: (...values) => state.inspect(...values), devices: (...values) => state.devices(...values) },
     restoreLogin: (...parameters) => state.restores(...parameters),
@@ -718,3 +721,12 @@ test(ResumeFixture.names.staleProgress, async () => { const current = fixture();
   current.state.login = () => replacement.provider; const signingIn = current.controller.login(loginConfiguration());
   previousProgress(library.SpotifyLoginStage.Exchanging); assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Preparing);
   pending.resolve(credentials); await signingIn; current.controller.dispose(); });
+
+const ReturnDiagnosticControllerName = 'Browser cancellation retains its safe return category alongside the failed login phase';
+test(ReturnDiagnosticControllerName, async () => { const current = fixture(); const login = browserLogin(); let progress;
+  current.state.login = (_configuration, observer) => { progress = observer; return login.provider; };
+  current.state.returnStatus = SpotifyAuthorizationReturnStatus.StateMismatch;
+  login.provider.login = async () => { progress(library.SpotifyLoginStage.Authorizing); throw new library.IntegrationFailure(library.IntegrationFailureCode.Canceled); };
+  await current.controller.login(loginConfiguration());
+  assertion.equal(current.controller.getSnapshot().authorizationReturnStatus, SpotifyAuthorizationReturnStatus.StateMismatch);
+  assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Authorizing); current.controller.dispose(); });

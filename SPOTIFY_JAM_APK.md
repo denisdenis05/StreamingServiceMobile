@@ -6,6 +6,21 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Automatic return follow-up — 2026-10-24
+
+The latest build adds an Android in-memory callback buffer captured before React
+Native forwarding and fixes cancellation racing a pending native callback read.
+It preserves exact redirect/state validation. Return failures now show a safe
+`Return status:` category beside login, without displaying callback values.
+Retry with the same client ID. If it still fails, report that category.
+Actual live login on the reporting phone remains unverified.
+
+Current artifact: `29,827,572` bytes; SHA-256
+`da1706c625baa2e6b818fd348aa6ac2a5247fc801b35a2491fc734e85b0be6c9`. The embedded Hermes bundle is
+`2,060,740` bytes. Android assembly, all fifteen native
+unit tests and signature verification passed. Source checks, 214 service tests,
+54 UI/platform tests and full TypeScript checks passed. No device is connected.
+
 ## Login return recovery build — 2026-10-24
 
 Rebuilt for the reported silent return from Spotify. Android captures the callback
@@ -15,7 +30,7 @@ the login button and shows the last step. Public profile login is independent of
 private Jam service discovery. Retry with the same public client ID and registered
 callback below; no pasted access token is required.
 
-Current artifact: `29,824,612` bytes; SHA-256
+Previous recovery artifact: `29,824,612` bytes; SHA-256
 `aec40fd47f2a32274071606528a5bf216121f96400b07d29e8f9e4bb13fe443d`. Its ARM64-only archive contains a
 `2,057,780`-byte Hermes bundle with recovery/progress markers.
 Signature verification, release assembly and three native proof tests passed.

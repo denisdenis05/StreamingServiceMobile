@@ -12,6 +12,18 @@ export const spotifyProofKeys: SpotifyProofKeyGenerator = { async generate() {
   return implementation.generate();
 } };
 const BrowserPlatformPolicy = Object.freeze({ android: 'android', urlEvent: 'url', forceCloseOnRedirection: true } as const);
+interface SpotifyAuthorizationReturnNative { read(): Promise<string | null>; clear(): Promise<void>; }
+const AuthorizationReturnModuleName = 'SpotifyAuthorizationReturn';
+function authorizationReturnNative(): SpotifyAuthorizationReturnNative | undefined {
+  return NativeModules[AuthorizationReturnModuleName] as SpotifyAuthorizationReturnNative | undefined;
+}
+export async function readSpotifyAuthorizationReturn(): Promise<string | null> {
+  if (Platform.OS === BrowserPlatformPolicy.android) {
+    const retained = await authorizationReturnNative()?.read();
+    if (retained !== null && retained !== undefined) return retained;
+  }
+  return Linking.getInitialURL();
+}
 export const spotifyLoginBrowser = new SpotifyLoginBrowserAdapter({
   isAvailable: () => InAppBrowser.isAvailable(),
   openAuthorization: (address, redirectAddress) => Platform.OS === BrowserPlatformPolicy.android
@@ -19,10 +31,11 @@ export const spotifyLoginBrowser = new SpotifyLoginBrowserAdapter({
     : InAppBrowser.openAuth(address, redirectAddress),
   closeAuthorization: () => { if (Platform.OS === BrowserPlatformPolicy.android) InAppBrowser.close(); else InAppBrowser.closeAuth(); },
   ...(Platform.OS === BrowserPlatformPolicy.android ? {
+    prepareAuthorization: async () => { await authorizationReturnNative()?.clear(); },
     observeRedirects(listener: (address: string) => void) {
       const observation = Linking.addEventListener(BrowserPlatformPolicy.urlEvent, event => listener(event.url));
       return () => observation.remove();
     },
-    readInitialAddress: () => Linking.getInitialURL(),
+    readInitialAddress: readSpotifyAuthorizationReturn,
   } : {}),
 }, new SystemScheduler());

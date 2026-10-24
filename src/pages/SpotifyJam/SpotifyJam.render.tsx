@@ -45,7 +45,9 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const loginFailure = snapshot.authenticationAction === SpotifyAuthenticationAction.Resume
     && (snapshot.failure === IntegrationFailureCode.Unauthorized || snapshot.failure === IntegrationFailureCode.InvalidResponse)
     ? SpotifyJamCopy.resumeFailed : snapshot.loginStage === SpotifyLoginStage.Authorizing && snapshot.failure === IntegrationFailureCode.Canceled
-      ? SpotifyJamCopy.loginCancelled : snapshot.failure === null ? null : SpotifyFailureMessages[snapshot.failure];
+      ? snapshot.authorizationReturnStatus === undefined ? SpotifyJamCopy.loginCancelled
+        : SpotifyJamCopy.returnFailures[snapshot.authorizationReturnStatus]
+      : snapshot.failure === null ? null : SpotifyFailureMessages[snapshot.failure];
 
   function connect(): void {
     void spotifyMobile.login({ clientIdentifier: clientIdentifier.trim(), redirectAddress: SpotifyJamCopy.redirectAddress,

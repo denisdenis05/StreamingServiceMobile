@@ -6,14 +6,17 @@ import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.streamingservice.spotify.SpotifyAuthorizationReturnModule
 
 class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
+    SpotifyAuthorizationReturnModule.capture(intent?.dataString)
     super.onCreate(null)
   }
 
   override fun onNewIntent(intent: Intent) {
+    SpotifyAuthorizationReturnModule.capture(intent.dataString)
     setIntent(intent)
     super.onNewIntent(intent)
   }

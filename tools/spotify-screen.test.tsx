@@ -6,6 +6,7 @@ import { SpotifyAuthenticationAction, SpotifyMobileOperation } from '../src/serv
 import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobileController';
 import { SpotifyJamCopy } from '../src/pages/SpotifyJam/SpotifyJam.copy';
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy';
+import { SpotifyAuthorizationReturnStatus } from '../src/services/spotify/SpotifyLoginBrowser';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
@@ -184,3 +185,10 @@ test(LoginRecoveryScreenNames.waiting, async () => { snapshot = { ...connection(
 test(LoginRecoveryScreenNames.canceled, async () => { snapshot = { ...connection(false), failure: IntegrationFailureCode.Canceled,
   authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Authorizing }; await render();
   expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.loginCancelled); expect(controller.restore).not.toHaveBeenCalled(); });
+
+const ReturnDiagnosticsScreenName = 'A failed browser return displays only its safe diagnostic category beside login';
+test(ReturnDiagnosticsScreenName, async () => { snapshot = { ...connection(false), failure: IntegrationFailureCode.Canceled,
+  authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Authorizing,
+  authorizationReturnStatus: SpotifyAuthorizationReturnStatus.StateMismatch }; await render();
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.returnFailures[SpotifyAuthorizationReturnStatus.StateMismatch]);
+  expect(controller.restore).not.toHaveBeenCalled(); });

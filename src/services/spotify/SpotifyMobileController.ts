@@ -5,6 +5,7 @@ import type { SpotifyAccountGateway, SpotifyMobileDevice, SpotifyMobileIdentity 
 import { SpotifyMobilePolicy } from './SpotifyMobilePolicy';
 import { spotifyInvitationToken } from './SpotifyInvitation';
 import { spotifyQueueTrackIdentifier } from './SpotifyQueueTrack';
+import type { SpotifyAuthorizationReturnStatus } from './SpotifyLoginBrowser';
 
 export enum SpotifyMobileOperation {
   Idle = 'idle', Connecting = 'connecting', Disconnecting = 'disconnecting', Devices = 'devices', Creating = 'creating',
@@ -16,6 +17,7 @@ export enum SpotifyAuthenticationAction { Login = 'login', Restore = 'restore', 
 export interface SpotifyMobileSnapshot {
   readonly authenticationAction?: SpotifyAuthenticationAction;
   readonly loginStage?: SpotifyLoginStage;
+  readonly authorizationReturnStatus?: SpotifyAuthorizationReturnStatus;
   readonly connected: boolean;
   readonly displayName: string | null;
   readonly devices: readonly SpotifyMobileDevice[];
@@ -27,6 +29,7 @@ export interface SpotifyMobileSnapshot {
 }
 
 export interface SpotifyMobileDependencies {
+  readonly authorizationReturnStatus?: () => SpotifyAuthorizationReturnStatus;
   readonly account: SpotifyApplicationAccount;
   readonly gateway: SpotifyAccountGateway;
   readonly clock: Clock;
@@ -216,9 +219,12 @@ export class SpotifyMobileController {
 
   private authenticationFailed(failure: IntegrationFailureCode, authenticationAction: SpotifyAuthenticationAction): void {
     const loginStage = this.snapshot.loginStage;
+    const authorizationReturnStatus = loginStage === SpotifyLoginStage.Authorizing
+      ? this.dependencies.authorizationReturnStatus?.() : undefined;
     this.retireConnection(authenticationAction !== SpotifyAuthenticationAction.Resume
       && (failure === IntegrationFailureCode.Unauthorized || failure === IntegrationFailureCode.InvalidResponse));
-    this.publish({ ...this.snapshot, authenticationAction, ...(loginStage === undefined ? {} : { loginStage }), failure });
+    this.publish({ ...this.snapshot, authenticationAction, ...(loginStage === undefined ? {} : { loginStage }),
+      ...(authorizationReturnStatus === undefined ? {} : { authorizationReturnStatus }), failure });
   }
 
   authorizationInterrupted(failure: IntegrationFailureCode): void {

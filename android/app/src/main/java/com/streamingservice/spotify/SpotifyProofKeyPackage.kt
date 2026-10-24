@@ -6,6 +6,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ViewManager
 
 class SpotifyProofKeyPackage : ReactPackage {
-    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> = listOf(SpotifyProofKeyModule(reactContext))
+    override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> = listOf(
+        SpotifyProofKeyModule(reactContext), SpotifyAuthorizationReturnModule(reactContext))
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }

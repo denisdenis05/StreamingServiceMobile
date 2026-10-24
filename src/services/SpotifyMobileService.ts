@@ -9,7 +9,7 @@ import { SpotifyMobileController, SpotifyMobileOperation } from './spotify/Spoti
 import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
 import { FetchSpotifyInvitationReader, SpotifyInvitationResolver } from './spotify/SpotifyInvitationResolver';
 import { TEMPORARY_API_URL } from '../constants/placeholders';
-import { spotifyLoginBrowser, spotifyProofKeys } from './SpotifyLoginPlatform';
+import { spotifyLoginBrowser, spotifyProofKeys, readSpotifyAuthorizationReturn } from './SpotifyLoginPlatform';
 import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore';
 import { SpotifyHostedQueueStore } from './spotify/SpotifyHostedQueueStore';
 import { SpotifyMembershipStore } from './spotify/SpotifyMembershipStore';
@@ -46,6 +46,7 @@ function nextIdentifier(): string {
 }
 
 export const spotifyMobile = new SpotifyMobileController({
+  authorizationReturnStatus: () => spotifyLoginBrowser.getReturnStatus(),
   account: authenticationSession, gateway, clock, nextIdentifier,
   membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),
   createLogin(configuration, progress) {
@@ -100,7 +101,7 @@ export const spotifyMobile = new SpotifyMobileController({
 const authorizationStartup = new SpotifyAuthorizationStartup({
   account: authenticationSession, controller: spotifyMobile, redirectAddress: SpotifyMobilePolicy.authorizationRedirectAddress,
   isAuthorizing: () => spotifyLoginBrowser.isAuthorizing(),
-  redirects: { readInitialAddress: () => Linking.getInitialURL(), observe(listener) {
+  redirects: { readInitialAddress: readSpotifyAuthorizationReturn, observe(listener) {
     const observation = Linking.addEventListener(MobileCompositionPolicy.urlEvent, event => listener(event.url));
     return () => observation.remove();
   } },

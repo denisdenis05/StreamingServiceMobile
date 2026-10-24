@@ -1,5 +1,6 @@
 import { SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyLoginStage } from 'streaming-service-spotify-jam';
+import { SpotifyAuthorizationReturnStatus } from '../../services/spotify/SpotifyLoginBrowser';
 
 export const SpotifyJamRoute = 'SpotifyJam';
 export const SpotifyJamCopy = Object.freeze({
@@ -8,6 +9,16 @@ export const SpotifyJamCopy = Object.freeze({
   loginExplanation: 'Sign in on Spotify’s page. Renewable login is stored securely on this device. Disconnect forgets it.',
   restore: 'Restore saved Spotify login', forget: 'Forget saved Spotify login',
   loginCancelled: 'Spotify returned without completing sign-in. Please try again.',
+  returnFailures: Object.freeze({
+    [SpotifyAuthorizationReturnStatus.NotReceived]: 'No Spotify callback reached the app. Return status: not-received.',
+    [SpotifyAuthorizationReturnStatus.InvalidAddress]: 'The return address could not be read. Return status: invalid-address.',
+    [SpotifyAuthorizationReturnStatus.RedirectMismatch]: 'The return address did not match the registered callback. Return status: redirect-mismatch.',
+    [SpotifyAuthorizationReturnStatus.MissingState]: 'The return was missing its sign-in state. Return status: missing-state.',
+    [SpotifyAuthorizationReturnStatus.DuplicateState]: 'The return contained more than one sign-in state. Return status: duplicate-state.',
+    [SpotifyAuthorizationReturnStatus.StateMismatch]: 'The return belongs to another sign-in attempt. Return status: state-mismatch.',
+    [SpotifyAuthorizationReturnStatus.UnsafeAddress]: 'The return had unexpected address components. Return status: unsafe-address.',
+    [SpotifyAuthorizationReturnStatus.Accepted]: 'The Spotify return was received, but sign-in was interrupted. Return status: accepted.',
+  }),
   resumeFailed: 'The previous Spotify sign-in could not be resumed. Start a new sign-in.',
   loginSteps: Object.freeze({ [SpotifyLoginStage.Preparing]: 'Preparing Spotify sign-in…',
     [SpotifyLoginStage.Authorizing]: 'Waiting for Spotify to return…', [SpotifyLoginStage.Exchanging]: 'Completing Spotify sign-in…',

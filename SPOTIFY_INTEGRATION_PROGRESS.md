@@ -1,3 +1,58 @@
+# Automatic Spotify callback retention — 2026-10-24
+
+The user confirmed Spotify returns to the app automatically, yet the login phase
+reports browser cancellation. That rules out manually abandoning the browser;
+it does not establish the exact callback shape or native event ordering.
+
+Reproduced a concrete adapter failure: the grace deadline could reject login
+while a native callback probe was still pending. The regression
+`A matching native callback probe completing after the grace deadline still
+finishes authorization` fails against the preceding browser implementation and
+passes after the change. The final cancellation decision now waits for a fresh
+native read. Account cancellation still retires capture; late reads cannot log in.
+
+MainActivity captures callback data before React Native forwarding on both
+creation and new intents. SpotifyAuthorizationReturnStore retains the newest
+expected scheme/host return in process memory, independently of intent action or
+ReactContext availability. It has a ten-minute monotonic lifetime and a 16,384
+character limit. Multiple readers do not consume it. No callback/code is written
+to disk or logs. A new browser authorization waits for explicit native clearing;
+canceling preparation cannot open a browser afterward. Both cold startup and the
+warm browser adapter prefer this buffer and fall back to Linking when empty.
+The JavaScript/library layer still requires exact redirect/state validation.
+
+Safe return diagnostics distinguish no return, unreadable address, wrong redirect,
+missing/duplicate/wrong state and unsafe components. The displayed category
+contains no callback, state, code or token. A received event's rejection category
+cannot be overwritten by an older initial intent. These diagnostics preserve the
+failed phase and survive screen remounts. They are scoped to browser failures.
+
+| Functionality | Dedicated tests |
+| --- | --- |
+| Pending probe at grace deadline; final-probe cancellation; preparation cancellation; return classification and event priority | `tools/spotify-authorization-recovery.test.cjs` |
+| Native-buffer precedence, startup reads and acknowledged clearing before browser opening | `tools/spotify-login-platform.test.ts` |
+| Controller retains the return category and failed phase | `tools/spotify-mobile.test.cjs` |
+| Screen renders safe category beside login without automatic error-clearing restore | `tools/spotify-screen.test.tsx` |
+| Pre-JavaScript capture, nonconsuming readers, replacement, unrelated intents, diagnostic shape retention, limits, expiry, clock rollback and clearing | `android/app/src/test/java/com/streamingservice/spotify/SpotifyAuthorizationReturnStoreTest.kt` |
+
+Validation: `npm run test:spotify` passed 214 Node and 54 Jest cases, including
+25 browser/startup/navigation cases. `npx tsc --noEmit --pretty false` passed.
+Source checks ran through `prepare:spotify`. Player integration's seven checks
+passed; the player implementation was not changed. The old-code reproduction
+uses a transient isolated module, never a production source modification.
+
+Release validation: forced `:app:createBundleReleaseJsAndAssets --rerun-tasks`
+and `:app:testReleaseUnitTest :app:assembleRelease`, both with
+`-PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain`, passed.
+All twelve native callback-store and three proof-key JVM tests passed.
+APK signature verification passed, with only ARM64 libraries and a Hermes bundle
+containing the native-callback, safe-diagnostic and existing player markers.
+No ADB device is connected; no physical browser return or live login was measured.
+
+The exact physical failure remains unobserved. Retry this chapter's APK; report
+only the displayed return status if login still fails. Live OAuth, physical
+Android callback delivery and private Jam admission remain separate checks.
+
 # Android Spotify login return recovery — 2026-10-24
 
 Implemented owned callback capture before Android custom-tab launch, bounded
