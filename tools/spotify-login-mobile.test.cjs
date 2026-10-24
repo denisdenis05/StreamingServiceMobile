@@ -2,6 +2,8 @@ const Imports = Object.freeze({ test: 'node:test', assertion: 'node:assert/stric
   browser: '../.build/spotify/SpotifyLoginBrowser', queue: '../.build/spotify/SpotifyQueueTrack', library: 'streaming-service-spotify-jam' });
 const test = require(Imports.test);
 const assertion = require(Imports.assertion);
+const UrlFixture = './fixtures/spotify-url.cjs';
+require(UrlFixture);
 const { SpotifyLoginBrowserAdapter } = require(Imports.browser);
 const library = require(Imports.library);
 const Fixture = Object.freeze({ authorizationAddress: 'https://accounts.spotify.com/authorize', callback: 'streamingservicespotify://callback?code=test&state=test',

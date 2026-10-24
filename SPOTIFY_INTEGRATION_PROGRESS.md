@@ -1,3 +1,52 @@
+# Android Spotify login return recovery — 2026-10-24
+
+Implemented owned callback capture before Android custom-tab launch, bounded
+intent fallback after dismissal and MainActivity current-intent replacement.
+The library securely persists pending PKCE proof before browser opening. Startup
+can resume after app recreation and waits for application-account restoration;
+a navigation coordinator opens the Jam screen once. Pending proof uses a separate
+device-only Keychain service from the saved refresh grant. Account logout/forget
+attempt both removals. No code, callback URL or token is written to plain storage.
+
+Public login now verifies the profile without private service discovery. Login
+phase and failure stay visible beside the action; screen remounts do not erase
+them by automatically restoring an empty record. Native browser details are
+sanitized. iOS retains its native authentication-session browser path.
+
+Feature mapping: `tools/spotify-authorization-recovery.test.cjs` covers callback
+races, initial intents, state rejection, cancellation, cleanup, cold app-account
+and saved-restore ordering, duplicate suppression and navigation readiness.
+`tools/spotify-login-platform.test.ts` covers actual platform composition for
+Android custom tabs/events/initial intent and iOS openAuth. Controller/public
+profile regressions are in `tools/spotify-mobile.test.cjs`; screen/error and
+separate secure storage regressions are in `tools/spotify-screen.test.tsx` and
+`tools/spotify-secure-platform.test.ts`. Library pending cases are in
+`../StreamingServiceSpotifyJam/tests/pending-authorization.test.mjs`.
+
+Review found gaps consistent with the reported silent return; the exact phone
+branch was not captured. Live OAuth, physical callback delivery after process
+recreation, OS storage behavior and private Jam admission remain unverified.
+Retry the replacement APK with the same registered client ID. If it fails,
+record only the displayed phase and error, without callback URLs or credentials.
+
+Validation for this chapter:
+
+- Library `npm test`: 444 passed, including 32 pending authorization cases.
+  `npm run check` passed; package dry-run reviewed 115 files, with no publication.
+- Mobile `npm run test:spotify`: 208 Node and 50 Jest cases passed.
+  `npx tsc --noEmit --pretty false` passed after making the new platform test a
+  TypeScript module; focused strict Spotify compilation also passed.
+- `npm run test:player-mobile`: 320 passed. `npm run test:player-integration`:
+  seven passed. Player implementation was not changed by this chapter.
+- `./gradlew :app:createBundleReleaseJsAndAssets --rerun-tasks
+  -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain` passed.
+- `./gradlew :app:testReleaseUnitTest :app:assembleRelease
+  -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain` passed,
+  including all three native proof-key tests and MainActivity compilation.
+- APK signature verification passed. Archive contains only ARM64 native libraries
+  and a Hermes bundle with the recovery/progress and shared-player markers.
+  No ADB device is connected; installation and real browser return are untested.
+
 # Foreground host playback follower — 2026-10-24
 
 The Jam screen now offers Replace queue and follow Spotify with explicit country

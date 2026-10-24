@@ -17,7 +17,8 @@ const StoragePolicy = Object.freeze({ servicePrefix: 'StreamingService.SpotifyLo
   maximumCredentialCharacters: 65536 });
 
 export class SpotifySecureCredentialStorage implements SpotifyAccountCredentialStorage {
-  constructor(private readonly platform: SpotifySecureCredentialPlatform, private readonly revocations: SpotifyCredentialRevocations) {}
+  constructor(private readonly platform: SpotifySecureCredentialPlatform, private readonly revocations: SpotifyCredentialRevocations,
+    private readonly servicePrefix: string = StoragePolicy.servicePrefix) {}
 
   async read(accountIdentifier: string, cancellation: AbortSignal): Promise<string | null> {
     try {
@@ -61,7 +62,7 @@ export class SpotifySecureCredentialStorage implements SpotifyAccountCredentialS
     if (!accountIdentifier.trim() || accountIdentifier.length > StoragePolicy.maximumAccountCharacters) {
       throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
     }
-    return StoragePolicy.servicePrefix + encodeURIComponent(accountIdentifier);
+    return this.servicePrefix + encodeURIComponent(accountIdentifier);
   }
 
   private checkCancellation(cancellation: AbortSignal): void {

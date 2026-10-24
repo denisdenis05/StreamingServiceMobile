@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StyleSheet, View } from 'react-native';
@@ -24,6 +24,8 @@ import Library from './src/pages/Library/Library.render.tsx';
 import PlaylistViewer from './src/pages/PlaylistViewer/PlaylistViewer.render.tsx';
 import SpotifyJam from './src/pages/SpotifyJam/SpotifyJam.render';
 import { SpotifyJamRoute } from './src/pages/SpotifyJam/SpotifyJam.copy';
+import { spotifyMobile } from './src/services/SpotifyMobileService';
+import { SpotifyAuthorizationNavigation } from './src/services/spotify/SpotifyAuthorizationNavigation';
 
 const Stack = createNativeStackNavigator();
 
@@ -68,7 +70,18 @@ export const CustomToast = ({ text1, text2 }: any) => (
 const InnerApp = () => {
   const api = useApi();
   const { isLoggedIn, isRestored } = useAuth();
+  const authorizationNavigation = useRef<SpotifyAuthorizationNavigation | null>(null);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  if (authorizationNavigation.current === null) authorizationNavigation.current = new SpotifyAuthorizationNavigation(
+    () => navigationRef.current?.navigate(SpotifyJamRoute as never));
+  const showResumedAuthorization = useCallback(() => {
+    authorizationNavigation.current?.update(spotifyMobile.getSnapshot().authenticationAction,
+      navigationRef.current?.isReady() === true, isLoggedIn && isRestored);
+  }, [isLoggedIn, isRestored]);
+  useEffect(() => {
+    showResumedAuthorization();
+    return spotifyMobile.subscribe(showResumedAuthorization);
+  }, [showResumedAuthorization]);
 
   // Deep link listener
   useEffect(() => {
@@ -157,7 +170,7 @@ const InnerApp = () => {
   );
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} onReady={showResumedAuthorization}>
       {isRestored && (isLoggedIn ? <MainStack /> : <AuthStack />)}
       <Toast config={{ message: CustomToast }} />
     </NavigationContainer>

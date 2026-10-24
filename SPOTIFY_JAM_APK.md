@@ -6,6 +6,24 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Login return recovery build — 2026-10-24
+
+Rebuilt for the reported silent return from Spotify. Android captures the callback
+before opening the browser, retains the current Activity intent, and can resume a
+secure pending sign-in after app recreation. The screen preserves errors beside
+the login button and shows the last step. Public profile login is independent of
+private Jam service discovery. Retry with the same public client ID and registered
+callback below; no pasted access token is required.
+
+Current artifact: `29,824,612` bytes; SHA-256
+`aec40fd47f2a32274071606528a5bf216121f96400b07d29e8f9e4bb13fe443d`. Its ARM64-only archive contains a
+`2,057,780`-byte Hermes bundle with recovery/progress markers.
+Signature verification, release assembly and three native proof tests passed.
+Mobile tests passed 208 service and 50 UI/platform cases; full TypeScript checks
+passed. Physical installation, actual browser return and live OAuth/private Jam
+admission remain unverified. A failure should now retain its step and message;
+report that text without codes, callback URLs or tokens.
+
 ## Install and setup
 
 The ARM64 APK is `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk` with

@@ -1,6 +1,7 @@
 import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
 
 export const SpotifyMobilePolicy = Object.freeze({
+  authorizationRedirectAddress: 'streamingservicespotify://callback',
   oauthProfileAddress: 'https://api.spotify.com/v1/me',
   profileAddress: 'https://api-partner.spotify.com/pathfinder/v1/query', devicesAddress: 'https://api.spotify.com/v1/me/player/devices',
   profileOperation: 'profileAttributes', profileQueryHash: '53bcb064f6cd18c23f752bc324a791194d20df612d8e1239c735144ab0399ced',

@@ -1,11 +1,11 @@
 import type { ReactTestRenderer } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 import { Alert, Share, TextInput } from 'react-native';
-import { JamConnectionStatus, JamJoinMode } from 'streaming-service-spotify-jam';
-import { SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
+import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginStage } from 'streaming-service-spotify-jam';
+import { SpotifyAuthenticationAction, SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
 import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobileController';
 import { SpotifyJamCopy } from '../src/pages/SpotifyJam/SpotifyJam.copy';
-import { SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy';
+import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
@@ -167,3 +167,20 @@ test(SavedScreenNames.automatic, async () => { snapshot = connection(false); awa
   expect(controller.restore).toHaveBeenCalledTimes(Fixture.singleInvocationCount); expect(controller.login).not.toHaveBeenCalled(); });
 test(SavedScreenNames.forget, async () => { snapshot = connection(false); await render();
   await act(async () => button(SpotifyJamCopy.forget).props.onPress()); expect(controller.disconnect).toHaveBeenCalled(); });
+
+const LoginRecoveryScreenNames = Object.freeze({ preserved: 'Remounting a failed sign-in preserves its phase and error instead of silently restoring an empty login',
+  resumed: 'An unrecoverable callback shows an explicit interrupted sign-in message near the login action',
+  waiting: 'Browser authorization displays the active login step', canceled: 'A cancelled callback cannot return to an unexplained login form' });
+test(LoginRecoveryScreenNames.preserved, async () => { snapshot = { ...connection(false), failure: IntegrationFailureCode.Network,
+  authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Exchanging }; await render();
+  expect(controller.restore).not.toHaveBeenCalled(); const text = JSON.stringify(rendered.toJSON());
+  expect(text).toContain(SpotifyJamCopy.loginSteps[SpotifyLoginStage.Exchanging]); expect(text).toContain(SpotifyFailureMessages[IntegrationFailureCode.Network]); });
+test(LoginRecoveryScreenNames.resumed, async () => { snapshot = { ...connection(false), failure: IntegrationFailureCode.Unauthorized,
+  authenticationAction: SpotifyAuthenticationAction.Resume, loginStage: SpotifyLoginStage.Preparing }; await render();
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.resumeFailed); expect(controller.restore).not.toHaveBeenCalled(); });
+test(LoginRecoveryScreenNames.waiting, async () => { snapshot = { ...connection(false), operation: SpotifyMobileOperation.Connecting,
+  authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Authorizing }; await render();
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.loginSteps[SpotifyLoginStage.Authorizing]); });
+test(LoginRecoveryScreenNames.canceled, async () => { snapshot = { ...connection(false), failure: IntegrationFailureCode.Canceled,
+  authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Authorizing }; await render();
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.loginCancelled); expect(controller.restore).not.toHaveBeenCalled(); });

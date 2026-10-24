@@ -1,12 +1,21 @@
+import { SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
+import { SpotifyLoginStage } from 'streaming-service-spotify-jam';
+
 export const SpotifyJamRoute = 'SpotifyJam';
 export const SpotifyJamCopy = Object.freeze({
   title: 'Spotify Jam', back: 'Back', introduction: 'Create a Jam, share an invitation, or join someone on Spotify.',
   testBuild: 'Personal test connection',
   loginExplanation: 'Sign in on Spotify’s page. Renewable login is stored securely on this device. Disconnect forgets it.',
   restore: 'Restore saved Spotify login', forget: 'Forget saved Spotify login',
+  loginCancelled: 'Spotify returned without completing sign-in. Please try again.',
+  resumeFailed: 'The previous Spotify sign-in could not be resumed. Start a new sign-in.',
+  loginSteps: Object.freeze({ [SpotifyLoginStage.Preparing]: 'Preparing Spotify sign-in…',
+    [SpotifyLoginStage.Authorizing]: 'Waiting for Spotify to return…', [SpotifyLoginStage.Exchanging]: 'Completing Spotify sign-in…',
+    [SpotifyLoginStage.Verifying]: 'Checking your Spotify account…', [SpotifyLoginStage.Saving]: 'Saving your Spotify login…',
+    [SpotifyLoginStage.Complete]: 'Spotify sign-in finished.' }),
   clientIdentifierPlaceholder: 'Spotify developer application client ID',
   registrationNotice: 'For this personal build, register the callback below in your Spotify developer application, then enter its public client ID.',
-  redirectAddress: 'streamingservicespotify://callback',
+  redirectAddress: SpotifyMobilePolicy.authorizationRedirectAddress,
   loginScopes: Object.freeze({ profile: 'user-read-private', playback: 'user-read-playback-state',
     currentTrack: 'user-read-currently-playing', queue: 'user-modify-playback-state' }),
   queueHeading: 'Add a Spotify song', queuePlaceholder: 'Spotify track link, URI or ID', addToQueue: 'Add to host queue',

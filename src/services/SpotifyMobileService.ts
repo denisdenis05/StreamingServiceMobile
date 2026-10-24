@@ -1,7 +1,7 @@
 import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore,
-  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, loadSpotifyLoginConfiguration,
+  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, loadSpotifyLoginConfiguration, loadSpotifyAuthorizationConfiguration,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
-import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore } from 'streaming-service-spotify-jam';
+import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { createApplicationNetworkClient } from './ApplicationNetworkClient';
 import { spotifyIntegration } from './SpotifyIntegration';
@@ -13,14 +13,17 @@ import { spotifyLoginBrowser, spotifyProofKeys } from './SpotifyLoginPlatform';
 import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore';
 import { SpotifyHostedQueueStore } from './spotify/SpotifyHostedQueueStore';
 import { SpotifyMembershipStore } from './spotify/SpotifyMembershipStore';
-import { spotifyCredentialOwnership } from './SpotifySecureLoginStorage';
+import { spotifyCredentialOwnership, spotifyAuthorizationOwnership } from './SpotifySecureLoginStorage';
+import { SpotifyAuthorizationStartup } from './spotify/SpotifyAuthorizationStartup';
+import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
 import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
 import { sharedPlaybackNative, playbackApplication } from './NativeAudioRuntime';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
-  identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.' });
+  identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.',
+  rejectedStatus: 'rejected', urlEvent: 'url' } as const);
 const clock = { nowMilliseconds: () => Date.now() };
 const requests = new FetchHttpExecutor(new SystemScheduler());
 const playbackClockSource = globalThis as unknown as { readonly performance: { now(): number } };
@@ -30,8 +33,10 @@ const invitationResolver = new SpotifyInvitationResolver(new FetchSpotifyInvitat
 const identifierPrefix = Date.now().toString(MobileCompositionPolicy.identifierRadix) + MobileCompositionPolicy.identifierSeparator
   + Math.random().toString(MobileCompositionPolicy.identifierRadix);
 let sequence = MobileCompositionPolicy.initialSequence;
-function createLogin(configuration: SpotifyLoginConfiguration, credentialStore: SpotifyLoginCredentialStore): SpotifyLoginSession {
+function createLogin(configuration: SpotifyLoginConfiguration, credentialStore: SpotifyLoginCredentialStore,
+  authorizationStore: SpotifyLoginCredentialStore, progress?: (stage: SpotifyLoginStage) => void): SpotifyLoginSession {
   return new SpotifyLoginSession({ configuration, proofKeys: spotifyProofKeys, browser: spotifyLoginBrowser, requests, clock, credentialStore,
+    authorizationStore, ...(progress === undefined ? {} : { onProgress: progress }),
     resolveAccount: async (accessToken, cancellation) => (await gateway.inspectLogin(accessToken, cancellation)).accountIdentifier });
 }
 function nextIdentifier(): string {
@@ -43,17 +48,26 @@ function nextIdentifier(): string {
 export const spotifyMobile = new SpotifyMobileController({
   account: authenticationSession, gateway, clock, nextIdentifier,
   membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),
-  createLogin(configuration) {
+  createLogin(configuration, progress) {
     const account = authenticationSession.getSnapshot();
     if (!account.isLoggedIn || account.accountIdentifier === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
-    return createLogin(configuration, spotifyCredentialOwnership.acquire(account.accountIdentifier));
+    return createLogin(configuration, spotifyCredentialOwnership.acquire(account.accountIdentifier),
+      spotifyAuthorizationOwnership.acquire(account.accountIdentifier), progress);
   },
-  async restoreLogin(accountIdentifier, cancellation) {
+  async restoreLogin(accountIdentifier, cancellation, progress) {
     const credentialStore = spotifyCredentialOwnership.acquire(accountIdentifier);
     const configuration = await loadSpotifyLoginConfiguration(credentialStore, cancellation);
-    return configuration === null ? null : createLogin(configuration, credentialStore);
+    return configuration === null ? null : createLogin(configuration, credentialStore, spotifyAuthorizationOwnership.acquire(accountIdentifier), progress);
   },
-  forgetSavedLogin: accountIdentifier => spotifyCredentialOwnership.forget(accountIdentifier),
+  async resumeLogin(accountIdentifier, cancellation, progress) {
+    const authorizationStore = spotifyAuthorizationOwnership.acquire(accountIdentifier);
+    const configuration = await loadSpotifyAuthorizationConfiguration(authorizationStore, cancellation);
+    return configuration === null ? null : createLogin(configuration, spotifyCredentialOwnership.acquire(accountIdentifier), authorizationStore, progress);
+  },
+  async forgetSavedLogin(accountIdentifier) {
+    const results = await Promise.allSettled([spotifyCredentialOwnership.forget(accountIdentifier), spotifyAuthorizationOwnership.forget(accountIdentifier)]);
+    if (results.some(result => result.status === MobileCompositionPolicy.rejectedStatus)) throw new IntegrationFailure(IntegrationFailureCode.CredentialStorage);
+  },
   connect(identity, credentials, selection) {
     const account = authenticationSession.getSnapshot();
     if (account.accountIdentifier === null || account.token === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
@@ -71,7 +85,8 @@ export const spotifyMobile = new SpotifyMobileController({
       }
     } });
     return spotifyIntegration.connect({ accountIdentifier: identity.accountIdentifier, credentials,
-      endpoints: { resolveServiceOrigin: async () => identity.serviceOrigin },
+      endpoints: { resolveServiceOrigin: cancellation => identity.serviceOrigin === null
+        ? gateway.resolveServiceOrigin(cancellation) : Promise.resolve(identity.serviceOrigin) },
       recordings: new QueryableRecordingCatalog(MobileCompositionPolicy.catalogPrefix + TEMPORARY_API_URL,
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
@@ -81,6 +96,16 @@ export const spotifyMobile = new SpotifyMobileController({
   disconnect: () => spotifyIntegration.disconnect(),
   resolveInvitation: (invitation, cancellation) => invitationResolver.resolve(invitation, cancellation),
 });
+
+const authorizationStartup = new SpotifyAuthorizationStartup({
+  account: authenticationSession, controller: spotifyMobile, redirectAddress: SpotifyMobilePolicy.authorizationRedirectAddress,
+  isAuthorizing: () => spotifyLoginBrowser.isAuthorizing(),
+  redirects: { readInitialAddress: () => Linking.getInitialURL(), observe(listener) {
+    const observation = Linking.addEventListener(MobileCompositionPolicy.urlEvent, event => listener(event.url));
+    return () => observation.remove();
+  } },
+});
+authorizationStartup.start();
 
 declare const module: { readonly hot?: { dispose(callback: () => void): void } };
 export const spotifyRecordingQueue = new SpotifyRecordingQueueStore({
@@ -114,6 +139,7 @@ const PlaybackApplicationState = Object.freeze({ changeEvent: 'change', active: 
 const stopPlaybackOnBackground = AppState.addEventListener(PlaybackApplicationState.changeEvent,
   state => { if (state !== PlaybackApplicationState.active) void spotifyPlaybackFollower.stop().catch(() => undefined); });
 module.hot?.dispose(() => {
+  authorizationStartup.dispose();
   stopPlaybackOnBackground.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);
   spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose();
 });

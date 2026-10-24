@@ -1,11 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, TextInput, View } from 'react-native';
-import { JamConnectionStatus, JamJoinMode } from 'streaming-service-spotify-jam';
+import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import PageContainer from '../../components/PageContainer';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
 import { spotifyMobile } from '../../services/SpotifyMobileService';
-import { SpotifyMobileOperation } from '../../services/spotify/SpotifyMobileController';
+import { SpotifyAuthenticationAction, SpotifyMobileOperation } from '../../services/spotify/SpotifyMobileController';
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyJamCopy } from './SpotifyJam.copy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
@@ -27,7 +27,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   useEffect(() => {
     const current = spotifyMobile.getSnapshot();
-    if (!current.connected && current.operation === SpotifyMobileOperation.Idle) void spotifyMobile.restore();
+    if (!current.connected && current.operation === SpotifyMobileOperation.Idle && current.failure === null) void spotifyMobile.restore();
   }, []);
   const [clientIdentifier, setClientIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [queueTrack, setQueueTrack] = useState<string>(SpotifyMobilePolicy.emptyText);
@@ -41,6 +41,11 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const session = snapshot.session?.session ?? null;
   const uncertain = snapshot.session?.status === JamConnectionStatus.Uncertain;
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
+  const loginStep = snapshot.loginStage === undefined ? null : SpotifyJamCopy.loginSteps[snapshot.loginStage];
+  const loginFailure = snapshot.authenticationAction === SpotifyAuthenticationAction.Resume
+    && (snapshot.failure === IntegrationFailureCode.Unauthorized || snapshot.failure === IntegrationFailureCode.InvalidResponse)
+    ? SpotifyJamCopy.resumeFailed : snapshot.loginStage === SpotifyLoginStage.Authorizing && snapshot.failure === IntegrationFailureCode.Canceled
+      ? SpotifyJamCopy.loginCancelled : snapshot.failure === null ? null : SpotifyFailureMessages[snapshot.failure];
 
   function connect(): void {
     void spotifyMobile.login({ clientIdentifier: clientIdentifier.trim(), redirectAddress: SpotifyJamCopy.redirectAddress,
@@ -96,7 +101,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
       <DefaultText style={styles.heading}>{SpotifyJamCopy.title}</DefaultText>
       <DefaultText>{SpotifyJamCopy.introduction}</DefaultText>
       <DefaultText style={styles.explanation}>{SpotifyJamCopy.playbackNotice}</DefaultText>
-      {snapshot.failure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
+      {snapshot.connected && snapshot.failure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
       {sessionChanged && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{SpotifyJamCopy.sessionChanged}</DefaultText>}
       {busy && <View style={styles.row}><ActivityIndicator /><DefaultText>{SpotifyJamCopy.busy}</DefaultText></View>}
       {!snapshot.connected ? <View style={styles.section}>
@@ -109,6 +114,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
           autoCapitalize={InputPolicy.capitalization} autoComplete={InputPolicy.autoComplete}
           maxLength={ClientIdentifierCharacters} editable={!busy} style={styles.input} />
         <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !clientIdentifier.trim()} />
+        {loginStep !== null && <DefaultText>{loginStep}</DefaultText>}
+        {loginFailure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{loginFailure}</DefaultText>}
         <DefaultButton title={SpotifyJamCopy.restore} onPress={() => { void spotifyMobile.restore(); }} disabled={busy} style={styles.neutral} />
         <DefaultButton title={SpotifyJamCopy.forget} onPress={disconnect} disabled={busy} style={styles.neutral} />
       </View> : <>

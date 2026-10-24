@@ -1,4 +1,4 @@
-import { IntegrationFailure, IntegrationFailureCode, JamJoinMode, JamConnectionStatus } from 'streaming-service-spotify-jam';
+import { IntegrationFailure, IntegrationFailureCode, JamJoinMode, JamConnectionStatus, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import type { Clock, JamCommandResult, JamSessionClient, JamSnapshot, SpotifyCredentialProvider, SpotifyCredentials, SpotifyLoginConfiguration, SpotifyLoginProvider } from 'streaming-service-spotify-jam';
 import type { SpotifyApplicationAccount, SpotifyDeviceSelection } from './SpotifyIntegrationConnection';
 import type { SpotifyAccountGateway, SpotifyMobileDevice, SpotifyMobileIdentity } from './SpotifyMobileGateway';
@@ -11,7 +11,11 @@ export enum SpotifyMobileOperation {
   Queueing = 'queueing', Joining = 'joining', Refreshing = 'refreshing', Ending = 'ending', Leaving = 'leaving',
 }
 
+export enum SpotifyAuthenticationAction { Login = 'login', Restore = 'restore', Resume = 'resume' }
+
 export interface SpotifyMobileSnapshot {
+  readonly authenticationAction?: SpotifyAuthenticationAction;
+  readonly loginStage?: SpotifyLoginStage;
   readonly connected: boolean;
   readonly displayName: string | null;
   readonly devices: readonly SpotifyMobileDevice[];
@@ -29,8 +33,9 @@ export interface SpotifyMobileDependencies {
   readonly nextIdentifier: () => string;
   readonly connect: (identity: SpotifyMobileIdentity, credentials: SpotifyCredentialProvider, selection: SpotifyDeviceSelection) => JamSessionClient;
   readonly disconnect: () => void;
-  readonly createLogin?: (configuration: SpotifyLoginConfiguration) => SpotifyLoginProvider;
-  readonly restoreLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal) => Promise<SpotifyLoginProvider | null>;
+  readonly createLogin?: (configuration: SpotifyLoginConfiguration, progress?: (stage: SpotifyLoginStage) => void) => SpotifyLoginProvider;
+  readonly restoreLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void) => Promise<SpotifyLoginProvider | null>;
+  readonly resumeLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void) => Promise<SpotifyLoginProvider | null>;
   readonly forgetSavedLogin?: (applicationAccountIdentifier: string) => Promise<void>;
   readonly membershipRefreshed?: () => void;
   readonly resolveInvitation?: (invitation: string, cancellation: AbortSignal) => Promise<string>;
@@ -124,24 +129,18 @@ export class SpotifyMobileController {
     this.disconnect();
     this.applicationAccountIdentifier = account.accountIdentifier;
     const lifetime = this.cancellation;
-    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting });
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting,
+      authenticationAction: SpotifyAuthenticationAction.Login, loginStage: SpotifyLoginStage.Preparing });
     try {
-      const login = this.dependencies.createLogin(configuration);
+      const login = this.dependencies.createLogin(configuration, stage => this.loginProgress(stage, lifetime));
       this.loginSession = login;
       const credentials = await login.login(lifetime.signal);
       if (!this.current(lifetime)) return;
-      const identity = this.dependencies.gateway.inspectLogin
-        ? await this.dependencies.gateway.inspectLogin(credentials.accessToken, lifetime.signal)
-        : await this.dependencies.gateway.inspect(credentials.accessToken, lifetime.signal);
-      if (!this.current(lifetime)) return;
-      if (identity.accountIdentifier !== credentials.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
-      this.credentials = credentials;
-      await this.establish(identity, login, lifetime);
+      await this.establishLogin(login, credentials, lifetime);
     } catch (failure) {
       if (!this.current(lifetime)) return;
       const code = this.failureCode(failure);
-      this.retireConnection(code === IntegrationFailureCode.Unauthorized || code === IntegrationFailureCode.InvalidResponse);
-      this.fail(code);
+      this.authenticationFailed(code, SpotifyAuthenticationAction.Login);
     }
   }
 
@@ -152,28 +151,80 @@ export class SpotifyMobileController {
     this.retireConnection(false);
     this.applicationAccountIdentifier = account.accountIdentifier;
     const lifetime = this.cancellation;
-    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting });
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting,
+      authenticationAction: SpotifyAuthenticationAction.Restore, loginStage: SpotifyLoginStage.Preparing });
     try {
-      const login = await this.dependencies.restoreLogin(account.accountIdentifier, lifetime.signal);
+      const login = await this.dependencies.restoreLogin(account.accountIdentifier, lifetime.signal, stage => this.loginProgress(stage, lifetime));
       if (!this.current(lifetime)) { login?.dispose?.(); return; }
       if (login === null) { this.publish(EmptySnapshot); return; }
       if (!login.restore) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
       this.loginSession = login;
       const credentials = await login.restore(lifetime.signal);
       if (!this.current(lifetime)) return;
-      const identity = this.dependencies.gateway.inspectLogin
-        ? await this.dependencies.gateway.inspectLogin(credentials.accessToken, lifetime.signal)
-        : await this.dependencies.gateway.inspect(credentials.accessToken, lifetime.signal);
-      if (!this.current(lifetime)) return;
-      if (identity.accountIdentifier !== credentials.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
-      this.credentials = credentials;
-      await this.establish(identity, login, lifetime);
+      await this.establishLogin(login, credentials, lifetime);
     } catch (failure) {
       if (!this.current(lifetime)) return;
       const code = this.failureCode(failure);
-      this.retireConnection(code === IntegrationFailureCode.Unauthorized || code === IntegrationFailureCode.InvalidResponse);
-      this.fail(code);
+      this.authenticationFailed(code, SpotifyAuthenticationAction.Restore);
     }
+  }
+
+  async resumeAuthorization(callbackAddress: string): Promise<void> {
+    const account = this.dependencies.account.getSnapshot();
+    if (this.disposed || !account.isLoggedIn || account.accountIdentifier === null) return this.fail(IntegrationFailureCode.Unauthorized);
+    if (!this.dependencies.resumeLogin) return this.fail(IntegrationFailureCode.Unsupported);
+    this.retireConnection(false);
+    this.applicationAccountIdentifier = account.accountIdentifier;
+    const lifetime = this.cancellation;
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting,
+      authenticationAction: SpotifyAuthenticationAction.Resume, loginStage: SpotifyLoginStage.Preparing });
+    try {
+      let login = await this.dependencies.resumeLogin(account.accountIdentifier, lifetime.signal, stage => this.loginProgress(stage, lifetime));
+      if (!this.current(lifetime)) { login?.dispose?.(); return; }
+      let credentials: SpotifyCredentials;
+      if (login === null) {
+        login = await this.dependencies.restoreLogin?.(account.accountIdentifier, lifetime.signal, stage => this.loginProgress(stage, lifetime)) ?? null;
+        if (!this.current(lifetime)) { login?.dispose?.(); return; }
+        if (!login?.restore) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+        this.loginSession = login;
+        credentials = await login.restore(lifetime.signal);
+      } else {
+        if (!login.resumeAuthorization) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+        this.loginSession = login;
+        credentials = await login.resumeAuthorization(callbackAddress, lifetime.signal);
+      }
+      if (this.current(lifetime)) await this.establishLogin(login, credentials, lifetime);
+    } catch (failure) {
+      if (this.current(lifetime)) this.authenticationFailed(this.failureCode(failure), SpotifyAuthenticationAction.Resume);
+    }
+  }
+
+  private async establishLogin(login: SpotifyLoginProvider, credentials: SpotifyCredentials, lifetime: AbortController): Promise<void> {
+    this.loginProgress(SpotifyLoginStage.Verifying, lifetime);
+    const identity = this.dependencies.gateway.inspectLogin
+      ? await this.dependencies.gateway.inspectLogin(credentials.accessToken, lifetime.signal)
+      : await this.dependencies.gateway.inspect(credentials.accessToken, lifetime.signal);
+    if (!this.current(lifetime)) return;
+    if (identity.accountIdentifier !== credentials.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.credentials = credentials;
+    await this.establish(identity, login, lifetime);
+  }
+
+  private loginProgress(stage: SpotifyLoginStage, lifetime: AbortController): void {
+    if (this.current(lifetime) && this.snapshot.operation === SpotifyMobileOperation.Connecting) this.publish({ ...this.snapshot, loginStage: stage });
+  }
+
+  private authenticationFailed(failure: IntegrationFailureCode, authenticationAction: SpotifyAuthenticationAction): void {
+    const loginStage = this.snapshot.loginStage;
+    this.retireConnection(authenticationAction !== SpotifyAuthenticationAction.Resume
+      && (failure === IntegrationFailureCode.Unauthorized || failure === IntegrationFailureCode.InvalidResponse));
+    this.publish({ ...this.snapshot, authenticationAction, ...(loginStage === undefined ? {} : { loginStage }), failure });
+  }
+
+  authorizationInterrupted(failure: IntegrationFailureCode): void {
+    if (this.disposed || this.snapshot.connected || this.snapshot.operation !== SpotifyMobileOperation.Idle) return;
+    this.publish({ ...this.snapshot, authenticationAction: SpotifyAuthenticationAction.Resume,
+      loginStage: SpotifyLoginStage.Preparing, failure });
   }
 
   private async establish(identity: SpotifyMobileIdentity, provider: SpotifyCredentialProvider, lifetime: AbortController): Promise<void> {
@@ -311,7 +362,8 @@ export class SpotifyMobileController {
     void Promise.allSettled(cleanup).then(results => {
       if (!this.current(lifetime) || this.snapshot.operation !== SpotifyMobileOperation.Disconnecting) return;
       const failed = results.some(result => result.status === RejectedCleanupStatus);
-      this.publish({ ...EmptySnapshot, failure: failed ? IntegrationFailureCode.CredentialStorage : this.snapshot.failure });
+      this.publish({ ...this.snapshot, operation: SpotifyMobileOperation.Idle,
+        failure: failed ? IntegrationFailureCode.CredentialStorage : this.snapshot.failure });
     });
   }
 

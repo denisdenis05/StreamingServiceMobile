@@ -9,6 +9,7 @@ const metadata = { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn()
 jest.doMock(Imports.metadata, () => ({ __esModule: true, default: metadata }));
 jest.doMock(Imports.keychain, () => keychain);
 const ownership = require(Imports.storage).spotifyCredentialOwnership;
+const authorizationOwnership = require(Imports.storage).spotifyAuthorizationOwnership;
 beforeEach(() => { jest.clearAllMocks(); ownership.retire(); keychain.getGenericPassword.mockResolvedValue(false); metadata.getItem.mockResolvedValue(null);
   metadata.setItem.mockResolvedValue(undefined); metadata.removeItem.mockResolvedValue(undefined);
   keychain.setGenericPassword.mockResolvedValue({ service: Fixture.service }); keychain.resetGenericPassword.mockResolvedValue(true); });
@@ -22,3 +23,9 @@ test(Names.erase, async () => { await ownership.forget(Fixture.account);
   expect(metadata.setItem).toHaveBeenCalledWith(Fixture.service + RevocationFixture.suffix, RevocationFixture.marker); });
 
 const RevocationFixture = Object.freeze({ suffix: '.revoked', marker: 'revoked' });
+const AuthorizationFixture = Object.freeze({ name: 'Pending proof uses a separate device-only secure service from the saved refresh grant',
+  service: 'StreamingService.SpotifyAuthorization.application-account', proof: 'artificial-verifier-state-proof' });
+test(AuthorizationFixture.name, async () => { const store = authorizationOwnership.acquire(Fixture.account); await store.write(AuthorizationFixture.proof, new AbortController().signal);
+  expect(keychain.setGenericPassword).toHaveBeenCalledWith(Fixture.account, AuthorizationFixture.proof,
+    { service: AuthorizationFixture.service, accessible: Fixture.accessibility, storage: Fixture.cipher, cloudSync: false });
+  expect(metadata.setItem).not.toHaveBeenCalled(); });

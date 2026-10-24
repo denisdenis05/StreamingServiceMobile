@@ -1,6 +1,5 @@
 const Imports = Object.freeze({ test: 'node:test', assertion: 'node:assert/strict', filesystem: 'node:fs',
-  babel: '@babel/core', transform: '@babel/plugin-transform-modules-commonjs', polyfill: 'react-native-url-polyfill',
-  polyfillImplementation: 'react-native-url-polyfill/js/URL.js', native: 'react-native',
+  polyfill: 'react-native-url-polyfill',
   controller: '../.build/spotify/SpotifyMobileController', gateway: '../.build/spotify/SpotifyMobileGateway',
   invitation: '../.build/spotify/SpotifyInvitation', policy: '../.build/spotify/SpotifyMobilePolicy',
   invitationResolver: '../.build/spotify/SpotifyInvitationResolver',
@@ -9,16 +8,9 @@ const Imports = Object.freeze({ test: 'node:test', assertion: 'node:assert/stric
 const { test } = require(Imports.test);
 const assertion = require(Imports.assertion);
 const { readFileSync } = require(Imports.filesystem);
-const babel = require(Imports.babel);
-const TranspilerParameters = Object.freeze({ require: 'require', module: 'module', exports: 'exports' });
-const compiledPolyfill = babel.transformFileSync(require.resolve(Imports.polyfillImplementation), {
-  babelrc: false, configFile: false, plugins: [Imports.transform],
-});
-const polyfillModule = { exports: {} };
-const evaluatePolyfill = new Function(TranspilerParameters.require, TranspilerParameters.module, TranspilerParameters.exports, compiledPolyfill.code);
-evaluatePolyfill(name => { assertion.equal(name, Imports.native); return { NativeModules: {} }; }, polyfillModule, polyfillModule.exports);
-require.cache[require.resolve(Imports.polyfill)] = { exports: polyfillModule.exports };
-const { SpotifyMobileController, SpotifyMobileOperation } = require(Imports.controller);
+const UrlFixture = './fixtures/spotify-url.cjs';
+const polyfillModule = { exports: require(UrlFixture) };
+const { SpotifyMobileController, SpotifyMobileOperation, SpotifyAuthenticationAction } = require(Imports.controller);
 const { SpotifyMobileGateway } = require(Imports.gateway);
 const { spotifyInvitationToken } = require(Imports.invitation);
 const { SpotifyInvitationResolver, FetchSpotifyInvitationReader, SpotifyInvitationPolicy } = require(Imports.invitationResolver);
@@ -122,7 +114,7 @@ function fixture() {
   let connectedSessions = null;
   let provider;
   const calls = [];
-  const state = { forgetFailure: null, restores: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
+  const state = { forgetFailure: null, restores: async () => null, resumes: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
@@ -132,9 +124,10 @@ function fixture() {
     account: { getSnapshot: () => applicationAccount, subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } },
     gateway: { inspect: (...values) => state.inspect(...values), devices: (...values) => state.devices(...values) },
     restoreLogin: (...parameters) => state.restores(...parameters),
+    resumeLogin: (...parameters) => state.resumes(...parameters),
     forgetSavedLogin: async accountIdentifier => { state.forgottenAccounts.push(accountIdentifier); if (state.forgetFailure !== null) await state.forgetFailure; },
     membershipRefreshed: () => { state.membershipRefreshes += Fixture.sequenceIncrement; },
-    createLogin: configuration => state.login(configuration),
+    createLogin: (...parameters) => state.login(...parameters),
     clock: { nowMilliseconds: () => nowMilliseconds },
     nextIdentifier: () => { sequence += Fixture.sequenceIncrement; return Fixture.identifierPrefix + sequence; },
     connect(identity, credentials) {
@@ -589,6 +582,8 @@ test(BrowserProfileFixture.name, async () => {
   assertion.equal(identity.accountIdentifier, Fixture.stableAccount); assertion.equal(identity.displayName, BrowserProfileFixture.displayName);
   const profile = requests.find(request => request.address === SpotifyMobilePolicy.oauthProfileAddress);
   assertion.equal(profile.headers[SpotifyMobilePolicy.authorizationHeader], SpotifyMobilePolicy.bearerPrefix + Fixture.token);
+  assertion.equal(identity.serviceOrigin, null); assertion.equal(requests.length, Fixture.singleCall);
+  assertion.equal(await gateway.resolveServiceOrigin(new AbortController().signal), Fixture.serviceOrigin);
   const resolver = requests.find(request => request.address === SpotifyMobilePolicy.resolverAddress);
   assertion.equal(resolver.headers[SpotifyMobilePolicy.authorizationHeader], undefined);
 });
@@ -685,3 +680,41 @@ test(ReentrantSavedRestoreName, async () => { const current = fixture(); const l
   current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true }); await restoring;
   assertion.equal(current.controller.getSnapshot().connected, true); assertion.equal(current.controller.isApplicationAccount(Fixture.otherAccount), true);
   assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose(); });
+
+const ResumeFixture = Object.freeze({ callback: 'streamingservicespotify://callback?code=artificial-code&state=artificial-state',
+  names: Object.freeze({ resume: 'Callback recovery uses the pending provider without opening browser authorization',
+    completed: 'A callback already completed before restart restores the saved verified grant',
+    missing: 'A cold callback without saved proof or grant is an explicit resume failure',
+    invalid: 'An invalid callback cannot erase a pending authorization for another state',
+    late: 'A late callback provider cannot replace the next application account',
+    progress: 'A failed authorization retains the phase that failed',
+    staleProgress: 'A progress callback from a retired login cannot overwrite a new login' }) });
+test(ResumeFixture.names.resume, async () => { const current = fixture(); const login = browserLogin(); let resumed = null;
+  login.provider.login = async () => assertion.fail(); login.provider.resumeAuthorization = async (address, cancellation) => {
+    resumed = address; return login.provider.getCredentials(cancellation);
+  }; current.state.resumes = async () => login.provider; await current.controller.resumeAuthorization(ResumeFixture.callback);
+  assertion.equal(resumed, ResumeFixture.callback); assertion.equal(current.controller.getSnapshot().connected, true); current.controller.dispose(); });
+test(ResumeFixture.names.completed, async () => { const current = fixture(); const login = browserLogin(); login.provider.login = async () => assertion.fail();
+  current.state.restores = async () => login.provider; await current.controller.resumeAuthorization(ResumeFixture.callback);
+  assertion.equal(current.controller.getSnapshot().connected, true); current.controller.dispose(); });
+test(ResumeFixture.names.missing, async () => { const current = fixture(); await current.controller.resumeAuthorization(ResumeFixture.callback);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized);
+  assertion.equal(current.controller.getSnapshot().authenticationAction, SpotifyAuthenticationAction.Resume); assertion.equal(current.state.forgottenAccounts.length, Fixture.noCalls); current.controller.dispose(); });
+test(ResumeFixture.names.invalid, async () => { const current = fixture(); const login = browserLogin(); login.provider.resumeAuthorization = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.InvalidResponse); };
+  current.state.resumes = async () => login.provider; await current.controller.resumeAuthorization(ResumeFixture.callback);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.InvalidResponse); assertion.equal(current.state.forgottenAccounts.length, Fixture.noCalls); current.controller.dispose(); });
+test(ResumeFixture.names.late, async () => { const current = fixture(); const pending = deferred(); const login = browserLogin(); current.state.resumes = () => pending.promise;
+  const resuming = current.controller.resumeAuthorization(ResumeFixture.callback); current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true });
+  pending.resolve(login.provider); await resuming; assertion.equal(login.calls.disposed, Fixture.singleCall); assertion.equal(current.controller.getSnapshot().connected, false); current.controller.dispose(); });
+test(ResumeFixture.names.progress, async () => { const current = fixture(); const login = browserLogin(); let progress;
+  current.state.login = (_configuration, observer) => { progress = observer; return login.provider; };
+  login.provider.login = async () => { progress(library.SpotifyLoginStage.Exchanging); throw new library.IntegrationFailure(library.IntegrationFailureCode.Network); };
+  await current.controller.login(loginConfiguration()); assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Network);
+  assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Exchanging); current.controller.dispose(); });
+test(ResumeFixture.names.staleProgress, async () => { const current = fixture(); const login = browserLogin(); let previousProgress;
+  current.state.login = (_configuration, progress) => { previousProgress = progress; return login.provider; };
+  await current.controller.login(loginConfiguration()); const credentials = await login.provider.getCredentials(new AbortController().signal);
+  const pending = deferred(); const replacement = browserLogin(); replacement.provider.login = () => pending.promise;
+  current.state.login = () => replacement.provider; const signingIn = current.controller.login(loginConfiguration());
+  previousProgress(library.SpotifyLoginStage.Exchanging); assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Preparing);
+  pending.resolve(credentials); await signingIn; current.controller.dispose(); });
