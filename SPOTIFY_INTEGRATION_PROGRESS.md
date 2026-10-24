@@ -1,3 +1,66 @@
+# Foreground host playback follower — 2026-10-24
+
+The Jam screen now offers Replace queue and follow Spotify with explicit country
+selection. It polls the hosting Spotify account's actual active Jam device,
+translates the playing track to a local recording and follows through the real
+synchronization core and native player adapter. This is approximate foreground
+host following. The source has no authoritative Jam occurrence IDs or buffering
+feed; its execution IDs are local fences. No private guest playback is enabled.
+
+The adapter prepares one local item paused, samples readiness/position, applies
+current targets with drift correction and protects engine/authentication/lease
+identity after asynchronous work. Native time is never subtracted from JS time.
+Playback renewal has a native watchdog independent of JS observers. Expired
+leases can be reclaimed after JS restart, while an active lease is preserved.
+
+Stop, account/connection/Jam/host replacement and backgrounding retire work.
+Stop remains visibly pending until native acknowledgement. Local pause exits
+following. Use Spotify for remote playback controls; remote shared controls and
+continuous background following remain unfinished. Normal recommendation
+continuation is suppressed while native external authority owns playback.
+
+New dedicated suites: tools/spotify-shared-playback.test.cjs (real controller,
+synchronization core and adapter with injected native/network boundaries) and
+tools/spotify-shared-screen.test.tsx. Existing player-runtime.test.cjs contains
+the continuation regression. Library/player protocol, timing and native feature
+mappings are in their owning repositories. Final checks and APK metadata follow.
+
+No developer client ID, second controlled Spotify client, physical device or
+working desktop debugging endpoint was available. No live OAuth/private admission,
+actual OS storage, shared guest propagation or audible timing result is claimed.
+The user has authorized implementation; those evidence/deployment inputs remain
+missing. Server configuration edits remain untouched.
+
+Validation: `npm run test:spotify` passed 181 Node cases and 42 rendered-screen
+cases; its script now prepares both local libraries. Full app
+`./node_modules/.bin/tsc --noEmit --pretty false` passed. Existing
+`npm run test:player-integration` passed seven cases and
+`npm run test:player-mobile` passed 320 cases, including the new continuation
+regression. Library tests passed 412 cases. Player tests passed 387 TypeScript,
+257 Android JVM and 293 Swift host cases; Apple SDK compilation passed. Full
+native Android packaging/signature evidence is recorded below. No source or
+native test result is promoted to a device/alignment claim.
+
+Review regressions cover failed cleanup followed by an explicit retry (active
+leases remain protected; expired leases can be reclaimed), reentrant start during
+Stopping and disposal during retirement. Cleanup errors are surfaced to the caller
+while the sequencing barrier drains so a later explicit retry can proceed. Intent
+tokens prevent an outer start from overwriting a newer subscriber action.
+
+Final Android packaging: forced `:app:createBundleReleaseJsAndAssets --rerun-tasks`
+passed, followed by `:app:testReleaseUnitTest :app:assembleRelease
+-PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain` (612 tasks).
+All three app proof-key unit tests passed. Signature verification passed with the
+existing debug certificate. The copied ARM64 APK is 29,805,416 bytes;
+its embedded Hermes bundle is 2,038,584 bytes. Archive
+checks confirmed the new UI and native authority markers. SHA-256:
+`1dfbcccb8e1523df2656d549cc6c0eca8009e1ff98eac49e8d6ab1a903c9ab93`.
+Artifact/checksum/signing/archive evidence remains in ignored build/spotify-jam/.
+No phone was connected; no installation, audible alignment or device lifecycle
+result is claimed. Three subagents supplied native/lifecycle review and REA
+follow-up. Sanitized private-protocol findings remain outside the package at
+spotify-jam-research/GUEST_PROTOCOL_FOLLOWUP_2026-10-24.md.
+
 # Secure saved login and iOS boundary — 2026-10-23
 
 Saved refresh credentials now use pinned react-native-keychain 10.0.0. Android

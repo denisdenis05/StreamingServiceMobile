@@ -1,9 +1,10 @@
 # Spotify Jam personal-test app
 
-Updated 2026-10-23. The source implements Spotify browser login, secure saved-login
+Updated 2026-10-24. The source implements Spotify browser login, secure saved-login
 restoration, Jam creation/sharing, experimental joining, app-song matching, host
 queue requests, host queue observation and foreground membership recovery.
-Playing audio together through the local player is not implemented.
+Approximate foreground host following now plays matched local recordings alongside
+Spotify. Private guest playback and measured audio alignment remain open.
 
 ## Install and setup
 
@@ -38,6 +39,25 @@ No registered client ID was supplied during development. Real browser admission
 and private Jam access with those OAuth credentials remain unverified. Spotify
 must accept the registered callback. Joining/leave requests remain experimental
 until a second controlled account validates admission and permissions.
+
+## Follow the Spotify host
+
+After creating a Jam, start Spotify on its actual host device. Enter the two-letter
+country code in Listen alongside Spotify and press Replace queue and follow
+Spotify. This replaces your local queue and uses your own catalog audio. Ambiguous
+or missing matches hold local audio while waiting for another song. Use Spotify
+for remote play/pause/seek/skip; local pause ends following. Stop remains pending
+until native cleanup acknowledges it. Backgrounding ends following; returning
+foreground does not automatically restart audio.
+
+The source polls every two seconds. Transport, remote buffering, local preparation
+and audio-output latency limit alignment. This is an experimental host-only path;
+no physical-device alignment was measured. Native leases hold one item, block
+independent advance and pause after five seconds without renewal. The source is
+the documented account playback endpoint, rather than a verified private guest
+feed. Newer native binaries must advertise supportsExternalAuthority; older ones
+are rejected. Full contracts and feature tests are in the library's
+HOSTED_PLAYBACK.md and SHARED_PLAYBACK.md.
 
 ## Credentials and lifecycle
 
@@ -76,8 +96,9 @@ host checks are not an atomic queue snapshot and cannot clear an unknown write
 outcome. Queue writes are never automatically retried. Inspect Spotify's queue
 before reconnecting and issuing a new intent after an uncertain submission.
 
-Private guest command routing, a fresh cross-account playback stream and a native
-external-authority follower remain unimplemented protocol/development gates.
+Private guest command routing, a fresh cross-account playback stream, remote
+shared controls and continuous background transport remain unimplemented. The
+foreground host follower now uses the guarded native external-authority boundary.
 No guessed private endpoint or stale Connect snapshot is presented as working
 synchronization. The installed desktop client's debugging endpoint is unavailable;
 no process was killed or playback/queue changed to restore it in this chapter.
@@ -98,6 +119,7 @@ behavior. No controlled second account or physical Android/iOS execution was use
 Build the Android test APK with:
 
 ```bash
+npm run prepare:player
 npm run prepare:spotify
 cd android
 ./gradlew :app:testReleaseUnitTest :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon -Pkotlin.compiler.execution.strategy=in-process

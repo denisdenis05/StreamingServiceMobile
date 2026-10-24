@@ -31,6 +31,7 @@ const identifiers = { nextIdentifier() {
 } };
 export const catalogPlaybackMapping = new PlaybackCatalogMapping(TEMPORARY_API_URL, PLACEHOLDER_ALBUM_COVER);
 const native = new NativeStreamingPlayer(reactNativePlaybackTransport, identifiers);
+export const sharedPlaybackNative = native;
 const reports = new PlaybackReportingQueue();
 export const audioRuntime = new PlaybackRuntime({
   native, mediaServerAddress: TEMPORARY_API_URL, identifiers, sessionOwnership: playbackNativeSessionStorage,

@@ -207,6 +207,7 @@ export class PlaybackRuntime {
   }
 
   private continueQueue(snapshot: PlayerSnapshot): Promise<void> {
+    if (snapshot.externalAuthorityIdentifier) return Promise.resolve();
     if (snapshot.currentEntry !== null || snapshot.repeatMode !== RepeatMode.Off || snapshot.queueLength === RuntimePolicy.emptyQueueLength) return Promise.resolve();
     const queueIdentifier = this.queue.getDesiredQueueIdentifier();
     if (this.continuationQueueIdentifier === queueIdentifier) return this.continuation ?? Promise.resolve();

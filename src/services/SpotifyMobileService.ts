@@ -14,11 +14,17 @@ import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore
 import { SpotifyHostedQueueStore } from './spotify/SpotifyHostedQueueStore';
 import { SpotifyMembershipStore } from './spotify/SpotifyMembershipStore';
 import { spotifyCredentialOwnership } from './SpotifySecureLoginStorage';
+import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
+import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
+import { sharedPlaybackNative, playbackApplication } from './NativeAudioRuntime';
+import { AppState } from 'react-native';
 
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
   identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.' });
 const clock = { nowMilliseconds: () => Date.now() };
 const requests = new FetchHttpExecutor(new SystemScheduler());
+const playbackClockSource = globalThis as unknown as { readonly performance: { now(): number } };
+const playbackClock = { nowMonotonicMilliseconds: () => playbackClockSource.performance.now() };
 const gateway = new SpotifyMobileGateway(requests);
 const invitationResolver = new SpotifyInvitationResolver(new FetchSpotifyInvitationReader(fetch, new SystemScheduler()));
 const identifierPrefix = Date.now().toString(MobileCompositionPolicy.identifierRadix) + MobileCompositionPolicy.identifierSeparator
@@ -70,7 +76,7 @@ export const spotifyMobile = new SpotifyMobileController({
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier,
-      scheduler: new SystemScheduler() }, selection).sessions;
+      scheduler: new SystemScheduler(), playbackClock }, selection).sessions;
   },
   disconnect: () => spotifyIntegration.disconnect(),
   resolveInvitation: (invitation, cancellation) => invitationResolver.resolve(invitation, cancellation),
@@ -90,4 +96,24 @@ export const spotifyMembership = new SpotifyMembershipStore({
     ? spotifyIntegration.runtime?.membership ?? null : null,
   subscribeConnection: spotifyMobile.subscribe,
 });
-module.hot?.dispose(() => { spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose(); });
+export const spotifyPlaybackFollower = new SpotifyPlaybackFollowerStore({
+  getRuntime: () => spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime : null,
+  subscribeConnection: spotifyMobile.subscribe, clock: playbackClock, scheduler: new SystemScheduler(), nextIdentifier,
+  output: new SpotifyNativePlaybackOutput({ native: sharedPlaybackNative, clock: playbackClock, nextIdentifier,
+    whenReady: () => playbackApplication.whenReady(),
+    resolveRecording: async (identifier, cancellation) => {
+      const runtime = spotifyIntegration.runtime;
+      if (!runtime) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+      const song = await runtime.lookupRecording(identifier, cancellation);
+      if (runtime !== spotifyIntegration.runtime) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      return song;
+    },
+  }),
+});
+const PlaybackApplicationState = Object.freeze({ changeEvent: 'change', active: 'active' } as const);
+const stopPlaybackOnBackground = AppState.addEventListener(PlaybackApplicationState.changeEvent,
+  state => { if (state !== PlaybackApplicationState.active) void spotifyPlaybackFollower.stop().catch(() => undefined); });
+module.hot?.dispose(() => {
+  stopPlaybackOnBackground.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);
+  spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose();
+});

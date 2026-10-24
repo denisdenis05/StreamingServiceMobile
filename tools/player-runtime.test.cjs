@@ -7,6 +7,15 @@ async function initialized() {
   const scenario = environment(); await scenario.login();
   await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex); return scenario;
 }
+const ExternalContinuationTest = Object.freeze({ name: 'external playback authority prevents local recommendation continuation',
+  authorityIdentifier: 'shared-remote-authority' });
+test(ExternalContinuationTest.name, async () => {
+  const scenario = await initialized(); const snapshot = scenario.native.getSnapshot;
+  scenario.native.getSnapshot = async () => ({ ...await snapshot(), currentEntry: null,
+    externalAuthorityIdentifier: ExternalContinuationTest.authorityIdentifier });
+  await scenario.runtime.next();
+  assertion.equal(scenario.suggestionCalls, Fixture.initialCount); scenario.runtime.dispose();
+});
 test('the selected runtime shares one native subscription and releases it on disposal', async () => {
   const scenario = await initialized(); assertion.equal(scenario.listenerCount, Fixture.singleCount);
   assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.firstRecording);
