@@ -1,4 +1,4 @@
-import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore,
+import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization,
   QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
@@ -13,8 +13,8 @@ import { spotifyLoginBrowser, spotifyProofKeys, readSpotifyAuthorizationReturn }
 import { SpotifyRecordingQueueStore } from './spotify/SpotifyRecordingQueueStore';
 import { SpotifyHostedQueueStore } from './spotify/SpotifyHostedQueueStore';
 import { SpotifyMembershipStore } from './spotify/SpotifyMembershipStore';
-import { spotifyCredentialOwnership, spotifyAuthorizationOwnership, spotifyLibrespotOwnership } from './SpotifySecureLoginStorage';
-import { spotifyLibrespotAuthentication } from './SpotifyLibrespotPlatform';
+import { spotifyCredentialOwnership, spotifyAuthorizationOwnership, spotifyLibrespotOwnership, spotifyDeviceAuthorizationOwnership } from './SpotifySecureLoginStorage';
+import { spotifyLibrespotAuthentication, openSpotifyVerificationPage } from './SpotifyLibrespotPlatform';
 import { SpotifyLoginProviders } from './spotify/SpotifyLoginProviders';
 import { SpotifyAuthorizationStartup } from './spotify/SpotifyAuthorizationStartup';
 import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
@@ -42,7 +42,13 @@ function createLogin(configuration: SpotifyLoginConfiguration, credentialStore: 
     resolveAccount: async (accessToken, cancellation) => (await gateway.inspectLogin(accessToken, cancellation)).accountIdentifier });
 }
 const loginProviders = new SpotifyLoginProviders({ librespot: spotifyLibrespotOwnership, oauth: spotifyCredentialOwnership,
-  authorization: spotifyAuthorizationOwnership, authentication: spotifyLibrespotAuthentication, clock, createBrowserLogin: createLogin });
+  authorization: spotifyAuthorizationOwnership, deviceAuthorization: spotifyDeviceAuthorizationOwnership,
+  createDeviceAuthorization: (accountIdentifier, observer, progress) => new LibrespotDeviceAuthorization({ requests, clock,
+    scheduler: new SystemScheduler(), authorizationStore: spotifyDeviceAuthorizationOwnership.acquire(accountIdentifier),
+    bootstrap: (accessToken, cancellation) => spotifyLibrespotAuthentication.bootstrap(accessToken, cancellation),
+    openVerificationPage: openSpotifyVerificationPage, ...(observer === undefined ? {} : { onAuthorization: observer }),
+    ...(progress === undefined ? {} : { onProgress: progress }) }),
+  authentication: spotifyLibrespotAuthentication, clock, createBrowserLogin: createLogin });
 function nextIdentifier(): string {
   sequence += MobileCompositionPolicy.sequenceIncrement;
   if (!Number.isSafeInteger(sequence)) throw new Error(MobileCompositionPolicy.invalidIdentifierMessage);
@@ -63,8 +69,14 @@ export const spotifyMobile = new SpotifyMobileController({
     if (!account.isLoggedIn || account.accountIdentifier === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
     return loginProviders.createLibrespot(account.accountIdentifier, input, progress);
   },
-  async restoreLogin(accountIdentifier, cancellation, progress) {
-    return loginProviders.restore(accountIdentifier, cancellation, progress);
+  createDeviceLogin(progress, observer) {
+    const account = authenticationSession.getSnapshot();
+    if (!account.isLoggedIn || account.accountIdentifier === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    return loginProviders.createDeviceLogin(account.accountIdentifier, progress, observer);
+  },
+  openVerificationPage: openSpotifyVerificationPage,
+  async restoreLogin(accountIdentifier, cancellation, progress, observer) {
+    return loginProviders.restore(accountIdentifier, cancellation, progress, observer);
   },
   async resumeLogin(accountIdentifier, cancellation, progress) {
     return loginProviders.resume(accountIdentifier, cancellation, progress);

@@ -121,6 +121,7 @@ function fixture() {
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
     end: async () => undefined, leave: async () => undefined, queue: async () => undefined,
+    openedVerification: [], deviceLogin: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); },
     identities: [], librespotLogin: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); },
     login: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); } };
   const controller = new SpotifyMobileController({
@@ -133,6 +134,8 @@ function fixture() {
     membershipRefreshed: () => { state.membershipRefreshes += Fixture.sequenceIncrement; },
     createLogin: (...parameters) => state.login(...parameters),
     createLibrespotLogin: (...parameters) => state.librespotLogin(...parameters),
+    createDeviceLogin: (...parameters) => state.deviceLogin(...parameters),
+    openVerificationPage: async (address, cancellation) => { state.openedVerification.push({ address, cancellation }); },
     clock: { nowMilliseconds: () => nowMilliseconds },
     nextIdentifier: () => { sequence += Fixture.sequenceIncrement; return Fixture.identifierPrefix + sequence; },
     connect(identity, credentials) {
@@ -781,3 +784,45 @@ test(LibrespotFixture.names.logout, async () => { const current = fixture(); con
   await current.controller.loginWithLibrespot(librespotInput()); current.changeAccount({ accountIdentifier: null, isLoggedIn: false });
   assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(login.calls.logout, Fixture.singleCall);
   assertion.ok(current.state.forgottenAccounts.includes(Fixture.applicationAccount)); current.controller.dispose(); });
+
+const DeviceLoginFixture = Object.freeze({ code: 'ABCDEF', verificationAddress: 'https://spotify.com/pair?code=ABCDEF', expirationMilliseconds: 90000,
+  flushTurns: 20, names: Object.freeze({ login: 'Device login publishes only public pairing metadata and establishes native identity without profile HTTP',
+    cancel: 'Canceling device login erases its pairing view and ignores stale approval or observer completion',
+    restore: 'Automatic native session restoration can resume a pending pairing view',
+    reopen: 'Reopening pairing uses the current verified public address and current lifetime',
+    expired: 'Expired pairing metadata cannot reopen the browser' }) });
+function deviceView(overrides = {}) { return { userCode: DeviceLoginFixture.code, verificationAddress: DeviceLoginFixture.verificationAddress,
+  expiresAtMilliseconds: DeviceLoginFixture.expirationMilliseconds, ...overrides }; }
+async function drainDeviceLogin() { for (let turn = Fixture.noCalls; turn < DeviceLoginFixture.flushTurns; turn += Fixture.sequenceIncrement) await Promise.resolve(); }
+test(DeviceLoginFixture.names.login, async () => { const current = fixture(); const login = librespotLogin(); let observer; const pending = deferred();
+  current.state.deviceLogin = (_progress, onAuthorization) => { observer = onAuthorization; return login.provider; };
+  current.state.inspect = async () => assertion.fail(); login.provider.login = () => pending.promise;
+  const signingIn = current.controller.loginWithDeviceAuthorization(); observer(deviceView());
+  assertion.deepEqual(current.controller.getSnapshot().deviceAuthorization, deviceView());
+  assertion.equal(current.controller.getSnapshot().deviceAuthorizationLogin, true);
+  assertion.equal(current.controller.getSnapshot().connected, false);
+  pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn;
+  assertion.equal(current.controller.getSnapshot().connected, true); current.controller.dispose(); });
+test(DeviceLoginFixture.names.cancel, async () => { const current = fixture(); const login = librespotLogin(); let observer; const pending = deferred();
+  current.state.deviceLogin = (_progress, onAuthorization) => { observer = onAuthorization; return login.provider; }; login.provider.login = () => pending.promise;
+  const signingIn = current.controller.loginWithDeviceAuthorization(); observer(deviceView()); current.controller.disconnect();
+  observer(deviceView()); pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn;
+  assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(current.controller.getSnapshot().deviceAuthorization, undefined);
+  assertion.ok(current.state.forgottenAccounts.includes(Fixture.applicationAccount)); current.controller.dispose(); });
+test(DeviceLoginFixture.names.restore, async () => { const current = fixture(); const login = librespotLogin(); let observer; const pending = deferred();
+  current.state.restores = async (_accountIdentifier, _cancellation, _progress, onAuthorization) => { observer = onAuthorization; return login.provider; };
+  login.provider.restore = () => pending.promise; const restoring = current.controller.restore(); await drainDeviceLogin(); observer(deviceView());
+  assertion.deepEqual(current.controller.getSnapshot().deviceAuthorization, deviceView());
+  pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await restoring;
+  assertion.equal(current.controller.getSnapshot().connected, true); current.controller.dispose(); });
+test(DeviceLoginFixture.names.reopen, async () => { const current = fixture(); const login = librespotLogin(); const pending = deferred();
+  current.state.deviceLogin = (_progress, observer) => { observer(deviceView()); return login.provider; }; login.provider.login = () => pending.promise;
+  const signingIn = current.controller.loginWithDeviceAuthorization(); await current.controller.openDeviceAuthorization();
+  assertion.equal(current.state.openedVerification[Fixture.firstPosition].address, DeviceLoginFixture.verificationAddress);
+  current.controller.disconnect(); pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn; current.controller.dispose(); });
+test(DeviceLoginFixture.names.expired, async () => { const current = fixture(); const login = librespotLogin(); const pending = deferred();
+  current.state.deviceLogin = (_progress, observer) => { observer(deviceView({ expiresAtMilliseconds: Fixture.initialClockMilliseconds })); return login.provider; }; login.provider.login = () => pending.promise;
+  const signingIn = current.controller.loginWithDeviceAuthorization(); await current.controller.openDeviceAuthorization();
+  assertion.equal(current.state.openedVerification.length, Fixture.noCalls);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized);
+  current.controller.disconnect(); pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn; current.controller.dispose(); });

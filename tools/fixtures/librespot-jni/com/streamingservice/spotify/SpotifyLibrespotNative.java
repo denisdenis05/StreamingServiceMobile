@@ -7,6 +7,7 @@ public final class SpotifyLibrespotNative {
     private static final String EMPTY_TEXT = "";
     private static final String LOGIN = "login";
     private static final String RESTORE = "restore";
+    private static final String BOOTSTRAP = "bootstrap";
     private static final String USERNAME = "synthetic-account";
     private static final String PASSWORD = "synthetic-password";
     private static final String INVALID_RECORD = "invalid-record";
@@ -18,7 +19,7 @@ public final class SpotifyLibrespotNative {
     private static final String FAILURE_MESSAGE = "Unexpected native boundary result.";
 
     public native String begin(String identifier);
-    public native String execute(String identifier, String operation, String username, String password, String storedCredential);
+    public native String execute(String identifier, String operation, String username, String password, String credential);
     public native void cancel(String identifier);
     public native void finish(String identifier);
     public native void cancelAll();
@@ -39,6 +40,11 @@ public final class SpotifyLibrespotNative {
         implementation.finish(FIRST_REQUEST);
         requireEqual(EMPTY_TEXT, implementation.begin(FIRST_REQUEST));
         requireEqual(INVALID_INPUT_RESULT, implementation.execute(FIRST_REQUEST, RESTORE, EMPTY_TEXT, EMPTY_TEXT, INVALID_RECORD));
+        requireEqual(EMPTY_TEXT, implementation.begin(FIRST_REQUEST));
+        requireEqual(INVALID_INPUT_RESULT, implementation.execute(FIRST_REQUEST, BOOTSTRAP, EMPTY_TEXT, EMPTY_TEXT, EMPTY_TEXT));
+        requireEqual(EMPTY_TEXT, implementation.begin(FIRST_REQUEST));
+        implementation.cancel(FIRST_REQUEST);
+        requireEqual(CANCELED_RESULT, implementation.execute(FIRST_REQUEST, BOOTSTRAP, EMPTY_TEXT, EMPTY_TEXT, PASSWORD));
         requireEqual(EMPTY_TEXT, implementation.begin(FIRST_REQUEST));
         requireEqual(EMPTY_TEXT, implementation.begin(SECOND_REQUEST));
         implementation.cancelAll();

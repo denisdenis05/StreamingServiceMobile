@@ -3,9 +3,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use librespot_core::{authentication::Credentials, error::ErrorKind, Session, SessionConfig};
 use librespot_protocol::authentication::AuthenticationType;
 
-use crate::model::{decode_stored_session, validate_grant, validate_password_input, Failure, SessionGrant, StoredSession, SCHEMA_VERSION};
+use crate::model::{decode_stored_session, validate_bootstrap_token, validate_grant, validate_password_input, Failure, SessionGrant, StoredSession, SCHEMA_VERSION};
 
 const MAXIMUM_EPOCH_MILLISECONDS: u128 = u64::MAX as u128;
+pub const DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER: &str = "65b708073fc0480ea92a077233ca87bd";
 
 struct SessionLifetime(Session);
 
@@ -37,16 +38,30 @@ pub async fn login(username: String, password: String) -> Result<SessionGrant, F
 
 pub async fn restore(serialized: String) -> Result<SessionGrant, Failure> {
     let stored = decode_stored_session(&serialized)?;
-    let mut configuration = SessionConfig::default();
-    if configuration.client_id != stored.client_identifier {
-        return Err(Failure::Unauthorized);
-    }
-    configuration.device_id = stored.device_identifier;
+    let configuration = stored_session_configuration(&stored, SessionConfig::default())?;
     let session = SessionLifetime(Session::new(configuration, None));
     session.0.connect(stored.credentials, false).await.map_err(sanitized_failure)?;
     if session.0.username() != stored.account_identifier {
         return Err(Failure::Unauthorized);
     }
+    grant(&session.0).await
+}
+
+pub fn stored_session_configuration(stored: &StoredSession, mut configuration: SessionConfig) -> Result<SessionConfig, Failure> {
+    if configuration.client_id != stored.client_identifier && stored.client_identifier != DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER {
+        return Err(Failure::Unauthorized);
+    }
+    configuration.client_id.clone_from(&stored.client_identifier);
+    configuration.device_id.clone_from(&stored.device_identifier);
+    Ok(configuration)
+}
+
+pub async fn bootstrap(access_token: String) -> Result<SessionGrant, Failure> {
+    validate_bootstrap_token(&access_token)?;
+    let mut configuration = SessionConfig::default();
+    configuration.client_id = DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER.to_owned();
+    let session = SessionLifetime(Session::new(configuration, None));
+    session.0.connect(Credentials::with_access_token(access_token), false).await.map_err(sanitized_failure)?;
     grant(&session.0).await
 }
 

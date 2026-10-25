@@ -2,7 +2,7 @@ package com.streamingservice.spotify
 
 interface SpotifyLibrespotExecution {
     fun begin(identifier: String): String
-    fun execute(identifier: String, operation: String, username: String, password: String, storedCredential: String): String
+    fun execute(identifier: String, operation: String, username: String, password: String, credential: String): String
     fun cancel(identifier: String)
     fun finish(identifier: String)
 }
@@ -19,7 +19,7 @@ class SpotifyLibrespotRequestRunner(
     private var closed = false
 
     @Synchronized
-    fun start(identifier: String, operation: String, username: String, password: String, storedCredential: String,
+    fun start(identifier: String, operation: String, username: String, password: String, credential: String,
               completed: (String) -> Unit, failed: (String) -> Unit) {
         if (closed) {
             failed(CANCELED_FAILURE)
@@ -42,7 +42,7 @@ class SpotifyLibrespotRequestRunner(
         pending[identifier] = request
         try {
             dispatch {
-                val result = try { execution.execute(identifier, operation, username, password, storedCredential) }
+                val result = try { execution.execute(identifier, operation, username, password, credential) }
                     catch (_failure: Throwable) { null }
                 val active = synchronized(this) { pending.remove(identifier) === request && !closed }
                 if (active) {

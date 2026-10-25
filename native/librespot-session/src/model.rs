@@ -91,6 +91,14 @@ pub fn validate_password_input(username: &str, password: &str) -> Result<(), Fai
     }
 }
 
+pub fn validate_bootstrap_token(access_token: &str) -> Result<(), Failure> {
+    if bounded_text(access_token, MAXIMUM_TOKEN_CHARACTERS) && !access_token.contains(char::is_whitespace) {
+        Ok(())
+    } else {
+        Err(Failure::InvalidInput)
+    }
+}
+
 pub fn decode_stored_session(serialized: &str) -> Result<StoredSession, Failure> {
     if serialized.len() > MAXIMUM_STORED_CHARACTERS {
         return Err(Failure::InvalidInput);

@@ -131,3 +131,54 @@ async fn cancellation_after_authentication_dispatch_retires_the_pending_future()
     let (result, _) = tokio::join!(authentication, canceling);
     assert!(matches!(result, Err(Failure::Canceled)));
 }
+
+const PLATFORM_CLIENT_IDENTIFIER: &str = "synthetic-platform-client";
+const ORIGINAL_DEVICE_IDENTIFIER: &str = "original-device";
+fn configuration() -> librespot_core::SessionConfig {
+    librespot_core::SessionConfig { client_id: PLATFORM_CLIENT_IDENTIFIER.to_owned(),
+        device_id: ORIGINAL_DEVICE_IDENTIFIER.to_owned(), proxy: None, ap_port: None,
+        tmp_dir: std::path::PathBuf::new(), autoplay: None }
+}
+#[test]
+fn bootstrap_token_validation_rejects_blank_whitespace_control_and_oversized_values() {
+    use streaming_spotify_session::model::{validate_bootstrap_token, MAXIMUM_TOKEN_CHARACTERS};
+    assert_eq!(validate_bootstrap_token(ACCESS_TOKEN), Ok(()));
+    assert_eq!(validate_bootstrap_token(&PADDING.repeat(MAXIMUM_TOKEN_CHARACTERS)), Ok(()));
+    for token in [EMPTY_TEXT.to_owned(), CONTROL_TEXT.to_owned(), format!("{ACCESS_TOKEN} {ACCESS_TOKEN}"),
+        PADDING.repeat(MAXIMUM_TOKEN_CHARACTERS + BOUNDARY_INCREMENT)] {
+        assert_eq!(validate_bootstrap_token(&token), Err(Failure::InvalidInput));
+    }
+}
+#[test]
+fn restore_preserves_an_existing_platform_client_and_bound_device() {
+    let mut record = stored(); record.client_identifier = PLATFORM_CLIENT_IDENTIFIER.to_owned();
+    let restored = streaming_spotify_session::session::stored_session_configuration(&record, configuration()).unwrap();
+    assert_eq!(restored.client_id, PLATFORM_CLIENT_IDENTIFIER);
+    assert_eq!(restored.device_id, DEVICE);
+}
+#[test]
+fn device_authorization_restore_preserves_its_desktop_client_identity_on_a_mobile_configuration() {
+    let mut record = stored(); record.client_identifier = streaming_spotify_session::session::DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER.to_owned();
+    let round_tripped = decode_stored_session(&serialize(&record)).unwrap();
+    let restored = streaming_spotify_session::session::stored_session_configuration(&round_tripped, configuration()).unwrap();
+    assert_eq!(restored.client_id, streaming_spotify_session::session::DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER);
+    assert_eq!(restored.device_id, DEVICE);
+}
+#[test]
+fn restore_rejects_an_arbitrary_client_identifier_before_creating_a_session() {
+    let result = streaming_spotify_session::session::stored_session_configuration(&stored(), configuration());
+    assert!(matches!(result, Err(Failure::Unauthorized)));
+}
+#[tokio::test]
+async fn invalid_bootstrap_tokens_fail_before_access_point_authentication() {
+    for access_token in [EMPTY_TEXT, CONTROL_TEXT] {
+        let result = execute(AuthenticationOperation::Bootstrap { access_token: access_token.to_owned() }, CancellationToken::new()).await;
+        assert!(matches!(result, Err(Failure::InvalidInput)));
+    }
+}
+#[tokio::test]
+async fn canceled_bootstrap_cannot_create_a_network_session() {
+    let cancellation = CancellationToken::new(); cancellation.cancel();
+    let result = execute(AuthenticationOperation::Bootstrap { access_token: ACCESS_TOKEN.to_owned() }, cancellation).await;
+    assert!(matches!(result, Err(Failure::Canceled)));
+}

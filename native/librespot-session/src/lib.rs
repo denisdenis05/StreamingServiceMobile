@@ -13,6 +13,7 @@ use operations::{AuthenticationOperation, OperationRegistry};
 const EMPTY_TEXT: &str = "";
 const LOGIN_OPERATION: &str = "login";
 const RESTORE_OPERATION: &str = "restore";
+const BOOTSTRAP_OPERATION: &str = "bootstrap";
 const FALLBACK_FAILURE_JSON: &str = "{\"failure\":\"network\"}";
 static REGISTRY: OnceLock<OperationRegistry> = OnceLock::new();
 static INITIALIZATION: Once = Once::new();
@@ -90,7 +91,7 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
     operation: JString,
     username: JString,
     password: JString,
-    serialized: JString,
+    credential: JString,
 ) -> jstring {
     let result = catch_unwind(AssertUnwindSafe(|| {
         let identifier = read_string(&mut environment, identifier)?;
@@ -102,7 +103,10 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
                 password: read_string(&mut environment, password)?,
             },
             RESTORE_OPERATION => AuthenticationOperation::Restore {
-                serialized: read_string(&mut environment, serialized)?,
+                serialized: read_string(&mut environment, credential)?,
+            },
+            BOOTSTRAP_OPERATION => AuthenticationOperation::Bootstrap {
+                access_token: read_string(&mut environment, credential)?,
             },
             _ => return Err(Failure::InvalidInput),
         };

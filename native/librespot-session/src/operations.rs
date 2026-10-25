@@ -53,6 +53,7 @@ impl OperationRegistry {
 pub enum AuthenticationOperation {
     Login { username: String, password: String },
     Restore { serialized: String },
+    Bootstrap { access_token: String },
 }
 
 pub async fn execute(operation: AuthenticationOperation, cancellation: CancellationToken) -> Result<SessionGrant, Failure> {
@@ -63,6 +64,7 @@ pub async fn execute(operation: AuthenticationOperation, cancellation: Cancellat
         match operation {
             AuthenticationOperation::Login { username, password } => session::login(username, password).await,
             AuthenticationOperation::Restore { serialized } => session::restore(serialized).await,
+            AuthenticationOperation::Bootstrap { access_token } => session::bootstrap(access_token).await,
         }
     };
     await_authentication(authentication, cancellation).await

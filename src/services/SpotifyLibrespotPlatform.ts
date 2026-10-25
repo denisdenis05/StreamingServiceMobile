@@ -1,4 +1,5 @@
-import { NativeModules, Platform } from 'react-native';
+import { Linking, NativeModules, Platform } from 'react-native';
+import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
 import { SpotifyLibrespotAuthentication } from './spotify/SpotifyLibrespotAuthentication';
 import type { SpotifyLibrespotNative } from './spotify/SpotifyLibrespotAuthentication';
 
@@ -13,3 +14,10 @@ export const spotifyLibrespotAuthentication = new SpotifyLibrespotAuthentication
     return PlatformPolicy.requestPrefix + sequence;
   },
 });
+
+export async function openSpotifyVerificationPage(address: string, cancellation: AbortSignal): Promise<void> {
+  if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+  try { await Linking.openURL(address); }
+  catch { throw new IntegrationFailure(IntegrationFailureCode.Network); }
+  if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+}

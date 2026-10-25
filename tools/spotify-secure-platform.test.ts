@@ -37,3 +37,11 @@ test(LibrespotStorageFixture.name, async () => { const librespotOwnership = requ
   expect(keychain.setGenericPassword).toHaveBeenCalledWith(Fixture.account, LibrespotStorageFixture.credential,
     { service: LibrespotStorageFixture.service, accessible: Fixture.accessibility, storage: Fixture.cipher, cloudSync: false });
   expect(metadata.setItem).not.toHaveBeenCalled(); });
+
+const DeviceStorageFixture = Object.freeze({ name: 'Pending device authorization is stored only in its separate device-only credential service',
+  service: 'StreamingService.SpotifyDeviceAuthorization.application-account', credential: 'opaque-pending-device-authorization' });
+test(DeviceStorageFixture.name, async () => { const ownership = require(Imports.storage).spotifyDeviceAuthorizationOwnership;
+  const store = ownership.acquire(Fixture.account); await store.write(DeviceStorageFixture.credential, new AbortController().signal);
+  expect(keychain.setGenericPassword).toHaveBeenCalledWith(Fixture.account, DeviceStorageFixture.credential,
+    { service: DeviceStorageFixture.service, accessible: Fixture.accessibility, storage: Fixture.cipher, cloudSync: false });
+  expect(metadata.setItem).not.toHaveBeenCalled(); });

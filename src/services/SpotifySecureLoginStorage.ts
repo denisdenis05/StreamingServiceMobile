@@ -5,6 +5,7 @@ import { SpotifySecureCredentialStorage } from './spotify/SpotifySecureCredentia
 
 const RevocationPolicy = Object.freeze({ keySuffix: '.revoked', revokedValue: 'revoked' });
 const AuthorizationStoragePrefix = 'StreamingService.SpotifyAuthorization.';
+const DeviceAuthorizationStoragePrefix = 'StreamingService.SpotifyDeviceAuthorization.';
 const LibrespotStoragePrefix = 'StreamingService.SpotifyLibrespot.';
 const nativeStorage = {
   async read(service: string) {
@@ -27,3 +28,5 @@ const revocations = {
 export const spotifyCredentialOwnership = new SpotifyCredentialOwnership(new SpotifySecureCredentialStorage(nativeStorage, revocations));
 export const spotifyAuthorizationOwnership = new SpotifyCredentialOwnership(new SpotifySecureCredentialStorage(nativeStorage, revocations, AuthorizationStoragePrefix));
 export const spotifyLibrespotOwnership = new SpotifyCredentialOwnership(new SpotifySecureCredentialStorage(nativeStorage, revocations, LibrespotStoragePrefix));
+
+export const spotifyDeviceAuthorizationOwnership = new SpotifyCredentialOwnership(new SpotifySecureCredentialStorage(nativeStorage, revocations, DeviceAuthorizationStoragePrefix));

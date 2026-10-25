@@ -33,14 +33,15 @@ function failure(code) { return value => value instanceof library.IntegrationFai
 function fixture() {
   let sequence = Fixture.zero;
   const state = { nativeAvailable: true, lookupFailure: false, pending: null, cancelFailure: false, identifier: null };
-  const calls = { login: [], restore: [], canceled: [], lookups: Fixture.zero };
+  const calls = { login: [], restore: [], bootstrap: [], canceled: [], lookups: Fixture.zero };
   const native = { login: async (...parameters) => { calls.login.push(parameters); return state.pending ? state.pending.promise : grant(); },
     restore: async (...parameters) => { calls.restore.push(parameters); return state.pending ? state.pending.promise : grant(); },
+    bootstrap: async (...parameters) => { calls.bootstrap.push(parameters); return state.pending ? state.pending.promise : grant(); },
     cancel: identifier => { calls.canceled.push(identifier); if (state.cancelFailure) throw new Error(Fixture.privateMessage); } };
   const authentication = new SpotifyLibrespotAuthentication({ native: () => { calls.lookups += Fixture.one;
     if (state.lookupFailure) throw new Error(Fixture.privateMessage); return state.nativeAvailable ? native : null; },
     nextRequestIdentifier: () => state.identifier ?? Fixture.requestPrefix + (sequence += Fixture.one) });
-  return { state, calls, authentication, cancellation: new AbortController() };
+  return { state, calls, native, authentication, cancellation: new AbortController() };
 }
 test(Fixture.names.login, async () => { const current = fixture(); assert.deepEqual(await current.authentication.login(input(), current.cancellation.signal), grant());
   assert.deepEqual(current.calls.login, [[Fixture.requestPrefix + Fixture.one, Fixture.username, Fixture.password]]); assert.equal(current.calls.restore.length, Fixture.zero); });
@@ -82,3 +83,17 @@ test(Fixture.names.missingResponse, async () => { const current = fixture(); cur
   await assert.rejects(current.authentication.login(input(), current.cancellation.signal), failure(library.IntegrationFailureCode.InvalidResponse)); });
 test(Fixture.names.lookupFailure, async () => { const current = fixture(); current.state.lookupFailure = true;
   await assert.rejects(current.authentication.login(input(), current.cancellation.signal), failure(library.IntegrationFailureCode.Unsupported)); });
+
+const BootstrapNames = Object.freeze({ forwards: 'Device bootstrap forwards its token only to the scoped native operation',
+  unavailable: 'An older native module without device bootstrap reports unsupported',
+  canceled: 'Canceling device bootstrap retires its native request and ignores a late grant' });
+test(BootstrapNames.forwards, async () => { const current = fixture();
+  assert.deepEqual(await current.authentication.bootstrap(Fixture.token, current.cancellation.signal), grant());
+  assert.deepEqual(current.calls.bootstrap, [[Fixture.requestPrefix + Fixture.one, Fixture.token]]);
+  assert.equal(current.calls.login.length + current.calls.restore.length, Fixture.zero); });
+test(BootstrapNames.unavailable, async () => { const current = fixture(); delete current.native.bootstrap;
+  await assert.rejects(current.authentication.bootstrap(Fixture.token, current.cancellation.signal), failure(library.IntegrationFailureCode.Unsupported)); });
+test(BootstrapNames.canceled, async () => { const current = fixture(); current.state.pending = deferred();
+  const bootstrapping = current.authentication.bootstrap(Fixture.token, current.cancellation.signal); await flush(); current.cancellation.abort();
+  await assert.rejects(bootstrapping, failure(library.IntegrationFailureCode.Canceled)); current.state.pending.resolve(grant()); await flush();
+  assert.deepEqual(current.calls.canceled, [Fixture.requestPrefix + Fixture.one]); });

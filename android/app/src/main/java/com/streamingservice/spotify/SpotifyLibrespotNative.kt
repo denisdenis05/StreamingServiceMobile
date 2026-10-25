@@ -6,7 +6,7 @@ internal object SpotifyLibrespotNative : SpotifyLibrespotExecution {
     }
 
     external override fun begin(identifier: String): String
-    external override fun execute(identifier: String, operation: String, username: String, password: String, storedCredential: String): String
+    external override fun execute(identifier: String, operation: String, username: String, password: String, credential: String): String
     external override fun cancel(identifier: String)
     external override fun finish(identifier: String)
     external fun cancelAll()

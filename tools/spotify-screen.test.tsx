@@ -26,7 +26,7 @@ const Names = Object.freeze({ connect: 'Login opens only on a press and supplies
 
 let snapshot: SpotifyMobileSnapshot;
 const controller = {
-  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), loginWithLibrespot: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
+  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), loginWithLibrespot: jest.fn(), loginWithDeviceAuthorization: jest.fn(), openDeviceAuthorization: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
   createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
@@ -235,3 +235,33 @@ test(LibrespotVerificationScreenName, async () => { snapshot = { ...connection(f
   loginStage: SpotifyLoginStage.Authorizing, failure: IntegrationFailureCode.Unsupported }; await render();
   const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.librespotUnsupported);
   expect(text).not.toContain(SpotifyJamCopy.loginCancelled); expect(controller.restore).not.toHaveBeenCalled(); });
+
+const DeviceScreenFixture = Object.freeze({ code: 'ABCDEF', address: 'https://spotify.com/pair?code=ABCDEF', expirationMilliseconds: 90000,
+  names: Object.freeze({ login: 'Primary device login opens only after an explicit press without requiring password or developer configuration',
+    pairing: 'Pending pairing displays its public code and differentiates the separate email verification code',
+    cancel: 'Cancel sign-in retires a pending pairing through the existing forgetting action',
+    rejected: 'A device approval rejection names pairing rather than password credentials' }) });
+test(DeviceScreenFixture.names.login, async () => { snapshot = connection(false); await render();
+  expect(controller.loginWithDeviceAuthorization).not.toHaveBeenCalled(); expect(button(SpotifyJamCopy.deviceConnect).props.disabled).toBe(false);
+  await act(async () => button(SpotifyJamCopy.deviceConnect).props.onPress());
+  expect(controller.loginWithDeviceAuthorization).toHaveBeenCalled(); expect(controller.login).not.toHaveBeenCalled(); expect(controller.loginWithLibrespot).not.toHaveBeenCalled(); });
+test(DeviceScreenFixture.names.pairing, async () => { snapshot = { ...connection(false), operation: SpotifyMobileOperation.Connecting,
+  authenticationMethod: SpotifyLoginMethod.Librespot, deviceAuthorizationLogin: true,
+  deviceAuthorization: { userCode: DeviceScreenFixture.code, verificationAddress: DeviceScreenFixture.address, expiresAtMilliseconds: DeviceScreenFixture.expirationMilliseconds } }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(DeviceScreenFixture.code); expect(text).toContain(SpotifyJamCopy.pairingExplanation);
+  expect(text).toContain(SpotifyJamCopy.waitingApproval); expect(button(SpotifyJamCopy.deviceConnect).props.disabled).toBe(true);
+  await act(async () => button(SpotifyJamCopy.reopenVerification).props.onPress()); expect(controller.openDeviceAuthorization).toHaveBeenCalled(); });
+test(DeviceScreenFixture.names.cancel, async () => { snapshot = { ...connection(false), operation: SpotifyMobileOperation.Connecting,
+  authenticationMethod: SpotifyLoginMethod.Librespot, deviceAuthorizationLogin: true }; await render();
+  await act(async () => button(SpotifyJamCopy.cancelSignIn).props.onPress()); expect(controller.disconnect).toHaveBeenCalled(); });
+test(DeviceScreenFixture.names.rejected, async () => { snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot,
+  deviceAuthorizationLogin: true, failure: IntegrationFailureCode.Unauthorized }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.deviceRejected); expect(text).not.toContain(SpotifyJamCopy.librespotRejected); });
+
+const DeviceBootstrapScreenName = 'Approved pairing shows native completion instead of asking the user to approve the same code again';
+test(DeviceBootstrapScreenName, async () => { snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot,
+  deviceAuthorizationLogin: true, loginStage: SpotifyLoginStage.Exchanging, failure: IntegrationFailureCode.Unsupported,
+  deviceAuthorization: { userCode: DeviceScreenFixture.code, verificationAddress: DeviceScreenFixture.address, expiresAtMilliseconds: DeviceScreenFixture.expirationMilliseconds } }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.deviceSessionRejected);
+  expect(text).toContain(SpotifyJamCopy.loginSteps[SpotifyLoginStage.Exchanging]); expect(text).not.toContain(SpotifyJamCopy.waitingApproval);
+  expect(rendered.root.findAllByType(DefaultButton).some(instance => instance.props.title === SpotifyJamCopy.reopenVerification)).toBe(false); });

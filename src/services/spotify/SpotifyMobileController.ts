@@ -1,5 +1,5 @@
 import { IntegrationFailure, IntegrationFailureCode, JamJoinMode, JamConnectionStatus, SpotifyLoginMethod, SpotifyLoginStage } from 'streaming-service-spotify-jam';
-import type { Clock, JamCommandResult, JamSessionClient, JamSnapshot, LibrespotLoginInput, SpotifyCredentialProvider, SpotifyCredentials, SpotifyLoginConfiguration, SpotifyLoginProvider } from 'streaming-service-spotify-jam';
+import type { Clock, JamCommandResult, JamSessionClient, JamSnapshot, LibrespotDeviceAuthorizationView, LibrespotLoginInput, SpotifyCredentialProvider, SpotifyCredentials, SpotifyLoginConfiguration, SpotifyLoginProvider } from 'streaming-service-spotify-jam';
 import type { SpotifyApplicationAccount, SpotifyDeviceSelection } from './SpotifyIntegrationConnection';
 import type { SpotifyAccountGateway, SpotifyMobileDevice, SpotifyMobileIdentity } from './SpotifyMobileGateway';
 import { SpotifyMobilePolicy } from './SpotifyMobilePolicy';
@@ -18,6 +18,8 @@ export interface SpotifyMobileSnapshot {
   readonly authenticationAction?: SpotifyAuthenticationAction;
   readonly authenticationMethod?: SpotifyLoginMethod;
   readonly loginStage?: SpotifyLoginStage;
+  readonly deviceAuthorization?: LibrespotDeviceAuthorizationView;
+  readonly deviceAuthorizationLogin?: boolean;
   readonly authorizationReturnStatus?: SpotifyAuthorizationReturnStatus;
   readonly connected: boolean;
   readonly displayName: string | null;
@@ -39,7 +41,9 @@ export interface SpotifyMobileDependencies {
   readonly disconnect: () => void;
   readonly createLogin?: (configuration: SpotifyLoginConfiguration, progress?: (stage: SpotifyLoginStage) => void) => SpotifyLoginProvider;
   readonly createLibrespotLogin?: (input: LibrespotLoginInput, progress?: (stage: SpotifyLoginStage) => void) => SpotifyLoginProvider;
-  readonly restoreLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void) => Promise<SpotifyLoginProvider | null>;
+  readonly createDeviceLogin?: (progress?: (stage: SpotifyLoginStage) => void, observer?: (authorization: LibrespotDeviceAuthorizationView) => void) => SpotifyLoginProvider;
+  readonly openVerificationPage?: (address: string, cancellation: AbortSignal) => Promise<void>;
+  readonly restoreLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void, observer?: (authorization: LibrespotDeviceAuthorizationView) => void) => Promise<SpotifyLoginProvider | null>;
   readonly resumeLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void) => Promise<SpotifyLoginProvider | null>;
   readonly forgetSavedLogin?: (applicationAccountIdentifier: string) => Promise<void>;
   readonly membershipRefreshed?: () => void;
@@ -168,6 +172,41 @@ export class SpotifyMobileController {
     }
   }
 
+  async loginWithDeviceAuthorization(): Promise<void> {
+    const account = this.dependencies.account.getSnapshot();
+    if (this.disposed || !account.isLoggedIn || account.accountIdentifier === null) return this.fail(IntegrationFailureCode.Unauthorized);
+    if (!this.dependencies.createDeviceLogin) return this.fail(IntegrationFailureCode.Unsupported);
+    this.disconnect();
+    this.applicationAccountIdentifier = account.accountIdentifier;
+    const lifetime = this.cancellation;
+    this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting,
+      authenticationAction: SpotifyAuthenticationAction.Login, authenticationMethod: SpotifyLoginMethod.Librespot, deviceAuthorizationLogin: true, loginStage: SpotifyLoginStage.Preparing });
+    try {
+      const login = this.dependencies.createDeviceLogin(stage => this.loginProgress(stage, lifetime),
+        authorization => this.deviceAuthorizationProgress(authorization, lifetime));
+      this.loginSession = login;
+      const credentials = await login.login(lifetime.signal);
+      if (this.current(lifetime)) await this.establishLogin(login, credentials, lifetime);
+    } catch (failure) {
+      if (this.current(lifetime)) this.authenticationFailed(this.failureCode(failure), SpotifyAuthenticationAction.Login);
+    }
+  }
+
+  async openDeviceAuthorization(): Promise<void> {
+    const authorization = this.snapshot.deviceAuthorization;
+    if (!authorization || !this.dependencies.openVerificationPage) return this.fail(IntegrationFailureCode.Unsupported);
+    if (this.dependencies.clock.nowMilliseconds() >= authorization.expiresAtMilliseconds) return this.fail(IntegrationFailureCode.Unauthorized);
+    const lifetime = this.cancellation;
+    try { await this.dependencies.openVerificationPage(authorization.verificationAddress, lifetime.signal); }
+    catch (failure) { if (this.current(lifetime)) this.fail(this.failureCode(failure)); }
+  }
+
+  private deviceAuthorizationProgress(authorization: LibrespotDeviceAuthorizationView, lifetime: AbortController): void {
+    if (!this.current(lifetime) || this.snapshot.operation !== SpotifyMobileOperation.Connecting) return;
+    this.publish({ ...this.snapshot, deviceAuthorizationLogin: true, deviceAuthorization: Object.freeze({ userCode: authorization.userCode,
+      verificationAddress: authorization.verificationAddress, expiresAtMilliseconds: authorization.expiresAtMilliseconds }) });
+  }
+
   async restore(): Promise<void> {
     const account = this.dependencies.account.getSnapshot();
     if (this.disposed || !account.isLoggedIn || account.accountIdentifier === null) return this.fail(IntegrationFailureCode.Unauthorized);
@@ -178,7 +217,8 @@ export class SpotifyMobileController {
     this.publish({ ...EmptySnapshot, operation: SpotifyMobileOperation.Connecting,
       authenticationAction: SpotifyAuthenticationAction.Restore, loginStage: SpotifyLoginStage.Preparing });
     try {
-      const login = await this.dependencies.restoreLogin(account.accountIdentifier, lifetime.signal, stage => this.loginProgress(stage, lifetime));
+      const login = await this.dependencies.restoreLogin(account.accountIdentifier, lifetime.signal, stage => this.loginProgress(stage, lifetime),
+        authorization => this.deviceAuthorizationProgress(authorization, lifetime));
       if (!this.current(lifetime)) { login?.dispose?.(); return; }
       if (login === null) { this.publish(EmptySnapshot); return; }
       this.publish({ ...this.snapshot, authenticationMethod: login.authenticationMethod ?? SpotifyLoginMethod.OAuth });
@@ -244,11 +284,14 @@ export class SpotifyMobileController {
   private authenticationFailed(failure: IntegrationFailureCode, authenticationAction: SpotifyAuthenticationAction): void {
     const loginStage = this.snapshot.loginStage;
     const authenticationMethod = this.snapshot.authenticationMethod;
+    const deviceAuthorization = this.snapshot.deviceAuthorization;
+    const deviceAuthorizationLogin = this.snapshot.deviceAuthorizationLogin;
     const authorizationReturnStatus = authenticationMethod !== SpotifyLoginMethod.Librespot && loginStage === SpotifyLoginStage.Authorizing
       ? this.dependencies.authorizationReturnStatus?.() : undefined;
     this.retireConnection(authenticationAction !== SpotifyAuthenticationAction.Resume
       && (failure === IntegrationFailureCode.Unauthorized || failure === IntegrationFailureCode.InvalidResponse));
-    this.publish({ ...this.snapshot, authenticationAction, ...(authenticationMethod === undefined ? {} : { authenticationMethod }),
+    this.publish({ ...this.snapshot, authenticationAction, ...(deviceAuthorization === undefined ? {} : { deviceAuthorization }),
+      ...(deviceAuthorizationLogin === undefined ? {} : { deviceAuthorizationLogin }), ...(authenticationMethod === undefined ? {} : { authenticationMethod }),
       ...(loginStage === undefined ? {} : { loginStage }),
       ...(authorizationReturnStatus === undefined ? {} : { authorizationReturnStatus }), failure });
   }

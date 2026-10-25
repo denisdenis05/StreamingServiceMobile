@@ -44,9 +44,18 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const uncertain = snapshot.session?.status === JamConnectionStatus.Uncertain;
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
   const librespotLogin = snapshot.authenticationMethod === SpotifyLoginMethod.Librespot;
-  const loginStep = snapshot.loginStage === undefined ? null : librespotLogin && snapshot.loginStage === SpotifyLoginStage.Authorizing
+  const pairing = snapshot.deviceAuthorization;
+  const waitingForApproval = pairing !== undefined && (snapshot.loginStage === undefined
+    || snapshot.loginStage === SpotifyLoginStage.Preparing || snapshot.loginStage === SpotifyLoginStage.Authorizing);
+  const loginStep = waitingForApproval ? SpotifyJamCopy.waitingApproval : snapshot.loginStage === undefined ? null : librespotLogin && snapshot.loginStage === SpotifyLoginStage.Authorizing
     ? SpotifyJamCopy.librespotAuthorizing : SpotifyJamCopy.loginSteps[snapshot.loginStage];
-  const loginFailure = librespotLogin && (snapshot.failure === IntegrationFailureCode.Forbidden || snapshot.failure === IntegrationFailureCode.Unauthorized)
+  const deviceLogin = snapshot.deviceAuthorizationLogin === true;
+  const failedNativeBootstrap = deviceLogin && snapshot.loginStage === SpotifyLoginStage.Exchanging
+    && (snapshot.failure === IntegrationFailureCode.Unauthorized || snapshot.failure === IntegrationFailureCode.Forbidden
+      || snapshot.failure === IntegrationFailureCode.Unsupported || snapshot.failure === IntegrationFailureCode.InvalidResponse);
+  const loginFailure = failedNativeBootstrap ? SpotifyJamCopy.deviceSessionRejected : deviceLogin && snapshot.failure === IntegrationFailureCode.Unauthorized
+    ? SpotifyJamCopy.deviceRejected : deviceLogin && snapshot.failure === IntegrationFailureCode.Unsupported
+    ? SpotifyJamCopy.deviceUnavailable : librespotLogin && (snapshot.failure === IntegrationFailureCode.Forbidden || snapshot.failure === IntegrationFailureCode.Unauthorized)
     ? SpotifyJamCopy.librespotRejected : librespotLogin && snapshot.failure === IntegrationFailureCode.Unsupported
     ? SpotifyJamCopy.librespotUnsupported : snapshot.authenticationAction === SpotifyAuthenticationAction.Resume
     && (snapshot.failure === IntegrationFailureCode.Unauthorized || snapshot.failure === IntegrationFailureCode.InvalidResponse)
@@ -119,6 +128,20 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
       {sessionChanged && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{SpotifyJamCopy.sessionChanged}</DefaultText>}
       {busy && <View style={styles.row}><ActivityIndicator /><DefaultText>{SpotifyJamCopy.busy}</DefaultText></View>}
       {!snapshot.connected ? <View style={styles.section}>
+        <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.deviceHeading}</DefaultText>
+        <DefaultText style={styles.explanation}>{SpotifyJamCopy.deviceExplanation}</DefaultText>
+        <DefaultButton title={SpotifyJamCopy.deviceConnect} onPress={() => { void spotifyMobile.loginWithDeviceAuthorization(); }} disabled={busy} />
+        {waitingForApproval && pairing !== undefined && <View style={styles.section}>
+          <DefaultText>{SpotifyJamCopy.pairingCode + pairing.userCode}</DefaultText>
+          <DefaultText>{SpotifyJamCopy.pairingExpires + new Date(pairing.expiresAtMilliseconds).toLocaleTimeString()}</DefaultText>
+          <DefaultText style={styles.explanation}>{SpotifyJamCopy.pairingExplanation}</DefaultText>
+          <DefaultButton title={SpotifyJamCopy.reopenVerification} onPress={() => { void spotifyMobile.openDeviceAuthorization(); }} />
+        </View>}
+        {busy && <DefaultButton title={SpotifyJamCopy.cancelSignIn} onPress={disconnect} style={styles.neutral} />}
+        {loginStep !== null && <DefaultText>{loginStep}</DefaultText>}
+        {loginFailure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{loginFailure}</DefaultText>}
+        <DefaultButton title={SpotifyJamCopy.restore} onPress={() => { void spotifyMobile.restore(); }} disabled={busy} style={styles.neutral} />
+        <DefaultButton title={SpotifyJamCopy.forget} onPress={disconnect} disabled={busy} style={styles.neutral} />
         <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.librespotHeading}</DefaultText>
         <DefaultText style={styles.explanation}>{SpotifyJamCopy.librespotExplanation}</DefaultText>
         <TextInput value={username} onChangeText={setUsername} placeholder={SpotifyJamCopy.usernamePlaceholder}
@@ -130,10 +153,6 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
           autoCapitalize={InputPolicy.capitalization} autoComplete={InputPolicy.autoComplete}
           maxLength={LibrespotInputLimits.maximumPasswordCharacters} editable={!busy} style={styles.input} />
         <DefaultButton title={SpotifyJamCopy.librespotConnect} onPress={connectLibrespot} disabled={busy || !username.trim() || !password} />
-        {loginStep !== null && <DefaultText>{loginStep}</DefaultText>}
-        {loginFailure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{loginFailure}</DefaultText>}
-        <DefaultButton title={SpotifyJamCopy.restore} onPress={() => { void spotifyMobile.restore(); }} disabled={busy} style={styles.neutral} />
-        <DefaultButton title={SpotifyJamCopy.forget} onPress={disconnect} disabled={busy} style={styles.neutral} />
         <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.oauthHeading}</DefaultText>
         <DefaultText style={styles.explanation}>{SpotifyJamCopy.loginExplanation}</DefaultText>
         <DefaultText style={styles.explanation}>{SpotifyJamCopy.registrationNotice}</DefaultText>

@@ -9,14 +9,15 @@ const Names = Object.freeze({ android: 'Android Librespot authentication uses th
   ios: 'Librespot authentication reports unsupported on platforms without its native module',
   missing: 'A missing Android native module cannot silently fall back to public OAuth' });
 let operatingSystem: string = Fixture.android;
-const native = { login: jest.fn(), restore: jest.fn(), cancel: jest.fn() };
+const native = { login: jest.fn(), restore: jest.fn(), bootstrap: jest.fn(), cancel: jest.fn() };
+const linking = { openURL: jest.fn() };
 let nativeAvailable = true;
-jest.doMock(Imports.native, () => ({ Platform: { OS: operatingSystem },
+jest.doMock(Imports.native, () => ({ Platform: { OS: operatingSystem }, Linking: linking,
   NativeModules: nativeAvailable ? { SpotifyLibrespotSession: native } : {} }));
 const grant = { accountIdentifier: Fixture.account, accessToken: Fixture.token,
   expiresAtMilliseconds: Fixture.expiryMilliseconds, storedCredential: Fixture.storedCredential };
 beforeEach(() => { jest.resetModules(); jest.clearAllMocks(); operatingSystem = Fixture.android; nativeAvailable = true;
-  native.login.mockResolvedValue(grant); native.restore.mockResolvedValue(grant); });
+  native.login.mockResolvedValue(grant); native.restore.mockResolvedValue(grant); native.bootstrap.mockResolvedValue(grant); linking.openURL.mockResolvedValue(undefined); });
 function authentication() { return require(Imports.platform).spotifyLibrespotAuthentication; }
 test(Names.android, async () => { const adapter = authentication();
   expect(await adapter.login({ username: Fixture.username, password: Fixture.password }, new AbortController().signal)).toEqual(grant);
@@ -31,3 +32,13 @@ test(Names.ios, async () => { operatingSystem = Fixture.ios; const library = req
 test(Names.missing, async () => { nativeAvailable = false; const library = require(Imports.library);
   await expect(authentication().restore(Fixture.storedCredential, new AbortController().signal))
     .rejects.toMatchObject({ code: library.IntegrationFailureCode.Unsupported }); expect(native.restore).not.toHaveBeenCalled(); });
+
+const VerificationFixture = Object.freeze({ address: 'https://spotify.com/pair?code=ABCDEF',
+  name: 'Verification opens the system browser without waiting for its dismissal',
+  canceled: 'Canceled verification never launches a browser' });
+test(VerificationFixture.name, async () => { const platform = require(Imports.platform);
+  await platform.openSpotifyVerificationPage(VerificationFixture.address, new AbortController().signal);
+  expect(linking.openURL).toHaveBeenCalledWith(VerificationFixture.address); });
+test(VerificationFixture.canceled, async () => { const library = require(Imports.library); const platform = require(Imports.platform); const cancellation = new AbortController(); cancellation.abort();
+  await expect(platform.openSpotifyVerificationPage(VerificationFixture.address, cancellation.signal)).rejects.toMatchObject({ code: library.IntegrationFailureCode.Canceled });
+  expect(linking.openURL).not.toHaveBeenCalled(); });

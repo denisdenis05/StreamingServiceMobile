@@ -12,8 +12,8 @@ class SpotifyLibrespotSessionModule(reactContext: ReactApplicationContext) : Rea
     private val workers = Executors.newFixedThreadPool(MAXIMUM_WORKERS)
     private val execution = object : SpotifyLibrespotExecution {
         override fun begin(identifier: String): String = SpotifyLibrespotNative.begin(identifier)
-        override fun execute(identifier: String, operation: String, username: String, password: String, storedCredential: String): String =
-            SpotifyLibrespotNative.execute(identifier, operation, username, password, storedCredential)
+        override fun execute(identifier: String, operation: String, username: String, password: String, credential: String): String =
+            SpotifyLibrespotNative.execute(identifier, operation, username, password, credential)
         override fun cancel(identifier: String) { SpotifyLibrespotNative.cancel(identifier) }
         override fun finish(identifier: String) { SpotifyLibrespotNative.finish(identifier) }
     }
@@ -38,6 +38,17 @@ class SpotifyLibrespotSessionModule(reactContext: ReactApplicationContext) : Rea
             return
         }
         runner.start(requestIdentifier, RESTORE_OPERATION, EMPTY_TEXT, EMPTY_TEXT, storedCredential,
+            { result -> resolve(promise, result) }, { failure -> reject(promise, failure) })
+    }
+
+    @ReactMethod
+    fun bootstrap(requestIdentifier: String, accessToken: String, promise: Promise) {
+        if (accessToken.isEmpty() || accessToken.length > MAXIMUM_TOKEN_CHARACTERS
+            || accessToken.any { character -> character.isWhitespace() || character.isISOControl() }) {
+            reject(promise, INVALID_INPUT_FAILURE)
+            return
+        }
+        runner.start(requestIdentifier, BOOTSTRAP_OPERATION, EMPTY_TEXT, EMPTY_TEXT, accessToken,
             { result -> resolve(promise, result) }, { failure -> reject(promise, failure) })
     }
 
@@ -92,6 +103,7 @@ class SpotifyLibrespotSessionModule(reactContext: ReactApplicationContext) : Rea
         private const val MODULE_NAME = "SpotifyLibrespotSession"
         private const val LOGIN_OPERATION = "login"
         private const val RESTORE_OPERATION = "restore"
+        private const val BOOTSTRAP_OPERATION = "bootstrap"
         private const val EMPTY_TEXT = ""
         private const val MAXIMUM_WORKERS = 2
         private const val MAXIMUM_USERNAME_CHARACTERS = 512

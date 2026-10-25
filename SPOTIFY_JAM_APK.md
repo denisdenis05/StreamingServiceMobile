@@ -1,11 +1,37 @@
 # Spotify Jam personal-test app
 
-Updated 2026-10-25. The source implements independent Librespot login, optional
+Updated 2026-10-25. The source implements primary browser/device login, optional
+Librespot password login and optional
 Spotify browser login, secure saved-login
 restoration, Jam creation/sharing, experimental joining, app-song matching, host
 queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
+
+## Browser-assisted email-code build — 2026-10-25
+
+1. Install this APK and open Profile → Spotify Jam.
+2. Press the primary **Log in with Spotify** under Email code or browser login.
+3. Complete Spotify's browser login using its email code or another available
+   method, then approve pairing. The app's pairing code is a different code.
+4. Return to the app. It establishes and securely saves the native session.
+   After an app restart, open the Jam screen to resume pending approval.
+
+Password login remains a separate optional form. No installed Spotify client or
+developer client ID is needed for the primary flow. A native-session or Jam error
+is shown separately from approval. A consumed/interrupted approval requires a
+new sign-in; expired/denied transactions cannot be reused.
+
+Current artifact: `34,209,364` bytes (34.21 MB); SHA-256
+`5f22d37bbd46d776e63454d3f0c06b6814c560ceb16f47744ed0545c3598ed90`. The Hermes bundle is `2,100,320` bytes;
+packaged ARM64 native session is `4,278,512` bytes. Signature and
+16 KB archive alignment passed. The browser/device and optional-password markers
+are present in the embedded release bundle.
+
+Passed: 531 library, 261 mobile service, 74 UI/platform, nineteen Rust and 23
+Android JVM cases; full TypeScript, host JNI and release build checks. Live
+pairing initialization succeeded through the actual broker. Complete account
+approval/native bootstrap and private Jam access remain unverified on a phone.
 
 ## Librespot login build — 2026-10-25
 
@@ -20,7 +46,7 @@ establish that Spotify admitted this client to the private Jam service. Addition
 verification challenges unsupported by upstream are shown explicitly. Live login
 and Jam access on the reporting phone still need testing.
 
-Current artifact: `34,187,748` bytes (34.19 MB); SHA-256
+Previous password-login artifact: `34,187,748` bytes (34.19 MB); SHA-256
 `906794a0e9229f2c463f100627ad758fa73be577b5ba4bb91654c7b43f69e3af`. It is 4.36 MB larger than the previous
 APK. The included ARM64 native library is 4.28 MB; the Hermes bundle
 is `2,080,904` bytes. Signature, 16 KB zip/ELF alignment and native/library
@@ -88,9 +114,10 @@ or newer is required. It contains the release Hermes bundle and runs without
 Metro, using the project's existing debug signing configuration for testing.
 
 1. Install the APK, sign into StreamingService and open Profile → Spotify Jam.
-2. Enter your Spotify email/username and password in the primary account form,
-   then press Log in with librespot. No developer setup is required for this path.
-3. For the optional browser alternative, register your developer application with
+2. Use the primary browser/device action and approve on Spotify, where email-code
+   login is available for eligible accounts. Return to the app to finish. The
+   optional password form remains available. No developer setup is required.
+3. For the optional developer OAuth alternative, register your application with
    `streamingservicespotify://callback`, enter its client ID in the secondary form
    and press Log in with Spotify. No client secret or pasted token is used.
 4. Later visits attempt secure saved-login restoration for the current app account.

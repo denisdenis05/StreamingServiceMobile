@@ -4,6 +4,7 @@ import type { LibrespotAuthentication, LibrespotLoginInput, LibrespotSessionGran
 export interface SpotifyLibrespotNative {
   login(requestIdentifier: string, username: string, password: string): Promise<LibrespotSessionGrant>;
   restore(requestIdentifier: string, storedCredential: string): Promise<LibrespotSessionGrant>;
+  bootstrap?(requestIdentifier: string, accessToken: string): Promise<LibrespotSessionGrant>;
   cancel(requestIdentifier: string): void;
 }
 
@@ -25,6 +26,13 @@ export class SpotifyLibrespotAuthentication implements LibrespotAuthentication {
 
   restore(storedCredential: string, cancellation: AbortSignal): Promise<LibrespotSessionGrant> {
     return this.request((native, requestIdentifier) => native.restore(requestIdentifier, storedCredential), cancellation);
+  }
+
+  bootstrap(accessToken: string, cancellation: AbortSignal): Promise<LibrespotSessionGrant> {
+    return this.request((native, requestIdentifier) => {
+      if (!native.bootstrap) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+      return native.bootstrap(requestIdentifier, accessToken);
+    }, cancellation);
   }
 
   private async request(dispatch: (native: SpotifyLibrespotNative, requestIdentifier: string) => Promise<LibrespotSessionGrant>,

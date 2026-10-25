@@ -1,3 +1,79 @@
+# Browser-assisted email-code login — 2026-10-25
+
+The primary Log in with Spotify button now requests device authorization and
+opens Spotify's pairing page. The user can use an email code or another login
+method available there, approve and return to the app. Pairing code/expiry and
+reopen/cancel controls are shown in the app. Password login is secondary and
+developer OAuth remains optional. Pairing and emailed login codes are distinct.
+
+The library broker persists the private pending record before browser opening,
+waits the server interval, handles pending/slow_down/expiry/denial and sanitizes
+failures. UI snapshots include only public code, address and expiry. Pending state
+uses StreamingService.SpotifyDeviceAuthorization. in the device Keychain; only
+revocation markers enter AsyncStorage. Restoring the Jam screen checks native
+credentials first, then pending device authorization, then optional developer
+OAuth. Invalid/expired pending state cannot silently select another identity.
+Pending approval resumes on opening the Jam screen after restart, without another
+request or automatic browser launch. Cold-start navigation to that screen is not
+implemented.
+
+After approval, the pending record is consumed before native bootstrap. The
+approved access token is not saved. Native bootstrap uses the fixed eligible
+desktop client identity, obtains the canonical native session/reusable credential,
+and preserves that client/device binding on restoration. Existing platform
+password records still restore. Arbitrary client identities and malformed tokens
+are rejected before network work. Failure after token consumption requires new
+sign-in; unknown token outcomes are not replayed. Native bootstrap uses its
+sixty-second network deadline, separately from interactive approval expiry.
+
+Account replacement, cancel, Disconnect and Forget attempt all four namespaces.
+Observers and late results are account/lifetime-fenced. Approval and native
+bootstrap have separate visible phases; Jam rejection preserves account login.
+The installed Spotify client and developer client ID are unnecessary for this
+primary path. Native support remains Android ARM64; no new player is compiled.
+
+| Functionality | Dedicated tests |
+| --- | --- |
+| Start/poll forms, safe verification URLs, encrypted-record acknowledgement, interval/default/slow_down, expiry, denial, resume, consumption, cancellation and observers | Library `tests/device-authorization.test.mjs` |
+| Password-free single-use authorization/resume and shared native grant storage | Library `tests/librespot-login.test.mjs` |
+| Bootstrap dispatch and browser launch; native missing/cancel/failure boundaries | `tools/spotify-librespot-mobile.test.cjs`, `tools/spotify-librespot-platform.test.ts` |
+| Pending selector order and four-namespace forgetting | `tools/spotify-login-providers.test.cjs`, `tools/spotify-secure-platform.test.ts` |
+| Public pairing snapshot, account fences, cancel/reopen/restore and no profile HTTP | `tools/spotify-mobile.test.cjs` |
+| Primary device action, pairing metadata, approval/native phases, optional password and developer form | `tools/spotify-screen.test.tsx` |
+| Native desktop bootstrap/bound restoration, malformed/canceled token and real JNI transport | `native/librespot-session/tests/session_boundaries.rs`, `tools/fixtures/librespot-jni/com/streamingservice/spotify/SpotifyLibrespotNative.java` |
+
+Validation:
+
+- Library npm test: 531 cases across 23 files. Source/strict checks passed.
+  Package dry-run: 128 files, nothing published.
+- All 29 broker cases also passed against the installed React Native URL
+  polyfill, with no production network credentials.
+- Mobile test:spotify: 261 Node and 74 Jest cases passed. Full TypeScript passed.
+  Player-mobile: 320 passed; player integration: seven passed.
+- Native host: nineteen Rust cases and actual host JNI smoke passed, including
+  malformed and canceled bootstrap. No authentication network request was used.
+- Forced release bundle, native Rust build, Kotlin/JVM compilation and
+  :app:testReleaseUnitTest :app:assembleRelease passed using
+  -PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain. All 23 JVM
+  cases passed. Rust uses the existing isolated toolchain and NDK/API24 setup.
+
+The real broker was also used for a live accountless device-authorization request.
+Spotify returned valid pairing metadata. The public observer canceled before
+browser opening, token polling, or native bootstrap. No account was authenticated,
+no email was requested and no private device credential was logged or persisted
+outside the in-memory test adapter. This proves initialization only.
+
+Final APK: 34,209,364 bytes (34.21 MB); embedded Hermes
+bundle 2,100,320 bytes; ARM64 native session 4,278,512 bytes.
+Signature/16 KB archive alignment checks passed. The packaged native library
+matches Gradle's stripped output. Broker, pairing-help, password-option and native
+module markers are present. Hash and source revisions are beside the APK.
+
+No ADB device is connected. Completed browser approval, native bootstrap,
+OS storage and private Jam admission still need the reporting phone. Existing
+guest playback and background synchronization limitations remain. See library
+LIBRESPOT_AUTH.md and the previous research report for the protocol design.
+
 # Independent Librespot login — 2026-10-25
 
 Implemented the primary username/password login with pinned librespot-core,
