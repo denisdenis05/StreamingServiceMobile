@@ -1,3 +1,14 @@
+# Host lifecycle follow-up — 2026-10-25
+
+The new probe uses production native grant IPC and the production TypeScript
+login/session/runtime with the mobile regional service resolver. After user
+pairing, absent/present membership reads, owned active Jam creation, invitation
+generation and native saved-session restoration succeeded. One participant and
+no host device were observed. A second-account invitation check is pending;
+this temporary Jam is still active, with cleanup tracked in the mobile progress.
+No control command or guest/audio success is claimed. Private IPC carries native
+grants only between local child/parent processes and is not console output.
+
 # Live-tested paired Login5 — 2026-10-25
 
 The user approved browser pairing for a local runner using the actual library

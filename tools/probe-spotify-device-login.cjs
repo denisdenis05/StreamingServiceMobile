@@ -1,14 +1,19 @@
-const { execFile } = require('node:child_process');
-const path = require('node:path');
-const readline = require('node:readline');
-const { setTimeout: wait } = require('node:timers/promises');
-const library = require('streaming-service-spotify-jam');
+const Imports = Object.freeze({ subprocess: 'node:child_process', path: 'node:path', readline: 'node:readline',
+  timers: 'node:timers/promises', library: 'streaming-service-spotify-jam' });
+const { execFile } = require(Imports.subprocess);
+const path = require(Imports.path);
+const readline = require(Imports.readline);
+const { setTimeout: wait } = require(Imports.timers);
+const library = require(Imports.library);
+const NativeProgramRelativePath = '../native/librespot-session/target/debug/examples/session_probe';
 
 const ProbePolicy = Object.freeze({ browserProgram: 'xdg-open', browserTimeoutMilliseconds: 20000,
   requestTimeoutMilliseconds: 30000, nativeTimeoutMilliseconds: 490000, maximumOutputBytes: 16384,
   successStatus: 'success', failureStatus: 'failure', lineSeparator: '\n',
   minimumHttpStatus: 100, maximumHttpStatus: 599, failureExitCode: 1,
   interactiveArgument: '--interactive', retryCommand: 'retry', stopCommand: 'stop',
+  grantArgument: '--grant', restoreArgument: '--restore', maximumGrantBytes: 131072,
+  stringType: 'string',
   profileAddress: 'https://api.spotify.com/v1/me',
   jamStatusAddress: 'https://gew1-spclient.spotify.com/social-connect/v2/sessions/current',
   tokenProfileStage: 'approved-token-profile', tokenJamStage: 'approved-token-jam-status',
@@ -16,7 +21,7 @@ const ProbePolicy = Object.freeze({ browserProgram: 'xdg-open', browserTimeoutMi
   pipeErrorEvent: 'error',
   recoveryDelayMilliseconds: 5000, maximumRecoveryAttempts: 12, initialRecoveryCount: 0, recoveryIncrement: 1,
   millisecondsPerSecond: 1000, maximumRecoveryDelayMilliseconds: 300000,
-  nativeProgram: path.resolve(__dirname, '../native/librespot-session/target/debug/examples/session_probe'),
+  nativeProgram: path.resolve(__dirname, NativeProgramRelativePath),
   platforms: Object.values({ linux: 'linux', android: 'android', ios: 'ios', windows: 'windows', macos: 'macos' }),
   nativeStages: Object.values({ connection: 'access-point', keymaster: 'keymaster-playback-scopes',
     streaming: 'keymaster-streaming-scope', login: 'login5', directLogin: 'login5-without-client-token',
@@ -56,6 +61,32 @@ function nativeProbe(accessToken, cancellation) {
     });
     child.stdin.on(ProbePolicy.pipeErrorEvent, () => undefined);
     child.stdin.end(accessToken);
+  });
+}
+
+function parseNativeGrant(serialized) {
+  try {
+    const value = JSON.parse(serialized);
+    if (value && ProbePolicy.failureCodes.includes(value.failure)) throw new library.IntegrationFailure(value.failure);
+    if (!value || typeof value.accountIdentifier !== ProbePolicy.stringType || typeof value.accessToken !== ProbePolicy.stringType
+      || typeof value.storedCredential !== ProbePolicy.stringType || !Number.isSafeInteger(value.expiresAtMilliseconds)) {
+      throw new library.IntegrationFailure(library.IntegrationFailureCode.InvalidResponse);
+    }
+    return { accountIdentifier: value.accountIdentifier, accessToken: value.accessToken,
+      storedCredential: value.storedCredential, expiresAtMilliseconds: value.expiresAtMilliseconds };
+  } catch (failure) {
+    throw new library.IntegrationFailure(failure instanceof library.IntegrationFailure ? failure.code : library.IntegrationFailureCode.InvalidResponse);
+  }
+}
+
+function nativeSessionGrant(credential, restore, cancellation) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(ProbePolicy.nativeProgram, [restore ? ProbePolicy.restoreArgument : ProbePolicy.grantArgument],
+      { signal: cancellation, timeout: ProbePolicy.nativeTimeoutMilliseconds, maxBuffer: ProbePolicy.maximumGrantBytes }, (failure, standardOutput) => {
+        if (failure) { reject(new library.IntegrationFailure(library.IntegrationFailureCode.Network)); return; }
+        try { resolve(parseNativeGrant(standardOutput)); } catch (failure) { reject(failure); }
+      });
+    child.stdin.on(ProbePolicy.pipeErrorEvent, () => undefined); child.stdin.end(credential);
   });
 }
 
@@ -124,10 +155,8 @@ async function tokenStatus(stage, address, accessToken, cancellation) {
   } catch { return { stage, code: library.IntegrationFailureCode.Network }; }
 }
 
-async function main() {
-  const cancellation = new AbortController();
-  const store = memoryAuthorizationStore();
-  const broker = new library.LibrespotDeviceAuthorization({
+function createDeviceAuthorization(bootstrap, store) {
+  return new library.LibrespotDeviceAuthorization({
     clock: { nowMilliseconds: () => Date.now() }, authorizationStore: store,
     scheduler: { schedule: (delayMilliseconds, callback) => { const handle = setTimeout(callback, delayMilliseconds); return () => clearTimeout(handle); } },
     requests: { execute: async request => {
@@ -141,15 +170,21 @@ async function main() {
       console.log(ProbeCopy.addressPrefix + view.verificationAddress);
       console.log(ProbeCopy.waiting);
     },
-    bootstrap: async (accessToken, signal) => {
+    bootstrap,
+  });
+}
+
+async function main() {
+  const cancellation = new AbortController();
+  const store = memoryAuthorizationStore();
+  const broker = createDeviceAuthorization(async (accessToken, signal) => {
       console.log(ProbeCopy.approved);
       console.log(JSON.stringify(await tokenStatus(ProbePolicy.tokenProfileStage, ProbePolicy.profileAddress, accessToken, signal)));
       console.log(JSON.stringify(await tokenStatus(ProbePolicy.tokenJamStage, ProbePolicy.jamStatusAddress, accessToken, signal)));
       const reports = await observeNative(accessToken, signal);
       await interactiveProbe(accessToken, signal);
       return reports;
-    },
-  });
+    }, store);
   try { await authorizeWithRecovery({ broker, store, cancellation: cancellation.signal,
     wait: (delayMilliseconds, signal) => wait(delayMilliseconds, undefined, { signal }),
     onRecovery: code => console.log(JSON.stringify({ stage: ProbePolicy.deviceAuthorizationStage, code, resuming: true })),
@@ -161,5 +196,6 @@ async function main() {
   }
 }
 
-module.exports = { parseNativeReports, memoryAuthorizationStore, authorizeWithRecovery };
+module.exports = { parseNativeReports, memoryAuthorizationStore, authorizeWithRecovery, createDeviceAuthorization,
+  parseNativeGrant, nativeSessionGrant };
 if (require.main === module) void main();

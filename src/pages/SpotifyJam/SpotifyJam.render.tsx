@@ -13,6 +13,7 @@ import SpotifyRecordingQueue from './SpotifyRecordingQueue.render';
 import SpotifyHostedQueue from './SpotifyHostedQueue.render';
 import SpotifyJamMembership from './SpotifyJamMembership.render';
 import SpotifySharedPlayback from './SpotifySharedPlayback.render';
+import SpotifyPlaybackControls from './SpotifyPlaybackControls.render';
 import { spotifyRouteSongSelection } from '../../services/spotify/SpotifySongSelection';
 
 const InputPolicy = Object.freeze({ capitalization: 'none', autoComplete: 'off',
@@ -165,6 +166,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
       </View> : <>
         <SpotifyJamMembership />
         <SpotifySharedPlayback />
+        <SpotifyPlaybackControls />
         <SpotifyHostedQueue />
         {selection && selection.recordings.length > SpotifyMobilePolicy.emptyCount && <SpotifyRecordingQueue selection={selection} />}
         <View style={styles.section}>

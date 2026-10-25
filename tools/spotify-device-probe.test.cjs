@@ -1,7 +1,9 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { parseNativeReports, memoryAuthorizationStore, authorizeWithRecovery } = require('./probe-spotify-device-login.cjs');
-const { IntegrationFailure, IntegrationFailureCode } = require('streaming-service-spotify-jam');
+const Imports = Object.freeze({ test: 'node:test', assertion: 'node:assert/strict', probe: './probe-spotify-device-login.cjs',
+  library: 'streaming-service-spotify-jam' });
+const test = require(Imports.test);
+const assert = require(Imports.assertion);
+const { parseNativeReports, memoryAuthorizationStore, authorizeWithRecovery } = require(Imports.probe);
+const { IntegrationFailure, IntegrationFailureCode } = require(Imports.library);
 
 const Fixture = Object.freeze({ platform: 'linux', stage: 'keymaster-playback-scopes', success: 'success', failure: 'failure',
   rejectedStatus: 403, privateText: 'synthetic-private-response', malformed: '{synthetic-private-response',

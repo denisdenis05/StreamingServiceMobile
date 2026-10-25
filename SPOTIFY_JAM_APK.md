@@ -8,6 +8,24 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Owned-host playback controls build — 2026-10-25
+
+The Jam screen now includes Play/Pause/Next/Previous and seconds-based Seek for
+its owned active Spotify host. Commands check host/track state, share serialized
+request handling and block replay after an unknown outcome. Guest controls remain
+unavailable; background following and app-led hosting are not implemented.
+
+Live independent-login create/share/passive-refresh and restore succeeded. The
+test Jam has no active host, so command effects/audio remain unverified. An
+invitation has been offered for the pending second-account membership check.
+
+Current artifact: `34,236,080` bytes; SHA-256
+`0593292022067d5f8cbdf9183e46b3ed0d04d1d96247d6cdfc55fc9733518739`.
+Passed: library 556; mobile Node 273; UI/platform 84; diagnostic Node 16;
+native probe three; Rust 39/JNI; Android JVM 23/release assembly. Signature and
+16 KB archive alignment passed. Current probe/cleanup state is in
+SPOTIFY_INTEGRATION_PROGRESS.md.
+
 ## Live-tested paired Login5 build — 2026-10-25
 
 Current APK replaces the rejected Keymaster token exchange with stored-credential
@@ -19,7 +37,7 @@ restoration, expiry renewal and private Jam access still need separate checks.
 Install this APK, open Spotify Jam and start a fresh sign-in. Approve Spotify for
 Desktop, return manually and test saved-login restoration after restarting.
 
-Current artifact: `34,224,188` bytes; SHA-256
+Previous paired-Login5 artifact: `34,224,188` bytes; SHA-256
 `e1b67f91a4a7bcd4c703f2a9130f5176a2e5cf016532577b83a2d68128ee752f`.
 Native session library: `4,292,840` bytes. All 39 Rust, three native example,
 nine diagnostic Node and 23 Android JVM cases passed, plus host JNI and release

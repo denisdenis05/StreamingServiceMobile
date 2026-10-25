@@ -1,3 +1,64 @@
+# Owned-host playback command chapter — 2026-10-25
+
+Added explicit host Play/Pause/Next/Previous/Seek to the Jam screen and production
+runtime. The library serializes/deduplicates commands with membership/enqueue,
+requires owned active membership and its host, checks fresh playback before send,
+and fences stale account/session/host work. Seek captures/rechecks track identity
+and duration. A public API track transition can still race the final seek request;
+this does not provide private occurrence addressing or guest permissions.
+
+SpotifyPlaybackCommandStore exposes availability, pending, typed failure and
+uncertainty. It rejects malformed seconds, prevents duplicate busy taps, aborts
+retired seek preparation, ignores late results and retains uncertain mutation
+state across membership refresh. Reconnection retires that fence. The follower
+receives subsequent observations; there is no remote-command feedback loop.
+
+New live-probe commands use actual native bootstrap/restore and production
+LibrespotLoginSession/SpotifyJamRuntime/regional gateway resolution. Child-process
+stdout is private grant IPC consumed in memory, never forwarded to the console.
+Only fixed status/summary fields and an explicitly requested invitation are shown.
+The runner refuses to create over/end preexisting Jams and checks its own cleanup
+lease before ending a test Jam. Read-only catalog stubs are unused by lifecycle
+operations; no catalog or playback success is claimed from them.
+
+Live outcome with user-approved browser pairing: login, absent-Jam read,
+create, passive present/owned/active refresh, invitation generation and restore
+succeeded. The test Jam has one participant and no playback host. Guest invitation
+outcome and live playback commands remain pending.
+
+ACTIVE TEST CHECKPOINT: unified exec session 92646 runs the temporary Jam probe.
+It is waiting for the user's second-account invitation result. Credentials and
+the created-session cleanup lease are only in that process memory. Use status
+to inspect, end to remove only its test Jam, then quit to release the session.
+Do not claim cleanup until the end receipt succeeds. If the process is gone,
+reestablish authentication and inspect membership before changing remote state.
+
+Feature tests: library tests/hosted-playback-commands.test.mjs (19), mobile
+tools/spotify-playback-commands.test.cjs (12),
+tools/spotify-playback-controls-screen.test.tsx (8), and
+tools/spotify-jam-probe.test.cjs (7). Existing device-probe tests (9) cover recovery
+and private-field sanitization; example session_probe retains three native tests.
+All these authored JavaScript/TypeScript tools are now included in source checks.
+
+Passed: 556 library cases/source checks/strict compilation; 273 mobile Node and
+84 UI/platform cases; full app TypeScript; 16 diagnostic Node; three native probe;
+39 Rust and actual host JNI; 23 Android JVM cases. Forced release bundle and
+:app:testReleaseUnitTest :app:assembleRelease passed. Logs:
+/tmp/spotify-host-controls-{library-final,mobile-final,types,probes,native-probe,
+native-host,bundle-final,apk-final}.log.
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 34,236,080 bytes;
+SHA-256 0593292022067d5f8cbdf9183e46b3ed0d04d1d96247d6cdfc55fc9733518739.
+Hermes bundle 2,112,708 bytes; native library stays 4,292,840 bytes and uses the
+working paired Login5 exchange. Archive is ARM64; control markers, native byte
+match, license assets, signature and 16 KB alignment passed. Metadata/reports are
+beside the artifact. No server or player runtime code changed; no new iOS native
+login/background/guest transport is claimed.
+
+Next: second-account membership evidence and an active-host command check, then
+private guest queue/playback, app-led hosting, background transport and iOS native
+login. Leave the active test/cleanup checkpoint visible until resolved.
+
 # Phone sign-in confirmed by user — 2026-10-25
 
 The user reports that sign-in works with the paired Login5 APK delivered in the

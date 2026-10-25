@@ -31,6 +31,8 @@ const controller = {
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
 const SharedPlaybackScreen = '../src/pages/SpotifyJam/SpotifySharedPlayback.render';
+const PlaybackControlScreen = '../src/pages/SpotifyJam/SpotifyPlaybackControls.render';
+jest.doMock(PlaybackControlScreen, () => ({ __esModule: true, default: () => null }));
 jest.doMock(SharedPlaybackScreen, () => ({ __esModule: true, default: () => null }));
 jest.doMock(Imports.membership, () => ({ __esModule: true, default: () => null }));
 jest.doMock(Imports.hostedQueue, () => ({ __esModule: true, default: () => null }));

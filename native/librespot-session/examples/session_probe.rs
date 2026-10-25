@@ -33,6 +33,12 @@ const RUNTIME_STAGE: &str = "runtime";
 const SUCCESS_STATUS: &str = "success";
 const FAILURE_STATUS: &str = "failure";
 const FALLBACK_REPORT: &str = "{\"stage\":\"runtime\",\"status\":\"failure\",\"code\":\"invalid-response\"}";
+const GRANT_ARGUMENT: &str = "--grant";
+const RESTORE_ARGUMENT: &str = "--restore";
+const OPERATION_ARGUMENT_POSITION: usize = 1;
+
+#[derive(Serialize)]
+struct PrivateFailureReport { failure: &'static str }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,15 +152,33 @@ async fn android_login5_without_client_token(session: &Session) -> Result<(), Er
 fn main() {
     log::set_max_level(log::LevelFilter::Off);
     std::panic::set_hook(Box::new(|_| {}));
-    let mut access_token = String::new();
-    let maximum_input_bytes = (MAXIMUM_TOKEN_CHARACTERS + INPUT_BOUNDARY_INCREMENT_BYTES) as u64;
-    if io::stdin().take(maximum_input_bytes).read_to_string(&mut access_token).is_err()
-        || validate_bootstrap_token(&access_token).is_err() {
+    let operation = std::env::args().nth(OPERATION_ARGUMENT_POSITION);
+    let mut input_credential = String::new();
+    let maximum_input_characters = if operation.as_deref() == Some(RESTORE_ARGUMENT) {
+        streaming_spotify_session::model::MAXIMUM_STORED_CHARACTERS
+    } else { MAXIMUM_TOKEN_CHARACTERS };
+    let maximum_input_bytes = (maximum_input_characters + INPUT_BOUNDARY_INCREMENT_BYTES) as u64;
+    if io::stdin().take(maximum_input_bytes).read_to_string(&mut input_credential).is_err()
+        || operation.as_deref() != Some(RESTORE_ARGUMENT) && validate_bootstrap_token(&input_credential).is_err() {
         print_report(report(INPUT_STAGE, Some(Failure::InvalidInput), None));
         return;
     }
     match tokio::runtime::Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => runtime.block_on(probe(access_token)),
+        Ok(runtime) => match operation.as_deref() {
+            None => runtime.block_on(probe(input_credential)),
+            Some(GRANT_ARGUMENT) | Some(RESTORE_ARGUMENT) => {
+                let operation = if operation.as_deref() == Some(RESTORE_ARGUMENT) {
+                    streaming_spotify_session::operations::AuthenticationOperation::Restore { serialized: input_credential }
+                } else { streaming_spotify_session::operations::AuthenticationOperation::Bootstrap { access_token: input_credential } };
+                let result = runtime.block_on(streaming_spotify_session::operations::execute(operation, tokio_util::sync::CancellationToken::new()));
+                let serialized = match result {
+                    Ok(grant) => serde_json::to_string(&grant),
+                    Err(failure) => serde_json::to_string(&PrivateFailureReport { failure: failure.code() }),
+                };
+                println!("{}", serialized.unwrap_or_else(|_| FALLBACK_REPORT.to_owned()));
+            },
+            Some(_) => print_report(report(INPUT_STAGE, Some(Failure::InvalidInput), None)),
+        },
         Err(_) => print_report(report(RUNTIME_STAGE, Some(Failure::Network), None)),
     }
 }

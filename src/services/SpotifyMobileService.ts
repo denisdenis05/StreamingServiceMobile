@@ -20,6 +20,7 @@ import { SpotifyAuthorizationStartup } from './spotify/SpotifyAuthorizationStart
 import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
 import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
+import { SpotifyPlaybackCommandStore } from './spotify/SpotifyPlaybackCommandStore';
 import { sharedPlaybackNative, playbackApplication } from './NativeAudioRuntime';
 import { AppState, Linking } from 'react-native';
 
@@ -106,7 +107,7 @@ export const spotifyMobile = new SpotifyMobileController({
       recordings: new QueryableRecordingCatalog(MobileCompositionPolicy.catalogPrefix + TEMPORARY_API_URL,
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
-      enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier,
+      enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,
       scheduler: new SystemScheduler(), playbackClock }, selection).sessions;
   },
   disconnect: () => spotifyIntegration.disconnect(),
@@ -152,10 +153,15 @@ export const spotifyPlaybackFollower = new SpotifyPlaybackFollowerStore({
   }),
 });
 const PlaybackApplicationState = Object.freeze({ changeEvent: 'change', active: 'active' } as const);
+export const spotifyPlaybackCommands = new SpotifyPlaybackCommandStore({
+  getRuntime: () => spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime : null,
+  subscribeConnection: spotifyMobile.subscribe, nextIdentifier,
+});
 const stopPlaybackOnBackground = AppState.addEventListener(PlaybackApplicationState.changeEvent,
   state => { if (state !== PlaybackApplicationState.active) void spotifyPlaybackFollower.stop().catch(() => undefined); });
 module.hot?.dispose(() => {
   authorizationStartup.dispose();
+  spotifyPlaybackCommands.dispose();
   stopPlaybackOnBackground.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);
   spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose();
 });
