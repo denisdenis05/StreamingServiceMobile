@@ -1,10 +1,11 @@
 const { execFile } = require('node:child_process');
 const path = require('node:path');
 const readline = require('node:readline');
+const { setTimeout: wait } = require('node:timers/promises');
 const library = require('streaming-service-spotify-jam');
 
 const ProbePolicy = Object.freeze({ browserProgram: 'xdg-open', browserTimeoutMilliseconds: 20000,
-  requestTimeoutMilliseconds: 30000, nativeTimeoutMilliseconds: 250000, maximumOutputBytes: 16384,
+  requestTimeoutMilliseconds: 30000, nativeTimeoutMilliseconds: 490000, maximumOutputBytes: 16384,
   successStatus: 'success', failureStatus: 'failure', lineSeparator: '\n',
   minimumHttpStatus: 100, maximumHttpStatus: 599, failureExitCode: 1,
   interactiveArgument: '--interactive', retryCommand: 'retry', stopCommand: 'stop',
@@ -13,10 +14,13 @@ const ProbePolicy = Object.freeze({ browserProgram: 'xdg-open', browserTimeoutMi
   tokenProfileStage: 'approved-token-profile', tokenJamStage: 'approved-token-jam-status',
   deviceAuthorizationStage: 'device-authorization',
   pipeErrorEvent: 'error',
+  recoveryDelayMilliseconds: 5000, maximumRecoveryAttempts: 12, initialRecoveryCount: 0, recoveryIncrement: 1,
+  millisecondsPerSecond: 1000, maximumRecoveryDelayMilliseconds: 300000,
   nativeProgram: path.resolve(__dirname, '../native/librespot-session/target/debug/examples/session_probe'),
   platforms: Object.values({ linux: 'linux', android: 'android', ios: 'ios', windows: 'windows', macos: 'macos' }),
   nativeStages: Object.values({ connection: 'access-point', keymaster: 'keymaster-playback-scopes',
-    streaming: 'keymaster-streaming-scope', login: 'login5', directLogin: 'login5-without-client-token', input: 'input', runtime: 'runtime' }),
+    streaming: 'keymaster-streaming-scope', login: 'login5', directLogin: 'login5-without-client-token',
+    androidLogin: 'android-user-agent-login5-without-client-token', bootstrap: 'native-bootstrap', restore: 'native-restore', input: 'input', runtime: 'runtime' }),
   failureCodes: Object.values(library.IntegrationFailureCode) });
 
 const ProbeCopy = Object.freeze({ codePrefix: 'Pairing code: ', addressPrefix: 'Approval URL: ',
@@ -70,6 +74,29 @@ function memoryAuthorizationStore() {
   return { read: async () => serialized, write: async value => { serialized = value; }, clear: async () => { serialized = null; } };
 }
 
+async function authorizeWithRecovery(dependencies) {
+  let recoveries = ProbePolicy.initialRecoveryCount;
+  while (true) {
+    if (dependencies.cancellation.aborted) throw new library.IntegrationFailure(library.IntegrationFailureCode.Canceled);
+    try {
+      return await (recoveries === ProbePolicy.initialRecoveryCount
+        ? dependencies.broker.authorize(dependencies.cancellation) : dependencies.broker.resume(dependencies.cancellation));
+    } catch (failure) {
+      if (!(failure instanceof library.IntegrationFailure)
+        || ![library.IntegrationFailureCode.Network, library.IntegrationFailureCode.Deadline,
+          library.IntegrationFailureCode.RateLimited].includes(failure.code)
+        || recoveries >= ProbePolicy.maximumRecoveryAttempts || await dependencies.store.read(dependencies.cancellation) === null) throw failure;
+      const retryAfterMilliseconds = Number.isFinite(failure.retryAfterSeconds)
+        ? failure.retryAfterSeconds * ProbePolicy.millisecondsPerSecond : ProbePolicy.recoveryDelayMilliseconds;
+      const delayMilliseconds = Math.max(ProbePolicy.recoveryDelayMilliseconds, retryAfterMilliseconds);
+      if (delayMilliseconds > ProbePolicy.maximumRecoveryDelayMilliseconds) throw failure;
+      recoveries += ProbePolicy.recoveryIncrement;
+      dependencies.onRecovery(failure.code);
+      await dependencies.wait(delayMilliseconds, dependencies.cancellation);
+    }
+  }
+}
+
 async function observeNative(accessToken, signal) {
   const reports = await nativeProbe(accessToken, signal);
   for (const report of reports) console.log(JSON.stringify(report));
@@ -99,8 +126,9 @@ async function tokenStatus(stage, address, accessToken, cancellation) {
 
 async function main() {
   const cancellation = new AbortController();
+  const store = memoryAuthorizationStore();
   const broker = new library.LibrespotDeviceAuthorization({
-    clock: { nowMilliseconds: () => Date.now() }, authorizationStore: memoryAuthorizationStore(),
+    clock: { nowMilliseconds: () => Date.now() }, authorizationStore: store,
     scheduler: { schedule: (delayMilliseconds, callback) => { const handle = setTimeout(callback, delayMilliseconds); return () => clearTimeout(handle); } },
     requests: { execute: async request => {
       const response = await fetch(request.address, { method: request.method, headers: request.headers, body: request.body,
@@ -122,7 +150,10 @@ async function main() {
       return reports;
     },
   });
-  try { await broker.authorize(cancellation.signal); }
+  try { await authorizeWithRecovery({ broker, store, cancellation: cancellation.signal,
+    wait: (delayMilliseconds, signal) => wait(delayMilliseconds, undefined, { signal }),
+    onRecovery: code => console.log(JSON.stringify({ stage: ProbePolicy.deviceAuthorizationStage, code, resuming: true })),
+  }); }
   catch (failure) {
     console.log(JSON.stringify({ stage: ProbePolicy.deviceAuthorizationStage, code: failure instanceof library.IntegrationFailure
       ? failure.code : library.IntegrationFailureCode.Network }));
@@ -130,5 +161,5 @@ async function main() {
   }
 }
 
-module.exports = { parseNativeReports, memoryAuthorizationStore };
+module.exports = { parseNativeReports, memoryAuthorizationStore, authorizeWithRecovery };
 if (require.main === module) void main();

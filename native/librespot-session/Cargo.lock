@@ -2189,6 +2189,7 @@ dependencies = [
  "librespot-protocol",
  "log",
  "protobuf",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

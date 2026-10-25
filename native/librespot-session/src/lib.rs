@@ -1,4 +1,5 @@
 pub mod model;
+pub mod desktop_login5;
 pub mod operations;
 pub mod session;
 

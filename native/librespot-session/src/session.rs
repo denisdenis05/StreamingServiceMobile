@@ -10,7 +10,7 @@ const UNAUTHORIZED_STATUS: i32 = 401;
 const ACCOUNT_RESTRICTED_STATUS: i32 = 402;
 const FORBIDDEN_STATUS: i32 = 403;
 const RATE_LIMITED_STATUS: i32 = 429;
-pub const DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER: &str = "65b708073fc0480ea92a077233ca87bd";
+pub use crate::desktop_login5::CLIENT_IDENTIFIER as DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER;
 pub const DEVICE_AUTHORIZATION_TOKEN_SCOPES: &str = "streaming,user-read-private,user-read-playback-state,user-read-currently-playing,user-modify-playback-state";
 
 pub fn authentication_stage_failure(failure: Failure, rejected_stage: Failure) -> Failure {
@@ -105,7 +105,7 @@ pub async fn bootstrap(access_token: String) -> Result<SessionGrant, Failure> {
 
 async fn grant(session: &Session) -> Result<SessionGrant, Failure> {
     let token = request_session_token(&session.client_id(),
-        || async { session.token_provider().get_token(DEVICE_AUTHORIZATION_TOKEN_SCOPES).await.map_err(sanitized_failure) },
+        || crate::desktop_login5::session_token(session),
         || async { session.login5().auth_token().await.map_err(sanitized_failure) },
     ).await.map_err(|failure| authentication_stage_failure(failure, Failure::NativeTokenRejected))?;
     let account_identifier = session.username();

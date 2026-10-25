@@ -8,6 +8,23 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Live-tested paired Login5 build — 2026-10-25
+
+Current APK replaces the rejected Keymaster token exchange with stored-credential
+Login5 without client-token. Browser pairing, an Android-user-agent request and
+the production native bootstrap/restore functions succeeded against Spotify on
+Linux. Actual Android login and private Jam access still require a phone check.
+
+Install this APK, open Spotify Jam and start a fresh sign-in. Approve Spotify for
+Desktop, return manually and test saved-login restoration after restarting.
+
+Current artifact: `34,224,188` bytes; SHA-256
+`e1b67f91a4a7bcd4c703f2a9130f5176a2e5cf016532577b83a2d68128ee752f`.
+Native session library: `4,292,840` bytes. All 39 Rust, three native example,
+nine diagnostic Node and 23 Android JVM cases passed, plus host JNI and release
+assembly. Signature and 16 KB archive/ELF alignment passed. Full live evidence
+and limits are in SPOTIFY_AUTH_LIVE_RESEARCH.md.
+
 ## Pairing native-session follow-up — 2026-10-25
 
 The primary pairing request is named **Spotify for Desktop**. The installed
@@ -21,7 +38,7 @@ rejection stages identify which native step Spotify refused. Unsupported
 verification and transient failures preserve their recovery classifications.
 This addresses a plausible failure path; the reporting phone must verify it.
 
-Current artifact: `34,236,404` bytes; SHA-256
+Previous Keymaster artifact: `34,236,404` bytes; SHA-256
 `b13249690aa2b9f946bfcc1ff712f8d3d919fa2b9e360850b076fab8ca80ecb5`.
 Library 537, mobile service 261, UI/platform 76, Rust 26 and Android JVM 23
 cases passed, plus host JNI and release assembly. Signature and 16 KB ZIP/ELF

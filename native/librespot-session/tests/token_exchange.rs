@@ -10,7 +10,7 @@ const NATIVE_SESSION_REJECTION_CODE: &str = "native-session-rejected";
 const NATIVE_TOKEN_REJECTION_CODE: &str = "native-token-rejected";
 
 #[tokio::test]
-async fn desktop_authorization_uses_keymaster_without_requesting_android_login5_metadata() {
+async fn desktop_authorization_uses_its_dedicated_login5_exchange_without_android_client_token_metadata() {
     let desktop_requested = Cell::new(false);
     let mobile_requested = Cell::new(false);
     let result = request_session_token(DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER,
@@ -23,7 +23,7 @@ async fn desktop_authorization_uses_keymaster_without_requesting_android_login5_
 }
 
 #[tokio::test]
-async fn password_session_retains_login5_without_requesting_keymaster() {
+async fn password_session_retains_upstream_login5_without_requesting_the_desktop_exchange() {
     let desktop_requested = Cell::new(false);
     let mobile_requested = Cell::new(false);
     let result = request_session_token(MOBILE_CLIENT_IDENTIFIER,

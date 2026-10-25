@@ -17,6 +17,11 @@ const KEYMASTER_STAGE: &str = "keymaster-playback-scopes";
 const STREAMING_STAGE: &str = "keymaster-streaming-scope";
 const LOGIN5_STAGE: &str = "login5";
 const LOGIN5_WITHOUT_CLIENT_TOKEN_STAGE: &str = "login5-without-client-token";
+const ANDROID_LOGIN5_WITHOUT_CLIENT_TOKEN_STAGE: &str = "android-user-agent-login5-without-client-token";
+const NATIVE_BOOTSTRAP_STAGE: &str = "native-bootstrap";
+const NATIVE_RESTORE_STAGE: &str = "native-restore";
+const ANDROID_OS_VERSION: &str = "14";
+const TRANSPORT_FAILURE_MESSAGE: &str = "Diagnostic transport failed";
 const LOGIN5_ADDRESS: &str = "https://login5.spotify.com/v3/login";
 const POST_METHOD: &str = "POST";
 const ACCEPT_HEADER: &str = "accept";
@@ -73,16 +78,31 @@ async fn probe(access_token: String) {
     let mut configuration = SessionConfig::default();
     configuration.client_id = DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER.to_owned();
     let session = Session::new(configuration, None);
-    if observe(CONNECTION_STAGE, session.connect(Credentials::with_access_token(access_token), false)).await {
+    if observe(CONNECTION_STAGE, session.connect(Credentials::with_access_token(access_token.clone()), false)).await {
         observe(KEYMASTER_STAGE, session.token_provider().get_token(DEVICE_AUTHORIZATION_TOKEN_SCOPES)).await;
         observe(STREAMING_STAGE, session.token_provider().get_token(STREAMING_SCOPE)).await;
         observe(LOGIN5_STAGE, session.login5().auth_token()).await;
         observe(LOGIN5_WITHOUT_CLIENT_TOKEN_STAGE, login5_without_client_token(&session)).await;
+        observe(ANDROID_LOGIN5_WITHOUT_CLIENT_TOKEN_STAGE, android_login5_without_client_token(&session)).await;
     }
     session.shutdown();
+    match streaming_spotify_session::operations::execute(
+        streaming_spotify_session::operations::AuthenticationOperation::Bootstrap { access_token },
+        tokio_util::sync::CancellationToken::new()).await {
+        Ok(grant) => {
+            print_report(report(NATIVE_BOOTSTRAP_STAGE, None, None));
+            match streaming_spotify_session::operations::execute(
+                streaming_spotify_session::operations::AuthenticationOperation::Restore { serialized: grant.stored_credential },
+                tokio_util::sync::CancellationToken::new()).await {
+                Ok(_) => print_report(report(NATIVE_RESTORE_STAGE, None, None)),
+                Err(failure) => print_report(report(NATIVE_RESTORE_STAGE, Some(failure), None)),
+            }
+        },
+        Err(failure) => print_report(report(NATIVE_BOOTSTRAP_STAGE, Some(failure), None)),
+    }
 }
 
-async fn login5_without_client_token(session: &Session) -> Result<(), Error> {
+fn stored_credential_request(session: &Session) -> Result<Vec<u8>, Error> {
     let request = LoginRequest {
         client_info: MessageField::some(ClientInfo { client_id: session.client_id(),
             device_id: session.device_id().to_owned(), ..Default::default() }),
@@ -90,14 +110,37 @@ async fn login5_without_client_token(session: &Session) -> Result<(), Error> {
             username: session.username(), data: session.auth_data(), ..Default::default()
         })), ..Default::default()
     };
-    let response = session.http_client().request_body(http::Request::builder()
-        .method(POST_METHOD).uri(LOGIN5_ADDRESS).header(ACCEPT_HEADER, PROTOBUF_MEDIA_TYPE)
-        .body(request.write_to_bytes()?.into())?).await?;
-    match LoginResponse::parse_from_bytes(&response)?.response {
+    Ok(request.write_to_bytes()?)
+}
+
+fn validate_login_response(response: &[u8]) -> Result<(), Error> {
+    match LoginResponse::parse_from_bytes(response)?.response {
         Some(Response::Ok(_)) => Ok(()),
         Some(Response::Challenges(_)) => Err(Error::unimplemented(LOGIN5_CHALLENGE_MESSAGE)),
         _ => Err(Error::failed_precondition(LOGIN5_REJECTED_MESSAGE)),
     }
+}
+
+async fn login5_without_client_token(session: &Session) -> Result<(), Error> {
+    let response = session.http_client().request_body(http::Request::builder()
+        .method(POST_METHOD).uri(LOGIN5_ADDRESS).header(ACCEPT_HEADER, PROTOBUF_MEDIA_TYPE)
+        .body(stored_credential_request(session)?.into())?).await?;
+    validate_login_response(&response)
+}
+
+async fn android_login5_without_client_token(session: &Session) -> Result<(), Error> {
+    let user_agent = format!("Spotify/{} Android/{} ({})", librespot_core::version::SPOTIFY_MOBILE_VERSION,
+        ANDROID_OS_VERSION, librespot_core::version::VERSION_STRING);
+    let client = reqwest::Client::builder().user_agent(user_agent).build()
+        .map_err(|_| Error::unavailable(TRANSPORT_FAILURE_MESSAGE))?;
+    let response = client.post(LOGIN5_ADDRESS).header(ACCEPT_HEADER, PROTOBUF_MEDIA_TYPE)
+        .body(stored_credential_request(session)?).send().await
+        .map_err(|_| Error::unavailable(TRANSPORT_FAILURE_MESSAGE))?;
+    if !response.status().is_success() {
+        return Err(HttpClientError::StatusCode(response.status()).into());
+    }
+    let response = response.bytes().await.map_err(|_| Error::unavailable(TRANSPORT_FAILURE_MESSAGE))?;
+    validate_login_response(&response)
 }
 
 fn main() {

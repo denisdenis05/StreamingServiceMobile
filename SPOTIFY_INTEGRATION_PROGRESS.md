@@ -1,3 +1,44 @@
+# Paired Login5 fix verified against Spotify — 2026-10-25
+
+The approved browser test reproduced Keymaster 403 with both broad and streaming
+scopes. Login5 without client-token succeeded, including a separate request with
+an Android-style user agent. The production native bootstrap and restore functions
+then succeeded with that approved session on Linux. This replaces the prior
+Keymaster candidate. No Android hardware is connected; phone behavior still
+requires a fresh pairing on the reporting device.
+
+Paired desktop credentials now use a dedicated stored-credential Login5 exchange
+without the Android client-token request. Password sessions retain upstream
+Login5. Client/device/account binding and native record schemas stay unchanged.
+The protocol bounds response/token/expiry and challenge data, handles hashcash
+using Librespot's solver, preserves transient/unsupported categories and avoids
+cross-client fallback. Transport, clock and solver are injected for unit tests.
+
+The diagnostic runner now resumes pending tickets on bounded transient failures,
+respects Retry-After, and never replays consumed approvals. Tokens and reusable
+credentials stayed in memory; the interactive process was stopped after testing.
+SPOTIFY_AUTH_LIVE_RESEARCH.md contains the live evidence, feature/test mapping,
+commands and exact platform limits.
+
+Validation: npm run test:spotify-native passed 39 Rust cases and host JNI smoke;
+separate example tests passed three cases, Node probe tests nine cases. Android
+:app:testReleaseUnitTest :app:assembleRelease passed, with 23 JVM cases. Existing
+public profile calls returned 503/429 and passive current-Jam reads returned 404;
+none counts as confirmed Jam admission. No Jam was created or changed.
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 34,224,188 bytes;
+SHA-256 e1b67f91a4a7bcd4c703f2a9130f5176a2e5cf016532577b83a2d68128ee752f.
+Packaged native library: 4,292,840 bytes, SHA-256
+bd74ded44efcf2b576e4257ee4451aa306fe2289cd3858bce9960501b6dde2e8.
+Hermes bundle remains 2,100,816 bytes because JavaScript is unchanged. Native
+bytes match the Gradle stripped build output. Signature, ARM64 archive, license
+assets and 16 KB ZIP/ELF alignment passed. Metadata/checksum/reports are beside
+the APK. Logs: /tmp/spotify-login5-{android,native-host-final,apk}.log.
+
+Next: install this APK and perform fresh phone pairing, restart/restore, then
+private Jam creation and queue checks. The Linux live result and Android-style
+request do not claim actual mobile persistence, Jam admission or playback.
+
 # Live token-exchange reproduction — 2026-10-25
 
 The user approved a desktop-browser pairing for the new local diagnostic runner.

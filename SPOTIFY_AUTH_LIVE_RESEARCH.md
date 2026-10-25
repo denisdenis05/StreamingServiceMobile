@@ -1,46 +1,70 @@
-# Live pairing and native-token investigation — 2026-10-25
+# Live-tested paired Login5 — 2026-10-25
 
-The user approved a desktop-browser device pairing for the local diagnostic
-runner. The runner used the actual library device-authorization broker, its five
-configured scopes, an isolated in-memory pending store and the pinned native
-Librespot dependency. It sent the approved token to the diagnostic executable
-through stdin. No access/reusable/refresh credentials were written to disk or
-printed. The user's existing browser handled sign-in and approval.
+The user approved browser pairing for a local runner using the actual library
+broker and pinned Librespot revision 99b6088. The first approved run reproduced
+Keymaster HTTP 403 after successful access-point connection. Upstream Login5
+succeeded. A subsequent polling process exited on a transient network failure
+before receiving approval; its private in-memory transaction was lost. The
+runner now resumes existing pending tickets after bounded transient failures,
+respects Retry-After, and never replays an already consumed approval.
 
-| Live step | Result |
+The next approved run remained open for rebuilt native probes. Its live results:
+
+| Step | Result |
 | --- | --- |
-| Device authorization and approval | Completed |
-| Approved token, public profile GET | HTTP 503; not a successful profile check |
-| Approved token, passive current-Jam GET | HTTP 404; not proof of Jam admission |
+| Browser device authorization and approval | Completed |
+| Approved bearer, public profile GET | HTTP 429; first run returned 503 |
+| Approved bearer, passive current-Jam GET | HTTP 404; no admission claim |
 | Native access-point connection | Succeeded on Linux |
-| Keymaster with the five playback/account scopes | HTTP 403 |
-| Keymaster with streaming alone | HTTP 403 |
-| Upstream Login5 stored-credential token exchange | Succeeded on Linux |
+| Keymaster, all five account/playback scopes | HTTP 403 |
+| Keymaster, streaming alone | HTTP 403 |
+| Upstream Login5 stored-credential exchange | Succeeded on Linux |
+| Dedicated Login5 request without client-token | Succeeded on Linux |
+| Same request with Android-style user agent | Succeeded, from Linux |
+| Actual production bootstrap with dedicated exchange | Succeeded, validated native grant |
+| Actual production restore from returned reusable record | Succeeded |
 
-This reproduces the current token rejection after successful native connection.
-It invalidates the earlier assumption that Keymaster was the right fix. Do not
-ship another Keymaster-based APK as repaired from unit tests alone. The original
-Android Login5 failure is still unexplained; Linux success does not prove its
-Android client-token/user-agent/device-metadata behavior.
+The Android-user-agent request used the pinned mobile version and representative
+Android 14 metadata through a separate reqwest client. It was not execution on
+an Android device. During the interactive run, both direct request outcomes used
+the old login5-without-client-token stage label; the second was the Android-user-agent
+call. The two runtime outcomes were production bootstrap followed by restore.
+The tool now emits distinct descriptive labels for future runs.
 
-Primary upstream context:
-https://github.com/librespot-org/librespot/issues/1532
-reports Keymaster 403 and recommends Login5; the local live result is independent
-of that report. Upstream issue 1771 separately documents Login5 HTTP 503; this
-session's Linux Login5 call succeeded, so that issue is not the observed failure.
+Production paired sessions now use stored-credential Login5 without client-token,
+keeping the original desktop client/device/account binding. Password sessions
+retain upstream Login5 and platform client tokens. The previous Keymaster route
+is removed from production minting. No fallback replays rejected credentials
+under another identity. The protocol validates token/expiry/account and bounded
+response/challenge data; injected HTTP, clock and solver support deterministic
+tests. Hashcash rounds use Librespot's bounded solver. Code verification remains
+unsupported. Transient/verification categories retain their recovery behavior.
 
-The native example session_probe compares both Keymaster scopes, upstream Login5
-and a diagnostic stored-credential Login5 request without client-token. It emits
-only platform, fixed stage/status, sanitized category and optional HTTP status.
-It never formats upstream error text, URI, response payload, account or tokens.
-Each network step has a sixty-second deadline. The diagnostic direct request is
-not production authentication and reports verification challenges as unsupported.
+Primary upstream context: https://github.com/librespot-org/librespot/issues/1532
+reports Keymaster 403 and recommends Login5. The local live results above are
+independent evidence. Issue 1771 documents Login5 503 elsewhere; the local
+Login5 request succeeded and does not reproduce that separate issue.
 
-The Node runner validates and projects native reports before printing, opens the
-pairing page and keeps pending state in memory. --interactive retains the approved
-token only in the running process so retry can execute a rebuilt probe without
-another approval; stop ends that session. Closing the process discards it.
-It performs passive HTTP checks only and does not create or modify a Jam.
+Credentials stayed in process memory. The token reached the native executable
+through stdin, never command arguments. Probe outputs contain only fixed stages,
+platform, sanitized categories and structured HTTP status. No user account,
+access/reusable/refresh credential, request URI or private response payload was
+printed or saved. The interactive runner was stopped after verification, closing
+that token's local lifetime. Browser sign-in remained on Spotify's own page.
+No Jam was created or changed by these tests.
+
+Feature mapping and validation:
+- native/librespot-session/tests/desktop_login5.rs: 13 tests for endpoint/header
+  binding, canonical account/token/expiry, malformed and oversized replies,
+  transient errors, verification, hashcash context/solution and solver failures,
+  challenge bounds and request limits.
+- native/librespot-session/tests/token_exchange.rs and session_boundaries.rs:
+  26 routing, failure, credential, cancellation and lifecycle cases.
+- native/librespot-session/examples/session_probe.rs: three report/deadline tests.
+- tools/spotify-device-probe.test.cjs: nine output sanitization, storage isolation,
+  resume/no-replay, rejection, Retry-After, retry bound and cancellation cases.
+- npm run test:spotify-native passed all 39 native cases and actual host JNI smoke.
+- :app:testReleaseUnitTest :app:assembleRelease passed with 23 JVM cases.
 
 Commands:
 - cargo build --locked --manifest-path native/librespot-session/Cargo.toml --example session_probe
@@ -48,13 +72,13 @@ Commands:
 - cargo test --locked --manifest-path native/librespot-session/Cargo.toml --example session_probe
 - node --test tools/spotify-device-probe.test.cjs
 
-Dedicated tests passed: three native report/deadline tests and three Node report
-validation/private-field rejection/in-memory isolation tests. HTTP and protobuf
-are added only as dev-dependencies, already present at identical locked versions
-in the native dependency graph. Production native routing has not changed in
-this diagnostic chapter; no new APK has been built.
+HTTP/protobuf become direct production dependencies at the same versions already
+used transitively. reqwest is a diagnostic dev-dependency at the existing locked
+version. Existing third-party notices already cover all three packages.
 
-At this checkpoint the second browser pairing is waiting for the user's approval.
-The additional no-client-token result is unverified. Next: collect it, compare
-Android metadata if needed, implement the evidenced exchange and then verify
-native grant restoration and build an APK. Android hardware remains disconnected.
+APK details are in SPOTIFY_JAM_APK.md. No TypeScript runtime, React Native bridge
+signature, native reusable record schema or pending pairing schema changed.
+The release bundle is reused because JavaScript did not change; Android native
+code was rebuilt. Next: install the new APK, start fresh pairing on the phone,
+and verify sign-in and saved-session restoration. Actual Android execution,
+secure mobile persistence, private Jam admission and playback remain unverified.
