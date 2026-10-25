@@ -1,3 +1,11 @@
+# Phone sign-in confirmed by user — 2026-10-25
+
+The user reports that sign-in works with the paired Login5 APK delivered in the
+previous chapter. Record this as user-confirmed Android sign-in, not an observed
+agent device test. Saved-session restore after restart, expiry renewal, private
+Jam admission, guest queue propagation and synchronized playback were not
+individually confirmed by that report. No runtime code or APK changed here.
+
 # Paired Login5 fix verified against Spotify — 2026-10-25
 
 The approved browser test reproduced Keymaster 403 with both broad and streaming

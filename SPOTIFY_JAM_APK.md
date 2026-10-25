@@ -13,7 +13,8 @@ Spotify. Private guest playback and measured audio alignment remain open.
 Current APK replaces the rejected Keymaster token exchange with stored-credential
 Login5 without client-token. Browser pairing, an Android-user-agent request and
 the production native bootstrap/restore functions succeeded against Spotify on
-Linux. Actual Android login and private Jam access still require a phone check.
+Linux. The user subsequently confirmed Android sign-in works. Saved-session
+restoration, expiry renewal and private Jam access still need separate checks.
 
 Install this APK, open Spotify Jam and start a fresh sign-in. Approve Spotify for
 Desktop, return manually and test saved-login restoration after restarting.
