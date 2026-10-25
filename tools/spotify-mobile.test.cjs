@@ -108,7 +108,7 @@ function sessionResponse(owner = true) {
   invitation: { joinToken: Fixture.joinToken, address: Fixture.invitationAddress } };
 }
 
-function fixture() {
+function fixture(overrides = {}) {
   const listeners = new Set();
   let applicationAccount = { accountIdentifier: Fixture.applicationAccount, isLoggedIn: true };
   let nowMilliseconds = Fixture.initialClockMilliseconds;
@@ -153,6 +153,7 @@ function fixture() {
       return connectedSessions;
     },
     disconnect() { connectedSessions?.detachAccount(); connectedSessions = null; },
+    ...overrides,
   });
   return { controller, state, calls, listeners,
     provider: () => provider, advanceClock: () => { nowMilliseconds += SpotifyMobilePolicy.temporaryConnectionLifetimeMilliseconds; },
@@ -820,6 +821,47 @@ test(DeviceLoginFixture.names.reopen, async () => { const current = fixture(); c
   const signingIn = current.controller.loginWithDeviceAuthorization(); await current.controller.openDeviceAuthorization();
   assertion.equal(current.state.openedVerification[Fixture.firstPosition].address, DeviceLoginFixture.verificationAddress);
   current.controller.disconnect(); pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn; current.controller.dispose(); });
+
+const ConnectFixture = Object.freeze({ device: 'registered-native-device', generation: 2, ready: 'ready', connecting: 'connecting',
+  names: { lifetime: 'Accepted native login binds the connection to the controller lifetime and logout aborts it',
+    failure: 'Native connection setup failure cannot discard a successful Spotify login',
+    join: 'Librespot control joining uses the registered app device and cannot submit remote admission early',
+    projection: 'Native readiness changes reach the mobile snapshot and observers are released on disposal' } });
+test(ConnectFixture.names.lifetime, async () => {
+  let native; const current = fixture({ connectNative: (provider, accountIdentifier, cancellation) => { native = { provider, accountIdentifier, cancellation }; } });
+  const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(native.provider, login.provider); assertion.equal(native.accountIdentifier, Fixture.spotifyAccount);
+  assertion.equal(native.cancellation.aborted, false); current.controller.disconnect(); assertion.equal(native.cancellation.aborted, true);
+  current.controller.dispose();
+});
+test(ConnectFixture.names.failure, async () => {
+  const current = fixture({ connectNative: () => { throw new Error(Fixture.rawFailure); } });
+  const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().connected, true);
+  current.controller.dispose();
+});
+test(ConnectFixture.names.join, async () => {
+  const current = fixture({ nativeDeviceIdentifier: mode => mode === library.JamJoinMode.Control ? ConnectFixture.device : null });
+  const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(await current.controller.joinSession(Fixture.joinToken, library.JamJoinMode.Remote), false);
+  assertion.equal(current.calls.filter(call => call.operation === SpotifyMobileOperation.Joining).length, Fixture.noCalls);
+  await current.controller.joinSession(Fixture.joinToken, library.JamJoinMode.Control);
+  const joining = current.calls.find(call => call.operation === SpotifyMobileOperation.Joining);
+  assertion.equal(joining.values[Fixture.firstPosition + Fixture.sequenceIncrement + Fixture.sequenceIncrement], ConnectFixture.device);
+  current.controller.dispose();
+});
+test(ConnectFixture.names.projection, async () => {
+  const observers = new Set(); let native = { status: ConnectFixture.connecting, deviceIdentifier: null, generation: ConnectFixture.generation, failure: null };
+  const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } } });
+  const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().nativeConnection, native);
+  native = { ...native, status: ConnectFixture.ready, deviceIdentifier: ConnectFixture.device };
+  for (const observer of observers) observer(); assertion.equal(current.controller.getSnapshot().nativeConnection.deviceIdentifier, ConnectFixture.device);
+  current.controller.disconnect(); assertion.equal(current.controller.getSnapshot().nativeConnection, undefined);
+  current.controller.dispose(); assertion.equal(observers.size, Fixture.noCalls);
+});
 test(DeviceLoginFixture.names.expired, async () => { const current = fixture(); const login = librespotLogin(); const pending = deferred();
   current.state.deviceLogin = (_progress, observer) => { observer(deviceView({ expiresAtMilliseconds: Fixture.initialClockMilliseconds })); return login.provider; }; login.provider.login = () => pending.promise;
   const signingIn = current.controller.loginWithDeviceAuthorization(); await current.controller.openDeviceAuthorization();

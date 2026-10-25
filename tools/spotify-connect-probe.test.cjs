@@ -8,14 +8,16 @@ const { projectEvent, observeConnect } = require(Imports.probe);
 const Fixture = Object.freeze({ generation: 1, observedMilliseconds: 57, privateValue: 'synthetic-private-value',
   track: 'spotify:track:aaaaaaaaaaaaaaaaaaaaaa', revision: 'synthetic-revision', occurrence: 'synthetic-occurrence',
   connecting: 'connecting', registered: 'registered', membership: 'membership', reconnecting: 'reconnecting', stopped: 'stopped',
-  forbidden: 'forbidden', stage: 'connect-probe', line: '\n', refresh: 'refresh', stop: 'stop',
+  forbidden: 'forbidden', stage: 'connect-probe', failureStage: 'registrationProtobuf', line: '\n', refresh: 'refresh', stop: 'stop', restart: 'restart',
   zero: 0, one: 1, positionMilliseconds: 1234, anchorMilliseconds: 1700000000000,
   stdoutEvent: 'data', closeEvent: 'close',
   names: { projection: 'Connect diagnostics exclude account device session track and invitation identifiers',
     lifecycle: 'Connect lifecycle diagnostics allow fixed failure categories only',
     framing: 'Connect IPC joins split frames and writes credentials only to private child input',
     control: 'Connect probe sends only explicit refresh and stop operations',
-    malformed: 'Malformed native output is terminated without forwarding private text' } });
+    malformed: 'Malformed native output is terminated without forwarding private text',
+    restart: 'Native probe restart waits for cleanup and asks its parent to reuse the in-memory credential',
+    stage: 'Diagnostic failure stages allow fixed phase names without private request details' } });
 function event(data) { return { generation: Fixture.generation, observedMonotonicMilliseconds: Fixture.observedMilliseconds, data }; }
 function registration() { return event({ type: Fixture.registered, accountIdentifier: Fixture.privateValue,
   deviceIdentifier: Fixture.privateValue, cluster: { devices: [{ identifier: Fixture.privateValue }], activeDeviceIdentifier: Fixture.privateValue,
@@ -73,4 +75,15 @@ test(Fixture.names.malformed, async () => {
   fixture.child.stdout.write(Fixture.privateValue + Fixture.line);
   await assert.rejects(observing, failure => !failure.message.includes(Fixture.privateValue));
   assert.deepEqual(summaries, []);
+});
+test(Fixture.names.restart, async () => {
+  const fixture = childFixture(); const observing = observeConnect(Fixture.privateValue, () => undefined, () => fixture.child, fixture.input);
+  fixture.input.write(Fixture.restart + Fixture.line); fixture.child.emit(Fixture.closeEvent, Fixture.zero);
+  assert.equal(await observing, true);
+  assert.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: Fixture.stop });
+});
+test(Fixture.names.stage, () => {
+  assert.equal(projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.failureStage })).failureStage, Fixture.failureStage);
+  assert.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.privateValue })),
+    failure => !failure.message.includes(Fixture.privateValue));
 });

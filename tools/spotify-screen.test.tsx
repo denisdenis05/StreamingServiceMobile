@@ -7,6 +7,7 @@ import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobil
 import { SpotifyJamCopy } from '../src/pages/SpotifyJam/SpotifyJam.copy';
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy';
 import { SpotifyAuthorizationReturnStatus } from '../src/services/spotify/SpotifyLoginBrowser';
+import { SpotifyConnectStatus } from '../src/services/spotify/SpotifyConnectStore';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
@@ -16,6 +17,8 @@ const Fixture = Object.freeze({ spotifyAccount: 'spotify-account', displayName: 
   sessionIdentifier: 'session', otherSessionIdentifier: 'replacement-session', token: 'temporary-test-token', clientIdentifier: '0123456789abcdef0123456789abcdef', trackIdentifier: '0123456789abcdefghijkl', invitation: 'spotify:socialsession:invitation-test',
   firstPosition: 0, confirmationPosition: 1, alertButtonsArgumentIndex: 2, singleInvocationCount: 1 });
 const Names = Object.freeze({ connect: 'Login opens only on a press and supplies the public client identifier and callback',
+  nativeWaiting: 'Native connection readiness is separate from login and blocks joining until registered',
+  nativeReady: 'Registered native connection allows control joining while remote playback stays unavailable',
   create: 'Connected screen creates a Jam only when requested', join: 'Join sends the invitation in the selected membership mode',
   host: 'Host end requires the shared-session confirmation', guest: 'Guest sees leave instead of end',
   changedConfirmation: 'End confirmation cannot end a Jam that replaced the displayed session',
@@ -71,6 +74,23 @@ test(Names.connect, async () => {
   await act(async () => button(SpotifyJamCopy.connect).props.onPress());
   expect(controller.login).toHaveBeenCalledWith({ clientIdentifier: Fixture.clientIdentifier,
     redirectAddress: SpotifyJamCopy.redirectAddress, scopes: Object.values(SpotifyJamCopy.loginScopes) });
+});
+test(Names.nativeWaiting, async () => {
+  snapshot = { ...connection(), authenticationMethod: SpotifyLoginMethod.Librespot,
+    nativeConnection: { status: SpotifyConnectStatus.Reconnecting, deviceIdentifier: null,
+      generation: Fixture.singleInvocationCount, failure: IntegrationFailureCode.InvalidResponse } };
+  await render(); await act(async () => input(SpotifyJamCopy.invitePlaceholder).props.onChangeText(Fixture.invitation));
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.nativeConnectionStates[SpotifyConnectStatus.Reconnecting]);
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyFailureMessages[IntegrationFailureCode.InvalidResponse]);
+  expect(button(SpotifyJamCopy.join).props.disabled).toBe(true);
+});
+test(Names.nativeReady, async () => {
+  snapshot = { ...connection(), authenticationMethod: SpotifyLoginMethod.Librespot,
+    nativeConnection: { status: SpotifyConnectStatus.Ready, deviceIdentifier: Fixture.deviceIdentifier,
+      generation: Fixture.singleInvocationCount, failure: null } };
+  await render(); await act(async () => input(SpotifyJamCopy.invitePlaceholder).props.onChangeText(Fixture.invitation));
+  expect(button(SpotifyJamCopy.join).props.disabled).toBe(false); expect(button(SpotifyJamCopy.remoteMode).props.disabled).toBe(true);
+  expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.nativeConnectionStates[SpotifyConnectStatus.Ready]);
 });
 test(Names.create, async () => {
   await render(); expect(controller.createSession).not.toHaveBeenCalled();

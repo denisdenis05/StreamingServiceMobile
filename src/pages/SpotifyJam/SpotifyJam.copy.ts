@@ -1,11 +1,16 @@
 import { SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { SpotifyAuthorizationReturnStatus } from '../../services/spotify/SpotifyLoginBrowser';
+import { SpotifyConnectStatus } from '../../services/spotify/SpotifyConnectStore';
 
 export const SpotifyJamRoute = 'SpotifyJam';
 export const SpotifyJamCopy = Object.freeze({
   title: 'Spotify Jam', back: 'Back', introduction: 'Create a Jam, share an invitation, or join someone on Spotify.',
   testBuild: 'Personal test connection',
+  nativeConnectionStates: Object.freeze({ [SpotifyConnectStatus.Detached]: 'This device is disconnected from Spotify.',
+    [SpotifyConnectStatus.Connecting]: 'Connecting this device to Spotify…', [SpotifyConnectStatus.Ready]: 'This device is connected to Spotify.',
+    [SpotifyConnectStatus.Reconnecting]: 'Reconnecting this device to Spotify…', [SpotifyConnectStatus.Failed]: 'This device could not connect to Spotify.' }),
+  nativeControlNotice: 'Control-mode joining uses this app’s Spotify connection. Listening remotely is still being implemented.',
   deviceHeading: 'Email code or browser login',
   deviceConnect: 'Log in with Spotify',
   deviceExplanation: 'Continue on Spotify’s page or in the Spotify app. The pairing request is named Spotify for Desktop. Approve it, then return to this app manually; Spotify does not redirect you back.',

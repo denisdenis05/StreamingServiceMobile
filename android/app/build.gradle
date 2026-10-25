@@ -139,7 +139,9 @@ android {
 
 dependencies {
     def spotifyUnitTestFramework = "junit:junit:4.13.2"
+    def spotifyJsonTestLibrary = "org.json:json:20180813"
     testImplementation(spotifyUnitTestFramework)
+    testImplementation(spotifyJsonTestLibrary)
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation project(':react-native-config')

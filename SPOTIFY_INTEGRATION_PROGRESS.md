@@ -1,3 +1,55 @@
+# Android Connect ownership and hidden-device registration — 2026-10-26
+
+Implemented a React Native SpotifyConnectSession module, a native-owned polling
+worker and separate bounded lifecycle/command executors. Native start/close order
+is serialized so cancellation before queued start cannot orphan a device. Logout,
+account replacement and React reload cancel the owned session and drain cleanup
+before releasing it. Empty native batches do not generate JavaScript events.
+This is connection ownership, not a foreground playback service or background
+synchronization guarantee.
+
+LibrespotLoginSession now provides an explicit immutable native credential handoff
+only after durable login/renewal acknowledgement. Ordinary access-token results
+remain unchanged. The mobile connection store fences account/handle/generation
+changes, late starts, subscriber reentrancy and canceled replacements. Its cleanup
+barrier retains all retired bindings and supports explicit cleanup retry.
+Membership notifications trigger passive refresh. Native state is shown separately
+from login/Jam state. Control joining uses this app's verified device identifier;
+remote admission remains blocked until an actual playback adapter exists.
+
+Live browser approval succeeded with the user's help. The first transport failed
+because its hidden non-player observer was absent from the returned Cluster.device
+map. Fixed-stage diagnostics identified registrationDevice. Registration now
+verifies an omitted observer through the existing account-bound
+/social-connect/v2/devices/{deviceId}/jam_status endpoint and requires the exact
+server-returned identifier. It does not invent a cluster device or relax player
+registration. The corrected live probe registered successfully: deviceCount 0,
+no active device, a cached old track/queue with occurrence identifiers. These
+cached values are not accepted as proof of fresh playback or guest participation.
+
+ACTIVE LIVE CHECKPOINT: unified exec 79452 keeps the approved grant in memory and
+runs the corrected observer. User pairing JRPHFY has already been consumed; do
+not request it again. The runner supports refresh, restart and stop. After a
+native example rebuild, restart performs cleanup and starts the new binary with
+the same in-memory record. No credential is written to disk. A user request to
+start/pause/skip in Spotify is pending so fresh events can be checked. Earlier
+exec 83129 was closed cleanly with stop after the first failed validation.
+
+Validation: complete library suite 561 cases; mobile suite 293 Node and 89
+UI/platform cases; Android JVM 39 cases, including ten owner and six decoder
+cases; complete Rust/JNI 86 cases; developer probe suite 23 cases. Full app
+TypeScript passed. Final Android release bundle/assembly remains to run after
+source commit. No new APK has yet been assembled or installed.
+The corrected live connection also completed explicit refresh with no failure;
+it remained on generation 1 and returned the same cached inactive-host state.
+Full mapping: native/librespot-session/CONNECT_TRANSPORT.md and library FEATURES.md.
+
+Next: finish validation/build, preserve the live probe, verify fresh state and
+actual second-account guest admission, then implement shared queue operations,
+guest synchronized local audio, app-led authority and a real Android foreground
+playback lifecycle. The user explicitly requires continuing through the queue;
+a chapter commit or APK is not completion. iOS remains deferred.
+
 # Persistent Connect foundation in progress — 2026-10-25
 
 The active objective is all Android/library queue items 1–5 in

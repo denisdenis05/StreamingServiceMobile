@@ -6,6 +6,7 @@ use librespot_core::{http_client::HttpClientError, token::Token, Session, Sessio
 use librespot_protocol::connect::PutStateRequest;
 use protobuf::Message;
 use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use crate::{connect_device::{initial_registration, ConnectDeviceConfiguration},
@@ -22,6 +23,8 @@ const JSON_MEDIA_TYPE: &str = "application/json";
 const DEVICE_PATH_PREFIX: &str = "/connect-state/v1/devices/";
 const COMMAND_PATH_PREFIX: &str = "/connect-state/v1/player/command/from/";
 const COMMAND_TARGET_SEPARATOR: &str = "/to/";
+const JAM_DEVICE_PATH_PREFIX: &str = "/social-connect/v2/devices/";
+const JAM_DEVICE_STATUS_SUFFIX: &str = "/jam_status";
 const DEALER_SERVICE: &str = "dealer";
 const SECURE_WEBSOCKET_SCHEME: &str = "wss://";
 const TOKEN_QUERY_PARAMETER: &str = "access_token";
@@ -36,6 +39,29 @@ const NOT_FOUND_STATUS: u16 = 404;
 const RATE_LIMITED_STATUS: u16 = 429;
 const MINIMUM_SERVER_FAILURE_STATUS: u16 = 500;
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectFailureStage { Restore, DealerResolution, DealerAddress, DealerWebsocket, DealerEvents,
+    RegistrationEncoding, RegistrationHttp, RegistrationProtobuf, RegistrationDevice }
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RegistrationVerification { Cluster, DeviceStatus }
+
+#[derive(Deserialize)]
+struct DeviceStatusResponse { device_broadcast_status: DeviceBroadcastStatus }
+
+#[derive(Deserialize)]
+struct DeviceBroadcastStatus { device_id: String }
+
+pub fn verify_device_status(serialized: &[u8], expected_device_identifier: &str) -> Result<(), Failure> {
+    if serialized.len() > MAXIMUM_FRAME_BYTES { return Err(Failure::InvalidResponse); }
+    let response: DeviceStatusResponse = serde_json::from_slice(serialized).map_err(|_| Failure::InvalidResponse)?;
+    if response.device_broadcast_status.device_id != expected_device_identifier { return Err(Failure::InvalidResponse); }
+    identifier_segment(expected_device_identifier)?;
+    Ok(())
+}
+
 pub struct NativeConnectSession {
     session: Session,
     token: Option<Token>,
@@ -44,11 +70,14 @@ pub struct NativeConnectSession {
     connection_identifier: Option<String>,
     registered: bool,
     registration_attempted: bool,
+    pub failure_stage: ConnectFailureStage,
+    verification: RegistrationVerification,
 }
 
 pub trait ConnectSessionOperations: Send {
     fn device_identifier(&self) -> &str;
     fn account_identifier(&self) -> String;
+    fn registration_verification(&self) -> RegistrationVerification { RegistrationVerification::Cluster }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<(), Failure>> + Send;
@@ -102,7 +131,8 @@ impl NativeConnectSession {
         let session_configuration = stored_session_configuration(&stored, SessionConfig::default())?;
         let session = Session::new(session_configuration, None);
         let mut owned = Self { session, token: None, origin: String::new(), registration: PutStateRequest::new(),
-            connection_identifier: None, registered: false, registration_attempted: false };
+            connection_identifier: None, registered: false, registration_attempted: false, failure_stage: ConnectFailureStage::Restore,
+            verification: RegistrationVerification::Cluster };
         tokio::time::timeout(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECONDS),
             owned.session.connect(stored.credentials, false)).await.map_err(|_| Failure::Deadline)?.map_err(sanitized_failure)?;
         if owned.session.username() != stored.account_identifier { return Err(Failure::Unauthorized); }
@@ -126,8 +156,10 @@ impl NativeConnectSession {
     }
 
     pub async fn dealer_address(&mut self) -> Result<Url, Failure> {
+        self.failure_stage = ConnectFailureStage::DealerResolution;
         let (host, port) = self.session.apresolver().resolve(DEALER_SERVICE).await.map_err(sanitized_failure)?;
         if !host.ends_with(SERVICE_HOST_SUFFIX) { return Err(Failure::InvalidResponse); }
+        self.failure_stage = ConnectFailureStage::DealerAddress;
         let mut address = Url::parse(&format!("{SECURE_WEBSOCKET_SCHEME}{host}:{port}{EMPTY_PATH}")).map_err(|_| Failure::InvalidResponse)?;
         let access_token = self.access_token().await?;
         address.query_pairs_mut().append_pair(TOKEN_QUERY_PARAMETER, &access_token);
@@ -165,15 +197,28 @@ impl NativeConnectSession {
     }
 
     pub async fn register(&mut self, connection_identifier: String) -> Result<ConnectCluster, Failure> {
+        self.failure_stage = ConnectFailureStage::RegistrationEncoding;
         self.connection_identifier = Some(connection_identifier);
         self.registration.client_side_timestamp = epoch_milliseconds()?;
         let body = self.registration.write_to_bytes().map_err(|_| Failure::InvalidResponse)?;
         let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
         self.registration_attempted = true;
+        self.failure_stage = ConnectFailureStage::RegistrationHttp;
         let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, false).await?;
+        self.failure_stage = ConnectFailureStage::RegistrationProtobuf;
         let cluster = decode_cluster_snapshot(&response)?;
-        if !cluster.devices.iter().any(|device| device.identifier == self.device_identifier()) { return Err(Failure::InvalidResponse); }
+        self.failure_stage = ConnectFailureStage::RegistrationDevice;
+        if cluster.devices.iter().any(|device| device.identifier == self.device_identifier()) {
+            self.verification = RegistrationVerification::Cluster;
+        } else {
+            if self.registration.device.device_info.can_play { return Err(Failure::InvalidResponse); }
+            let path = JAM_DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())? + JAM_DEVICE_STATUS_SUFFIX;
+            let response = self.request(Method::GET, path, Vec::new(), JSON_MEDIA_TYPE, false).await?;
+            verify_device_status(&response, self.device_identifier())?;
+            self.verification = RegistrationVerification::DeviceStatus;
+        }
         self.registered = true;
+        self.failure_stage = ConnectFailureStage::DealerEvents;
         Ok(cluster)
     }
 
@@ -204,6 +249,7 @@ impl NativeConnectSession {
 impl ConnectSessionOperations for NativeConnectSession {
     fn device_identifier(&self) -> &str { NativeConnectSession::device_identifier(self) }
     fn account_identifier(&self) -> String { NativeConnectSession::account_identifier(self) }
+    fn registration_verification(&self) -> RegistrationVerification { self.verification }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send {
         NativeConnectSession::register(self, connection_identifier)
     }

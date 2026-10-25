@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_device::ConnectDeviceConfiguration, connect_session::{ConnectSessionOperations, NativeConnectSession},
+use crate::{connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -47,12 +47,12 @@ pub enum ConnectAction {
 #[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum ConnectEventData {
     Connecting,
-    Registered { account_identifier: String, device_identifier: String, cluster: ConnectCluster },
+    Registered { account_identifier: String, device_identifier: String, verification_source: RegistrationVerification, cluster: ConnectCluster },
     Cluster { cluster: ConnectCluster },
     Membership { update: Value },
     SessionMessage { message: Value },
     Command { key: String, request: Value },
-    Reconnecting { failure: &'static str },
+    Reconnecting { failure: &'static str, stage: ConnectFailureStage },
     Stopped { cleanup_failure: Option<&'static str> },
 }
 
@@ -144,7 +144,7 @@ pub async fn process_connected_events(session: &mut impl ConnectSessionOperation
                         let cluster = session.register(identifier).await?;
                         registered = true;
                         emit(events, generation, ConnectEventData::Registered { account_identifier: session.account_identifier(),
-                            device_identifier: session.device_identifier().to_owned(), cluster }, cancellation).await?;
+                            device_identifier: session.device_identifier().to_owned(), verification_source: session.registration_verification(), cluster }, cancellation).await?;
                     },
                     DealerInput::Cluster(cluster) if registered => emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?,
                     DealerInput::Membership(update) if registered => emit(events, generation, ConnectEventData::Membership { update }, cancellation).await?,
@@ -291,7 +291,7 @@ pub async fn run_connect_transport(serialized_credential: String, configuration:
             result = restore => match result {
                 Ok(session) => session,
                 Err(failure) => {
-                    let _ = emit(&events, generation, ConnectEventData::Reconnecting { failure: failure.code() }, &cancellation).await;
+                    let _ = emit(&events, generation, ConnectEventData::Reconnecting { failure: failure.code(), stage: ConnectFailureStage::Restore }, &cancellation).await;
                     if matches!(failure, Failure::Unauthorized | Failure::Forbidden | Failure::InvalidInput | Failure::Unsupported) { break; }
                     tokio::select! { _ = cancellation.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(RECONNECT_DELAY_SECONDS)) => continue }
                 },
@@ -299,10 +299,12 @@ pub async fn run_connect_transport(serialized_credential: String, configuration:
         };
         let result = async {
             let address = session.dealer_address().await?;
+            session.failure_stage = ConnectFailureStage::DealerWebsocket;
             let websocket_configuration = WebSocketConfig::default().max_message_size(Some(MAXIMUM_FRAME_BYTES)).max_frame_size(Some(MAXIMUM_FRAME_BYTES));
             let (socket, _) = tokio::time::timeout(Duration::from_secs(CONNECT_TIMEOUT_SECONDS),
                 connect_async_with_config(address.as_str(), Some(websocket_configuration), false)).await
                 .map_err(|_| Failure::Deadline)?.map_err(socket_failure)?;
+            session.failure_stage = ConnectFailureStage::DealerEvents;
             let (incoming_sender, mut incoming) = mpsc::channel(SOCKET_CHANNEL_CAPACITY);
             let (outgoing_sender, outgoing) = mpsc::channel(SOCKET_CHANNEL_CAPACITY);
             let socket_cancellation = cancellation.child_token();
@@ -329,7 +331,7 @@ pub async fn run_connect_transport(serialized_credential: String, configuration:
             return;
         }
         let failure = result.err().unwrap_or(Failure::Network);
-        let _ = emit(&events, generation, ConnectEventData::Reconnecting { failure: failure.code() }, &cancellation).await;
+        let _ = emit(&events, generation, ConnectEventData::Reconnecting { failure: failure.code(), stage: session.failure_stage }, &cancellation).await;
         if matches!(failure, Failure::Unauthorized | Failure::Forbidden | Failure::InvalidInput | Failure::Unsupported) { break; }
         tokio::select! { _ = cancellation.cancelled() => break, _ = tokio::time::sleep(Duration::from_secs(RECONNECT_DELAY_SECONDS)) => () }
     }

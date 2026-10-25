@@ -1,4 +1,4 @@
-import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization,
+import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
   QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
@@ -21,6 +21,8 @@ import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
 import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
 import { SpotifyPlaybackCommandStore } from './spotify/SpotifyPlaybackCommandStore';
+import { SpotifyConnectStore, SpotifyConnectStatus } from './spotify/SpotifyConnectStore';
+import { spotifyConnectNative, observeSpotifyConnect } from './SpotifyConnectPlatform';
 import { sharedPlaybackNative, playbackApplication } from './NativeAudioRuntime';
 import { AppState, Linking } from 'react-native';
 
@@ -56,10 +58,25 @@ function nextIdentifier(): string {
   return identifierPrefix + MobileCompositionPolicy.identifierSeparator + sequence;
 }
 
+export const spotifyConnect = new SpotifyConnectStore({ native: spotifyConnectNative, observe: observeSpotifyConnect, nextIdentifier,
+  membershipChanged: () => {
+    const runtime = spotifyIntegration.runtime;
+    if (runtime) void runtime.membership.refresh().catch(() => undefined);
+  },
+});
+
 export const spotifyMobile = new SpotifyMobileController({
+  nativeConnection: spotifyConnect,
   authorizationReturnStatus: () => spotifyLoginBrowser.getReturnStatus(),
   account: authenticationSession, gateway, clock, nextIdentifier,
   membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),
+  connectNative: (provider, accountIdentifier, cancellation) => {
+    if (provider.getNativeSessionCredential) void spotifyConnect.attach(provider, accountIdentifier, cancellation).catch(() => undefined);
+  },
+  nativeDeviceIdentifier: mode => {
+    const connection = spotifyConnect.getSnapshot();
+    return mode === JamJoinMode.Control && connection.status === SpotifyConnectStatus.Ready ? connection.deviceIdentifier : null;
+  },
   createLogin(configuration, progress) {
     const account = authenticationSession.getSnapshot();
     if (!account.isLoggedIn || account.accountIdentifier === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
@@ -160,6 +177,7 @@ export const spotifyPlaybackCommands = new SpotifyPlaybackCommandStore({
 const stopPlaybackOnBackground = AppState.addEventListener(PlaybackApplicationState.changeEvent,
   state => { if (state !== PlaybackApplicationState.active) void spotifyPlaybackFollower.stop().catch(() => undefined); });
 module.hot?.dispose(() => {
+  void spotifyConnect.detach().catch(() => undefined);
   authorizationStartup.dispose();
   spotifyPlaybackCommands.dispose();
   stopPlaybackOnBackground.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);

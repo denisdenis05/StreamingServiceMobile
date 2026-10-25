@@ -10,13 +10,15 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
   initialGeneration: 0, firstGeneration: 1, emptyCount: 0, exitFailure: 1,
   objectType: 'object', stringType: 'string', connecting: 'connecting', registered: 'registered', cluster: 'cluster',
   membership: 'membership', sessionMessage: 'sessionMessage', command: 'command', reconnecting: 'reconnecting', stopped: 'stopped',
-  refresh: 'refresh', stop: 'stop', quit: 'quit', interrupt: 'SIGINT', terminate: 'SIGTERM',
+  refresh: 'refresh', stop: 'stop', quit: 'quit', restart: 'restart', interrupt: 'SIGINT', terminate: 'SIGTERM',
+  failureStages: ['restore', 'dealerResolution', 'dealerAddress', 'dealerWebsocket', 'dealerEvents',
+    'registrationEncoding', 'registrationHttp', 'registrationProtobuf', 'registrationDevice'],
   lineEvent: 'line', closeEvent: 'close', errorEvent: 'error', dataEvent: 'data', endEvent: 'end', failureField: 'failure',
   networkFailure: 'network', invalidResponse: 'invalid-response', canceled: 'canceled',
   allowedFailures: ['network', 'invalid-response', 'invalid-input', 'unauthorized', 'forbidden', 'not-found',
     'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported'],
   stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'ignore' });
-const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, stop. Playback capability is disabled for this transport test.' });
+const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
 
 function projectEvent(value) {
   if (!value || typeof value !== Policy.objectType || !Number.isSafeInteger(value.generation)
@@ -29,7 +31,8 @@ function projectEvent(value) {
   if ([Policy.reconnecting, Policy.stopped].includes(data.type)) {
     const failure = data.type === Policy.stopped ? data.cleanupFailure : data.failure;
     if (failure !== null && !Policy.allowedFailures.includes(failure)) throw new Error(Policy.invalidResponse);
-    return { ...summary, failure };
+    if (data.stage !== undefined && !Policy.failureStages.includes(data.stage)) throw new Error(Policy.invalidResponse);
+    return { ...summary, failure, ...(data.stage === undefined ? {} : { failureStage: data.stage }) };
   }
   if (![Policy.registered, Policy.cluster].includes(data.type) || !data.cluster
     || !Array.isArray(data.cluster.devices)) throw new Error(Policy.invalidResponse);
@@ -55,6 +58,7 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
     let buffer = Buffer.alloc(Policy.emptyCount);
     let ended = false;
     let terminalFailure = null;
+    let restarting = false;
     const controls = readline.createInterface({ input });
     const stop = () => {
       if (ended) return;
@@ -72,7 +76,7 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
       controls.close();
       if (terminalFailure || code !== Policy.initialGeneration || buffer.length !== Policy.emptyCount) {
         reject(terminalFailure ?? new Error(Policy.networkFailure));
-      } else resolve();
+      } else resolve(restarting);
     });
     child.stdout.on(Policy.dataEvent, bytes => {
       buffer = Buffer.concat([buffer, bytes]);
@@ -94,6 +98,7 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
     });
     controls.on(Policy.lineEvent, command => {
       if (command === Policy.refresh && !ended) write(Policy.refresh);
+      if (command === Policy.restart && !ended) { restarting = true; stop(); }
       if ([Policy.stop, Policy.quit].includes(command)) stop();
     });
     input.once(Policy.endEvent, stop);
@@ -111,7 +116,8 @@ async function main() {
       wait: (delayMilliseconds, signal) => wait(delayMilliseconds, undefined, { signal }),
       onRecovery: code => console.log(JSON.stringify({ stage: Policy.stage, code })) });
     console.log(Copy.ready);
-    await observeConnect(grant.storedCredential, summary => console.log(JSON.stringify(summary)));
+    let restarting = true;
+    while (restarting) restarting = await observeConnect(grant.storedCredential, summary => console.log(JSON.stringify(summary)));
   } catch {
     console.log(JSON.stringify({ stage: Policy.stage, failure: Policy.networkFailure }));
     process.exitCode = Policy.exitFailure;

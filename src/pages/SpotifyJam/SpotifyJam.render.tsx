@@ -15,6 +15,7 @@ import SpotifyJamMembership from './SpotifyJamMembership.render';
 import SpotifySharedPlayback from './SpotifySharedPlayback.render';
 import SpotifyPlaybackControls from './SpotifyPlaybackControls.render';
 import { spotifyRouteSongSelection } from '../../services/spotify/SpotifySongSelection';
+import { SpotifyConnectStatus } from '../../services/spotify/SpotifyConnectStore';
 
 const InputPolicy = Object.freeze({ capitalization: 'none', autoComplete: 'off',
   cancelStyle: 'cancel', destructiveStyle: 'destructive' } as const);
@@ -45,6 +46,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const uncertain = snapshot.session?.status === JamConnectionStatus.Uncertain;
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
   const librespotLogin = snapshot.authenticationMethod === SpotifyLoginMethod.Librespot;
+  const nativeJoining = librespotLogin && snapshot.nativeConnection !== undefined;
+  const canJoinNative = !nativeJoining || snapshot.nativeConnection?.status === SpotifyConnectStatus.Ready && mode === JamJoinMode.Control;
   const pairing = snapshot.deviceAuthorization;
   const waitingForApproval = pairing !== undefined && (snapshot.loginStage === undefined
     || snapshot.loginStage === SpotifyLoginStage.Preparing || snapshot.loginStage === SpotifyLoginStage.Authorizing);
@@ -126,6 +129,12 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
       <DefaultText style={styles.explanation}>{SpotifyJamCopy.playbackNotice}</DefaultText>
       {snapshot.connected && snapshot.failure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{snapshot.failure === IntegrationFailureCode.Forbidden
         ? SpotifyJamCopy.jamAccessRejected : SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
+      {snapshot.connected && snapshot.nativeConnection && <View style={styles.section}>
+        <DefaultText>{SpotifyJamCopy.nativeConnectionStates[snapshot.nativeConnection.status]}</DefaultText>
+        <DefaultText style={styles.explanation}>{SpotifyJamCopy.nativeControlNotice}</DefaultText>
+        {snapshot.nativeConnection.failure !== null && <DefaultText accessibilityRole={AlertRole} style={styles.error}>
+          {SpotifyFailureMessages[snapshot.nativeConnection.failure]}</DefaultText>}
+      </View>}
       {sessionChanged && <DefaultText accessibilityRole={AlertRole} style={styles.error}>{SpotifyJamCopy.sessionChanged}</DefaultText>}
       {busy && <View style={styles.row}><ActivityIndicator /><DefaultText>{SpotifyJamCopy.busy}</DefaultText></View>}
       {!snapshot.connected ? <View style={styles.section}>
@@ -225,10 +234,10 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
             <DefaultText style={styles.explanation}>{SpotifyJamCopy.joinHelp}</DefaultText>
             <DefaultButton title={SpotifyJamCopy.controlMode} onPress={() => setMode(JamJoinMode.Control)} disabled={busy}
               style={mode === JamJoinMode.Control ? styles.selected : styles.neutral} />
-            <DefaultButton title={SpotifyJamCopy.remoteMode} onPress={() => setMode(JamJoinMode.Remote)} disabled={busy}
+            <DefaultButton title={SpotifyJamCopy.remoteMode} onPress={() => setMode(JamJoinMode.Remote)} disabled={busy || nativeJoining}
               style={mode === JamJoinMode.Remote ? styles.selected : styles.neutral} />
             <DefaultButton title={SpotifyJamCopy.join} onPress={join}
-              disabled={!canMutate || !invitation.trim() || mode === JamJoinMode.Remote && snapshot.selectedDeviceIdentifier === null} />
+              disabled={!canMutate || !canJoinNative || !invitation.trim() || mode === JamJoinMode.Remote && snapshot.selectedDeviceIdentifier === null} />
           </>}
         </View>
       </>}

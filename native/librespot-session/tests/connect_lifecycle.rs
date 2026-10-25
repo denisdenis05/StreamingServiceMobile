@@ -30,7 +30,7 @@ async fn malformed_saved_credentials_stop_once_without_retrying_or_registering()
         events, actions, CancellationToken::new()).await;
     assert!(matches!(observed.recv().await.unwrap().data, ConnectEventData::Connecting));
     let rejected = observed.recv().await.unwrap(); assert_eq!(rejected.generation, FIRST_GENERATION);
-    assert!(matches!(rejected.data, ConnectEventData::Reconnecting { failure } if failure == Failure::InvalidInput.code()));
+    assert!(matches!(rejected.data, ConnectEventData::Reconnecting { failure, .. } if failure == Failure::InvalidInput.code()));
     assert!(matches!(observed.recv().await.unwrap().data, ConnectEventData::Stopped { cleanup_failure: None }));
     assert!(observed.recv().await.is_none());
 }
