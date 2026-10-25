@@ -1,3 +1,20 @@
+# Live token-exchange reproduction — 2026-10-25
+
+The user approved a desktop-browser pairing for the new local diagnostic runner.
+The actual broker and pinned native code established an access-point session on
+Linux. Keymaster returned HTTP 403 for both five playback scopes and streaming
+alone. Upstream Login5 succeeded with that same session. This disproves the
+previous Keymaster route as a fix for the reporting account; the original Android
+Login5 failure still needs a separate explanation.
+
+SPOTIFY_AUTH_LIVE_RESEARCH.md records the sanitized results, tool commands,
+feature-to-test mapping, credential handling and remaining checks. Added a native
+example plus Node browser/probe runner. Three native report/deadline tests and
+three Node sanitization/isolation tests passed. A second pairing is awaiting
+approval to compare Login5 without client-token. No production runtime source or
+APK has changed in this diagnostic chapter. Continue from the live probe before
+implementing or rebuilding another candidate fix.
+
 # Pairing native-session follow-up — 2026-10-25
 
 The reporting phone approves Spotify for Desktop pairing inside the Spotify app
