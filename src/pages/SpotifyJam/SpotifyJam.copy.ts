@@ -6,7 +6,15 @@ export const SpotifyJamRoute = 'SpotifyJam';
 export const SpotifyJamCopy = Object.freeze({
   title: 'Spotify Jam', back: 'Back', introduction: 'Create a Jam, share an invitation, or join someone on Spotify.',
   testBuild: 'Personal test connection',
-  loginExplanation: 'Sign in on Spotify’s page. Renewable login is stored securely on this device. Disconnect forgets it.',
+  librespotHeading: 'Spotify account login',
+  librespotExplanation: 'Sign in without the Spotify app or a developer client ID. Your password is used for sign-in only; the renewable session is stored securely on this device.',
+  librespotConnect: 'Log in with librespot', usernamePlaceholder: 'Spotify email or username', passwordPlaceholder: 'Spotify password',
+  librespotRejected: 'Spotify rejected this login. Check your Spotify credentials and account access.',
+  librespotUnsupported: 'This sign-in method is unavailable in this build or Spotify requires an unsupported verification step.',
+  librespotAuthorizing: 'Signing into Spotify…',
+  oauthHeading: 'Developer OAuth login (optional)',
+  jamAccessRejected: 'Spotify login succeeded, but Spotify rejected Jam access for this session.',
+  loginExplanation: 'This alternative opens Spotify’s authorization page using your developer application. Disconnect forgets the saved login.',
   restore: 'Restore saved Spotify login', forget: 'Forget saved Spotify login',
   loginCancelled: 'Spotify returned without completing sign-in. Please try again.',
   returnFailures: Object.freeze({

@@ -1,3 +1,73 @@
+# Independent Librespot login — 2026-10-25
+
+Implemented the primary username/password login with pinned librespot-core,
+without requiring an installed Spotify app or a developer client ID. The screen
+clears the password immediately after an explicit press. A native renewable
+session is saved under the separate StreamingService.SpotifyLibrespot. Keychain
+namespace; passwords/access tokens are not saved. Restore prefers the native
+record. Invalid native storage cannot silently switch to another OAuth identity.
+Account replacement/Disconnect/Forget attempt all three credential namespaces.
+
+The JNI adapter acquires client/Login5 credentials, connects to an access point,
+resolves canonical account identity and returns a renewable credential plus token
+expiry. It does not compile or activate a Spotify player. Native sessions shut
+down on success/failure/cancellation/deadline. Registered request identities,
+bounded work, worker isolation, dispatch compensation and sanitized JNI errors
+protect lifecycle. The Rust boundary disables token/panic logging. A sixty-second
+deadline bounds work; upstream unsupported code verification remains explicit.
+
+The controller uses native account identity directly rather than /v1/me. Existing
+Jam create/join/queue code receives the new provider. A private Jam rejection
+preserves successful authentication and is identified as Jam access failure.
+The optional developer OAuth path remains available. StreamingServicePlayer is
+unchanged. Android's default build now targets ARM64, matching the native binary;
+other Android ABIs and an iOS Librespot binary are not included.
+
+| Functionality | Dedicated tests |
+| --- | --- |
+| Native login/restore dispatch, cancellation, late results and safe failures | `tools/spotify-librespot-mobile.test.cjs`, `tools/spotify-librespot-platform.test.ts` |
+| Native-first saved selection, OAuth fallback, no malformed-record downgrade and all-namespace removal | `tools/spotify-login-providers.test.cjs` |
+| Canonical native identity with no profile HTTP, account replacement and Jam-rejection preservation | `tools/spotify-mobile.test.cjs` |
+| Password entry/clearing, native authorizing, login/verification/Jam messages | `tools/spotify-screen.test.tsx` |
+| Separate OS credential service and no plain-storage secrets | `tools/spotify-secure-platform.test.ts` |
+| Native schema/type/account/expiry validation, registry capacity/isolation, cancellation, unsupported verification and deadline | `native/librespot-session/tests/session_boundaries.rs` |
+| Register-before-dispatch, forwarding, duplicates, scoped cancel/close, dispatch release and native-load failure | `android/app/src/test/java/com/streamingservice/spotify/SpotifyLibrespotRequestRunnerTest.kt` |
+| Actual native JNI loading, strings, duplicate/cancel/release/malformed restore | `tools/fixtures/librespot-jni/com/streamingservice/spotify/SpotifyLibrespotNative.java` |
+| Library storage/renewal/expiry/account/lifetime contracts | `../StreamingServiceSpotifyJam/tests/librespot-login.test.mjs` |
+
+Validation:
+
+- Library `npm test`: 496 cases across 22 files; source/strict checks passed.
+  Package dry-run: 124 files, no publication.
+- Mobile `npm run test:spotify`: 249 Node and 66 Jest cases passed.
+  `npx tsc --noEmit --pretty false` passed.
+- `npm run test:player-mobile`: 320 passed; `npm run test:player-integration`:
+  seven passed. The player implementation was not changed.
+- `CARGO=/usr/bin/cargo npm run test:spotify-native`: thirteen Rust cases and
+  actual host JNI smoke passed without authenticating/network requests.
+- Forced `:app:createBundleReleaseJsAndAssets --rerun-tasks`, then
+  `:app:testReleaseUnitTest :app:assembleRelease`, passed with
+  `-PreactNativeArchitectures=arm64-v8a --no-daemon --console=plain`.
+  All 23 JVM tests passed. A final assemble includes the license inventory.
+- Android Cargo used the isolated Rust 1.99.1 toolchain, target
+  aarch64-linux-android, NDK 27.1.12297006 and the API 24 linker. Both Rust and
+  Gradle native outputs use 16 KB load alignment. APK signature and zip alignment
+  checks passed. Only ARM64 native libraries are present.
+
+Measured APK: 34,187,748 bytes (34.19 MB), up
+4,358,756 bytes from the previous 29,828,992-byte APK.
+The packaged native library is 4,276,312 bytes; its hash matches
+Gradle's stripped output. The Hermes bundle is 2,080,904 bytes and
+contains the new login/native-module/Jam-error markers. Upstream and dependency
+license texts are packaged. Hash/details are in SPOTIFY_JAM_APK.md and build metadata.
+
+No ADB device is connected. Live Login5/server admission, physical OS credential
+storage and private Jam access remain unverified. Test on the reporting phone:
+primary Librespot login, restart/restore, passive Jam refresh, then explicit
+create/share/join/queue. Existing guest/shared playback/background limitations
+remain open. See the library LIBRESPOT_AUTH.md for architecture and exact commands.
+
+
 # Callback base mismatch follow-up — 2026-10-24
 
 The user reports automatic return followed by redirect-mismatch. The preceding

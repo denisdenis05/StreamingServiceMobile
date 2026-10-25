@@ -121,6 +121,7 @@ function fixture() {
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
     end: async () => undefined, leave: async () => undefined, queue: async () => undefined,
+    identities: [], librespotLogin: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); },
     login: () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported); } };
   const controller = new SpotifyMobileController({
     authorizationReturnStatus: () => state.returnStatus,
@@ -131,9 +132,11 @@ function fixture() {
     forgetSavedLogin: async accountIdentifier => { state.forgottenAccounts.push(accountIdentifier); if (state.forgetFailure !== null) await state.forgetFailure; },
     membershipRefreshed: () => { state.membershipRefreshes += Fixture.sequenceIncrement; },
     createLogin: (...parameters) => state.login(...parameters),
+    createLibrespotLogin: (...parameters) => state.librespotLogin(...parameters),
     clock: { nowMilliseconds: () => nowMilliseconds },
     nextIdentifier: () => { sequence += Fixture.sequenceIncrement; return Fixture.identifierPrefix + sequence; },
     connect(identity, credentials) {
+      state.identities.push(identity);
       provider = credentials;
       connectedSessions = new library.JamSessionClient(undefined, true);
       connectedSessions.attachAccount(identity.accountIdentifier, {
@@ -730,3 +733,51 @@ test(ReturnDiagnosticControllerName, async () => { const current = fixture(); co
   await current.controller.login(loginConfiguration());
   assertion.equal(current.controller.getSnapshot().authorizationReturnStatus, SpotifyAuthorizationReturnStatus.StateMismatch);
   assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Authorizing); current.controller.dispose(); });
+
+const LibrespotFixture = Object.freeze({ username: 'personal-spotify-account', password: 'artificial-password',
+  names: Object.freeze({ login: 'Librespot login establishes canonical identity without public or private profile lookup',
+    restore: 'A saved Librespot session restores without developer OAuth profile admission',
+    jamFailure: 'A private Jam rejection preserves successful Librespot authentication and connected identity',
+    late: 'An old native login completion cannot reconnect after application account replacement',
+    failure: 'A rejected native login preserves Librespot phase and typed failure without connecting',
+    renewal: 'The connected Jam credential provider renews through the Librespot provider',
+    logout: 'Application logout retires Librespot credentials and requests saved-session forgetting' }) });
+function librespotLogin() { const login = browserLogin(); login.provider.authenticationMethod = library.SpotifyLoginMethod.Librespot; return login; }
+function librespotInput() { return { username: LibrespotFixture.username, password: LibrespotFixture.password }; }
+test(LibrespotFixture.names.login, async () => { const current = fixture(); const login = librespotLogin(); let received;
+  current.state.inspect = async () => assertion.fail(); current.state.librespotLogin = input => { received = input; return login.provider; };
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.deepEqual(received, librespotInput());
+  assertion.equal(current.controller.getSnapshot().connected, true);
+  assertion.deepEqual(current.state.identities, [{ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.spotifyAccount, serviceOrigin: null }]);
+  assertion.equal(current.controller.getSnapshot().authenticationMethod, library.SpotifyLoginMethod.Librespot); current.controller.dispose(); });
+test(LibrespotFixture.names.restore, async () => { const current = fixture(); const login = librespotLogin();
+  current.state.inspect = async () => assertion.fail(); current.state.restores = async () => login.provider;
+  await current.controller.restore(); assertion.equal(current.controller.getSnapshot().connected, true);
+  assertion.equal(current.controller.getSnapshot().authenticationMethod, library.SpotifyLoginMethod.Librespot); current.controller.dispose(); });
+test(LibrespotFixture.names.jamFailure, async () => { const current = fixture(); const login = librespotLogin();
+  current.state.librespotLogin = () => login.provider; current.state.read = async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Forbidden); };
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().connected, true);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Forbidden);
+  assertion.equal(login.calls.logout, Fixture.noCalls); current.controller.dispose(); });
+test(LibrespotFixture.names.late, async () => { const current = fixture(); const login = librespotLogin(); const pending = deferred();
+  login.provider.login = () => pending.promise; current.state.librespotLogin = () => login.provider;
+  const authorizing = current.controller.loginWithLibrespot(librespotInput()); current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true });
+  pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await authorizing;
+  assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(login.calls.logout, Fixture.singleCall); current.controller.dispose(); });
+test(LibrespotFixture.names.failure, async () => { const current = fixture(); const login = librespotLogin(); let progress;
+  current.state.librespotLogin = (_input, observer) => { progress = observer; return login.provider; };
+  login.provider.login = async () => { progress(library.SpotifyLoginStage.Authorizing); throw new library.IntegrationFailure(library.IntegrationFailureCode.Unauthorized); };
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().connected, false);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized);
+  assertion.equal(current.controller.getSnapshot().authenticationMethod, library.SpotifyLoginMethod.Librespot);
+  assertion.equal(current.controller.getSnapshot().loginStage, library.SpotifyLoginStage.Authorizing); current.controller.dispose(); });
+test(LibrespotFixture.names.renewal, async () => { const current = fixture(); const login = librespotLogin(); let renewals = Fixture.noCalls;
+  const credentials = await login.provider.getCredentials(new AbortController().signal);
+  login.provider.renewCredentials = async () => { renewals += Fixture.sequenceIncrement; return { ...credentials, accessToken: Fixture.otherToken }; };
+  current.state.librespotLogin = () => login.provider; await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal((await current.provider().renewCredentials(new AbortController().signal)).accessToken, Fixture.otherToken);
+  assertion.equal(renewals, Fixture.singleCall); current.controller.dispose(); });
+test(LibrespotFixture.names.logout, async () => { const current = fixture(); const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); current.changeAccount({ accountIdentifier: null, isLoggedIn: false });
+  assertion.equal(current.controller.getSnapshot().connected, false); assertion.equal(login.calls.logout, Fixture.singleCall);
+  assertion.ok(current.state.forgottenAccounts.includes(Fixture.applicationAccount)); current.controller.dispose(); });

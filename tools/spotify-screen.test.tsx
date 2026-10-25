@@ -1,7 +1,7 @@
 import type { ReactTestRenderer } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 import { Alert, Share, TextInput } from 'react-native';
-import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginStage } from 'streaming-service-spotify-jam';
+import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginMethod, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { SpotifyAuthenticationAction, SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
 import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobileController';
 import { SpotifyJamCopy } from '../src/pages/SpotifyJam/SpotifyJam.copy';
@@ -26,7 +26,7 @@ const Names = Object.freeze({ connect: 'Login opens only on a press and supplies
 
 let snapshot: SpotifyMobileSnapshot;
 const controller = {
-  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
+  getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), loginWithLibrespot: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
   createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
@@ -202,3 +202,36 @@ test.each(RedirectComponentStatuses)(RedirectComponentScreenName, async authoriz
   await render(); expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.returnFailures[authorizationReturnStatus]);
   expect(controller.restore).not.toHaveBeenCalled();
 });
+
+const LibrespotScreenFixture = Object.freeze({ username: 'spotify-listener', password: 'artificial-password',
+  names: Object.freeze({ credentials: 'Librespot login requires explicit credentials and clears the password immediately after the press',
+    rejected: 'A Librespot credential rejection describes login rather than a Jam role',
+    authorizing: 'Native Librespot login does not tell the user to wait for a browser return',
+    jamFailure: 'A connected account with a rejected Jam read stays authenticated and names Jam access' }) });
+test(LibrespotScreenFixture.names.credentials, async () => { snapshot = connection(false); await render();
+  expect(controller.loginWithLibrespot).not.toHaveBeenCalled(); expect(button(SpotifyJamCopy.librespotConnect).props.disabled).toBe(true);
+  expect(input(SpotifyJamCopy.passwordPlaceholder).props.secureTextEntry).toBe(true);
+  await act(async () => input(SpotifyJamCopy.usernamePlaceholder).props.onChangeText(LibrespotScreenFixture.username));
+  await act(async () => input(SpotifyJamCopy.passwordPlaceholder).props.onChangeText(LibrespotScreenFixture.password));
+  expect(button(SpotifyJamCopy.librespotConnect).props.disabled).toBe(false);
+  await act(async () => button(SpotifyJamCopy.librespotConnect).props.onPress());
+  expect(controller.loginWithLibrespot).toHaveBeenCalledWith({ username: LibrespotScreenFixture.username, password: LibrespotScreenFixture.password });
+  expect(input(SpotifyJamCopy.passwordPlaceholder).props.value).toBe(SpotifyMobilePolicy.emptyText); expect(controller.login).not.toHaveBeenCalled(); });
+test(LibrespotScreenFixture.names.rejected, async () => { snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot,
+  loginStage: SpotifyLoginStage.Authorizing, failure: IntegrationFailureCode.Unauthorized }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.librespotRejected);
+  expect(text).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.Forbidden]); });
+test(LibrespotScreenFixture.names.authorizing, async () => { snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot,
+  operation: SpotifyMobileOperation.Connecting, loginStage: SpotifyLoginStage.Authorizing }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.librespotAuthorizing);
+  expect(text).not.toContain(SpotifyJamCopy.loginSteps[SpotifyLoginStage.Authorizing]); });
+test(LibrespotScreenFixture.names.jamFailure, async () => { snapshot = { ...connection(), authenticationMethod: SpotifyLoginMethod.Librespot,
+  failure: IntegrationFailureCode.Forbidden }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.jamAccessRejected);
+  expect(text).toContain(SpotifyJamCopy.connected + Fixture.displayName); expect(controller.restore).not.toHaveBeenCalled(); });
+
+const LibrespotVerificationScreenName = 'Unsupported Librespot verification explains the login limitation without a browser callback error';
+test(LibrespotVerificationScreenName, async () => { snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot,
+  loginStage: SpotifyLoginStage.Authorizing, failure: IntegrationFailureCode.Unsupported }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.librespotUnsupported);
+  expect(text).not.toContain(SpotifyJamCopy.loginCancelled); expect(controller.restore).not.toHaveBeenCalled(); });

@@ -1,10 +1,35 @@
 # Spotify Jam personal-test app
 
-Updated 2026-10-24. The source implements Spotify browser login, secure saved-login
+Updated 2026-10-25. The source implements independent Librespot login, optional
+Spotify browser login, secure saved-login
 restoration, Jam creation/sharing, experimental joining, app-song matching, host
 queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
+
+## Librespot login build — 2026-10-25
+
+Install the APK below and use the primary **Log in with librespot** button with
+your Spotify email/username and password. This path requires no Spotify app or
+developer client ID. The password is cleared after submission; a renewable
+session is saved in the device credential store. Disconnect/Forget removes it.
+The optional developer OAuth form remains below the primary form.
+
+Authentication and Jam access are reported separately. Login success does not
+establish that Spotify admitted this client to the private Jam service. Additional
+verification challenges unsupported by upstream are shown explicitly. Live login
+and Jam access on the reporting phone still need testing.
+
+Current artifact: `34,187,748` bytes (34.19 MB); SHA-256
+`906794a0e9229f2c463f100627ad758fa73be577b5ba4bb91654c7b43f69e3af`. It is 4.36 MB larger than the previous
+APK. The included ARM64 native library is 4.28 MB; the Hermes bundle
+is `2,080,904` bytes. Signature, 16 KB zip/ELF alignment and native/library
+markers were verified. There is no separate native-library installation step.
+
+Passed: 496 library, 249 mobile service, 66 UI/platform, thirteen Rust and
+23 Android JVM cases, plus host JNI execution, full TypeScript checks and release
+assembly. No physical Android execution was available. Full evidence and scope
+are in SPOTIFY_INTEGRATION_PROGRESS.md.
 
 ## Callback base comparison build — 2026-10-24
 
@@ -15,7 +40,7 @@ schemes, states and unsafe components remain checked. A slash difference is a
 candidate for the reported redirect-mismatch, not a measured phone result.
 If another mismatch remains, its safe status now identifies scheme, host or path.
 
-Current artifact: `29,828,992` bytes; SHA-256
+Previous callback-base artifact: `29,828,992` bytes; SHA-256
 `85a128748e4a6d94b64de8679199f55192ddfe5f95b2b9ffc71fe4092e0831c5`. It contains an ARM64-only archive and
 `2,062,160`-byte Hermes bundle with shared redirect comparison
 and all three component diagnostic markers. Forced release bundling, assembly,
@@ -62,11 +87,12 @@ its checksum, signing report and archive summary beside it. Android 7.0/API 24
 or newer is required. It contains the release Hermes bundle and runs without
 Metro, using the project's existing debug signing configuration for testing.
 
-1. Register a Spotify developer application and the exact callback
-   `streamingservicespotify://callback`.
-2. Install the APK, sign into StreamingService and open Profile → Spotify Jam.
-3. On first use, enter the public Spotify client ID and press Log in with Spotify.
-   Spotify's browser page handles sign-in. No client secret or pasted token is used.
+1. Install the APK, sign into StreamingService and open Profile → Spotify Jam.
+2. Enter your Spotify email/username and password in the primary account form,
+   then press Log in with librespot. No developer setup is required for this path.
+3. For the optional browser alternative, register your developer application with
+   `streamingservicespotify://callback`, enter its client ID in the secondary form
+   and press Log in with Spotify. No client secret or pasted token is used.
 4. Later visits attempt secure saved-login restoration for the current app account.
    Restore saved Spotify login retries it explicitly. No saved record leaves the
    normal login form available.

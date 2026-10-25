@@ -29,3 +29,11 @@ test(AuthorizationFixture.name, async () => { const store = authorizationOwnersh
   expect(keychain.setGenericPassword).toHaveBeenCalledWith(Fixture.account, AuthorizationFixture.proof,
     { service: AuthorizationFixture.service, accessible: Fixture.accessibility, storage: Fixture.cipher, cloudSync: false });
   expect(metadata.setItem).not.toHaveBeenCalled(); });
+
+const LibrespotStorageFixture = Object.freeze({ name: 'Librespot renewable sessions use a separate device-only account service without plain storage',
+  service: 'StreamingService.SpotifyLibrespot.application-account', credential: 'opaque-native-reusable-session' });
+test(LibrespotStorageFixture.name, async () => { const librespotOwnership = require(Imports.storage).spotifyLibrespotOwnership;
+  const store = librespotOwnership.acquire(Fixture.account); await store.write(LibrespotStorageFixture.credential, new AbortController().signal);
+  expect(keychain.setGenericPassword).toHaveBeenCalledWith(Fixture.account, LibrespotStorageFixture.credential,
+    { service: LibrespotStorageFixture.service, accessible: Fixture.accessibility, storage: Fixture.cipher, cloudSync: false });
+  expect(metadata.setItem).not.toHaveBeenCalled(); });
