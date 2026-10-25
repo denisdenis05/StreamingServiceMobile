@@ -1,3 +1,48 @@
+# Persistent Connect foundation in progress — 2026-10-25
+
+The active objective is all Android/library queue items 1–5 in
+../StreamingServiceSpotifyJam/IMPLEMENTATION_QUEUE.md. iOS remains deferred.
+This checkpoint does not end that objective or establish guest playback.
+
+Added persistent account-bound AP/Dealer transport, regional resolution,
+observer-only Connect registration, bounded protobuf/JSON/gzip event decoding,
+independent WebSocket heartbeat and explicit incoming-command replies. Commands
+preserve remote queue occurrence identifiers/revision/acknowledgement metadata.
+Single-dispatch private HTTP avoids the pinned helper's internal HTTP 429 replay;
+streamed response sizes are bounded and uncertain mutation failures stay uncertain.
+
+A native registry serializes connection ownership through cleanup, increases
+handles across replacements, bounds event batches and fences retired callers.
+JNI start/poll/refresh/reply/cancel/finish exports compile and pass actual host JNI
+checks. Android's declaration exists, but no React Native module/service or
+application composition uses it yet. Playback-ready configuration is rejected
+at the production bridge until local audio command handling exists. Existing
+login and selected audio engine are unchanged.
+
+Dedicated native cases: wire 11, device 4, actor 9, socket 4, HTTP classification
+3, registry 5, bridge parsing 7 and transport lifecycle 2. The complete Rust suite passed 84 cases;
+host JNI smoke passed including the new exports. After tightening finish to retain
+unread final events, the registry's five cases passed again. npm run
+test:spotify-probes passed 21, including five new Connect IPC/privacy cases.
+cargo check --locked --manifest-path native/librespot-session/Cargo.toml
+--examples passed. Android ARM64 API 24 native release build passed with the 16 KB linker configuration;
+this is a native library build, not an assembled or installed APK.
+Detailed test mapping and known limits: native/librespot-session/CONNECT_TRANSPORT.md.
+
+The observer probe in unified exec 51610 was canceled with Ctrl-C after the run
+hit its execution usage limit. Pairing code QAC68N must not be reused. It never
+reported approval, registration or playback; no live-device success is claimed.
+The goal remains incomplete with status usageLimited; continue the active queue
+on the next user continuation. Credentials were not persisted by this probe.
+No new APK has been built: build/spotify-jam still contains the prior host-control
+APK, SHA-256 0593292022067d5f8cbdf9183e46b3ed0d04d1d96247d6cdfc55fc9733518739.
+
+Next: verify independent registration/fresh events, integrate native ownership
+and state projection with Android/app account lifetime, then actual guest
+admission/permissions, shared queue, playback, app-led host publication and
+background recovery. Propagate Retry-After, add cross-reconnect execution dedupe,
+and map native/JavaScript/server clock domains before enabling playback actions.
+
 # Live probe closed after status check — 2026-10-25
 
 The latest passive account-current read returned no Jam. The cause of its

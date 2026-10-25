@@ -1,5 +1,11 @@
 pub mod model;
 pub mod desktop_login5;
+pub mod connect_wire;
+pub mod connect_device;
+pub mod connect_session;
+pub mod connect_transport;
+pub mod connect_registry;
+pub mod connect_bridge;
 pub mod operations;
 pub mod session;
 

@@ -2183,7 +2183,11 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 name = "streaming-spotify-session"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
+ "flate2",
+ "futures-util",
  "http",
+ "http-body-util",
  "jni",
  "librespot-core",
  "librespot-protocol",
@@ -2193,7 +2197,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
+ "url",
 ]
 
 [[package]]

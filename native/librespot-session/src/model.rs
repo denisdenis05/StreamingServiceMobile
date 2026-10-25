@@ -22,6 +22,9 @@ const UNSUPPORTED_CODE: &str = "unsupported";
 const BACKPRESSURE_CODE: &str = "backpressure";
 const NATIVE_SESSION_REJECTED_CODE: &str = "native-session-rejected";
 const NATIVE_TOKEN_REJECTED_CODE: &str = "native-token-rejected";
+const FORBIDDEN_CODE: &str = "forbidden";
+const NOT_FOUND_CODE: &str = "not-found";
+const UNKNOWN_OUTCOME_CODE: &str = "unknown-outcome";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
@@ -35,6 +38,9 @@ pub enum Failure {
     Backpressure,
     NativeSessionRejected,
     NativeTokenRejected,
+    Forbidden,
+    NotFound,
+    UnknownOutcome,
 }
 
 impl Failure {
@@ -50,6 +56,9 @@ impl Failure {
             Self::Backpressure => BACKPRESSURE_CODE,
             Self::NativeSessionRejected => NATIVE_SESSION_REJECTED_CODE,
             Self::NativeTokenRejected => NATIVE_TOKEN_REJECTED_CODE,
+            Self::Forbidden => FORBIDDEN_CODE,
+            Self::NotFound => NOT_FOUND_CODE,
+            Self::UnknownOutcome => UNKNOWN_OUTCOME_CODE,
         }
     }
 }

@@ -10,6 +10,11 @@ internal object SpotifyLibrespotNative : SpotifyLibrespotExecution {
     external override fun cancel(identifier: String)
     external override fun finish(identifier: String)
     external fun cancelAll()
+    external fun connectStart(serialized: String): String
+    external fun connectPoll(connectionHandle: Long): String
+    external fun connectExecute(connectionHandle: Long, serialized: String): String
+    external fun connectCancel(connectionHandle: Long): String
+    external fun connectFinish(connectionHandle: Long): String
 
     private const val LIBRARY_NAME = "streaming_spotify_session"
 }

@@ -17,12 +17,20 @@ public final class SpotifyLibrespotNative {
     private static final String INVALID_INPUT_RESULT = "{\"failure\":\"invalid-input\"}";
     private static final String SUCCESS_MESSAGE = "Librespot JNI smoke passed without authentication network requests.";
     private static final String FAILURE_MESSAGE = "Unexpected native boundary result.";
+    private static final long ABSENT_CONNECTION_HANDLE = 1L;
+    private static final long INVALID_CONNECTION_HANDLE = 0L;
+    private static final String REFRESH_CONTROL = "{\"operation\":\"refresh\",\"generation\":1}";
 
     public native String begin(String identifier);
     public native String execute(String identifier, String operation, String username, String password, String credential);
     public native void cancel(String identifier);
     public native void finish(String identifier);
     public native void cancelAll();
+    public native String connectStart(String serialized);
+    public native String connectPoll(long connectionHandle);
+    public native String connectExecute(long connectionHandle, String serialized);
+    public native String connectCancel(long connectionHandle);
+    public native String connectFinish(long connectionHandle);
 
     private static void requireEqual(String expected, String actual) {
         if (!expected.equals(actual)) throw new AssertionError(FAILURE_MESSAGE);
@@ -50,6 +58,13 @@ public final class SpotifyLibrespotNative {
         implementation.cancelAll();
         requireEqual(CANCELED_RESULT, implementation.execute(FIRST_REQUEST, LOGIN, USERNAME, PASSWORD, EMPTY_TEXT));
         requireEqual(CANCELED_RESULT, implementation.execute(SECOND_REQUEST, LOGIN, USERNAME, PASSWORD, EMPTY_TEXT));
+        requireEqual(INVALID_INPUT_RESULT, implementation.connectStart(null));
+        requireEqual(INVALID_INPUT_RESULT, implementation.connectStart(INVALID_RECORD));
+        requireEqual(INVALID_INPUT_RESULT, implementation.connectPoll(INVALID_CONNECTION_HANDLE));
+        requireEqual(CANCELED_RESULT, implementation.connectPoll(ABSENT_CONNECTION_HANDLE));
+        requireEqual(CANCELED_RESULT, implementation.connectExecute(ABSENT_CONNECTION_HANDLE, REFRESH_CONTROL));
+        requireEqual(CANCELED_RESULT, implementation.connectCancel(ABSENT_CONNECTION_HANDLE));
+        requireEqual(CANCELED_RESULT, implementation.connectFinish(ABSENT_CONNECTION_HANDLE));
         System.out.println(SUCCESS_MESSAGE);
     }
 }
