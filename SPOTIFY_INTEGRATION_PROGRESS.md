@@ -1,3 +1,15 @@
+# Live probe closed after status check — 2026-10-25
+
+The latest passive account-current read returned no Jam. The cause of its
+absence was not established. The previously shared test invitation is no longer
+usable for this test; use a fresh Jam/invitation for the next guest check.
+Unified exec session 92646 was then closed with quit. Its cleanup returned
+ended:false because there was no matching test Jam to delete, and the process
+exited successfully. No new remote deletion was issued. Diagnostic credentials
+and the in-memory cleanup lease are no longer retained by that process.
+The earlier ACTIVE TEST CHECKPOINT is historical. Implementation/build status
+is unchanged; guest participation and active-host command effects remain open.
+
 # Owned-host playback command chapter — 2026-10-25
 
 Added explicit host Play/Pause/Next/Previous/Seek to the Jam screen and production
