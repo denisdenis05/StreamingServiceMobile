@@ -8,6 +8,26 @@ queue requests, host queue observation and foreground membership recovery.
 Approximate foreground host following now plays matched local recordings alongside
 Spotify. Private guest playback and measured audio alignment remain open.
 
+## Pairing native-session follow-up — 2026-10-25
+
+The primary pairing request is named **Spotify for Desktop**. The installed
+Spotify app may open it. Press Pair and return manually; there is no callback.
+Install the rebuilt APK and start a fresh sign-in to approve its matching
+account/playback permissions. Older pending tickets cannot be resumed.
+
+Desktop-authorized native sessions now obtain their token through Keymaster;
+password sessions retain Login5. Distinct `native-session` and `native-token`
+rejection stages identify which native step Spotify refused. Unsupported
+verification and transient failures preserve their recovery classifications.
+This addresses a plausible failure path; the reporting phone must verify it.
+
+Current artifact: `34,236,404` bytes; SHA-256
+`b13249690aa2b9f946bfcc1ff712f8d3d919fa2b9e360850b076fab8ca80ecb5`.
+Library 537, mobile service 261, UI/platform 76, Rust 26 and Android JVM 23
+cases passed, plus host JNI and release assembly. Signature and 16 KB ZIP/ELF
+alignment passed. Full account approval/native login and private Jam admission
+remain unverified on a phone.
+
 ## Browser-assisted email-code build — 2026-10-25
 
 1. Install this APK and open Profile → Spotify Jam.
@@ -22,7 +42,7 @@ developer client ID is needed for the primary flow. A native-session or Jam erro
 is shown separately from approval. A consumed/interrupted approval requires a
 new sign-in; expired/denied transactions cannot be reused.
 
-Current artifact: `34,209,364` bytes (34.21 MB); SHA-256
+Previous browser/device artifact: `34,209,364` bytes (34.21 MB); SHA-256
 `5f22d37bbd46d776e63454d3f0c06b6814c560ceb16f47744ed0545c3598ed90`. The Hermes bundle is `2,100,320` bytes;
 packaged ARM64 native session is `4,278,512` bytes. Signature and
 16 KB archive alignment passed. The browser/device and optional-password markers

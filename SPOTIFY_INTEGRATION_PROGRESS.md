@@ -1,3 +1,61 @@
+# Pairing native-session follow-up — 2026-10-25
+
+The reporting phone approves Spotify for Desktop pairing inside the Spotify app
+and returns manually. That is expected for device authorization. Its previous
+error covered both native access-point connection and subsequent token minting,
+so the exact rejected request remains unknown.
+
+Desktop-authorized bootstrap/restore now uses Librespot Keymaster token minting;
+Android password sessions keep Login5. The removed Login5 path combined a desktop
+session identity with a platform Android client-token request. This is a plausible
+cause addressed in source, not a confirmed account/server diagnosis. There is no
+cross-client credential replay. Native account/credential validation and shutdown,
+cancellation and deadlines remain in place.
+
+Pairing and native minting request matching streaming/account/playback scopes.
+Pending-device schema 2 requires new approval rather than resuming old
+streaming-only tickets. Other secure record schemas remain compatible. Native
+connection and token-mint rejections have separate safe fixed UI stages; raw
+Spotify errors, addresses, payloads and credentials are never displayed. Mercury
+401/402/403 now classify as token rejection, 429 remains backpressure and server
+failures remain network errors. Unsupported verification keeps its previous
+classification and saved-record recovery behavior. The pairing screen explains
+Spotify for Desktop and manual return.
+
+Dedicated mapping: native/librespot-session/tests/token_exchange.rs covers desktop
+and password routes, no fallback, permanent stage mapping, unsupported/transient
+preservation and structured Mercury statuses. Library tests/device-authorization.test.mjs
+covers matching approval scopes, old-ticket migration and bootstrap failure
+propagation; tests/librespot-login.test.mjs covers stage retention and permanent
+restore/renew cleanup. Mobile tools/spotify-librespot-mobile.test.cjs checks code
+propagation; tools/spotify-screen.test.tsx renders both safe stage messages.
+
+Validation passed:
+- Library npm test: 537 cases across 23 files, strict compilation/source checks.
+- npm run test:spotify: 261 Node service and 76 UI/platform cases.
+- Full app TypeScript passed in the diagnostic implementation review.
+- npm run test:spotify-native: 26 Rust cases and actual host JNI smoke execution.
+- Forced :app:createBundleReleaseJsAndAssets --rerun-tasks, then
+  :app:testReleaseUnitTest :app:assembleRelease: 23 JVM cases and release assembly.
+- Accountless live pairing initialization accepted all five scopes (HTTP 200,
+  expiry 3599 seconds, interval 5 seconds); no account approval was attempted.
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 34,236,404 bytes;
+SHA-256 b13249690aa2b9f946bfcc1ff712f8d3d919fa2b9e360850b076fab8ca80ecb5.
+Hermes bundle 2,100,816 bytes; packaged native session 4,305,056 bytes. Embedded
+manual-return/scope/both diagnostic markers and Keymaster route are present.
+Packaged native bytes match Gradle's stripped output. Signature verification,
+16 KB ZIP alignment and ELF LOAD alignment passed; archive contains only ARM64.
+License assets are retained. Artifact metadata/checksum/verification reports are
+beside the APK. Logs: /tmp/spotify-pairing-{library-final,mobile-final,native-host-final,
+native-android-final,bundle,apk-final}.log.
+
+No physical-device sign-in succeeded in this session. Next: install this APK,
+start a fresh pairing, approve and return manually. If rejected, report the
+native-session/native-token stage; then verify restore and private Jam access.
+The protocol fix and stage diagnostics do not prove private Jam admission or
+synchronized Spotify playback.
+
 # Browser-assisted email-code login — 2026-10-25
 
 The primary Log in with Spotify button now requests device authorization and

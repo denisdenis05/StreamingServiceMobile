@@ -20,6 +20,8 @@ const NETWORK_CODE: &str = "network";
 const DEADLINE_CODE: &str = "deadline";
 const UNSUPPORTED_CODE: &str = "unsupported";
 const BACKPRESSURE_CODE: &str = "backpressure";
+const NATIVE_SESSION_REJECTED_CODE: &str = "native-session-rejected";
+const NATIVE_TOKEN_REJECTED_CODE: &str = "native-token-rejected";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
@@ -31,6 +33,8 @@ pub enum Failure {
     Deadline,
     Unsupported,
     Backpressure,
+    NativeSessionRejected,
+    NativeTokenRejected,
 }
 
 impl Failure {
@@ -44,6 +48,8 @@ impl Failure {
             Self::Deadline => DEADLINE_CODE,
             Self::Unsupported => UNSUPPORTED_CODE,
             Self::Backpressure => BACKPRESSURE_CODE,
+            Self::NativeSessionRejected => NATIVE_SESSION_REJECTED_CODE,
+            Self::NativeTokenRejected => NATIVE_TOKEN_REJECTED_CODE,
         }
     }
 }

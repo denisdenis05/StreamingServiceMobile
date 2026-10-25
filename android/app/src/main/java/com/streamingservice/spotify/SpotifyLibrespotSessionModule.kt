@@ -123,10 +123,13 @@ class SpotifyLibrespotSessionModule(reactContext: ReactApplicationContext) : Rea
         private const val FAILURE_MESSAGE = "Spotify session authentication failed."
         private const val CANCELED_FAILURE = "canceled"
         private const val UNAUTHORIZED_FAILURE = "unauthorized"
+        private const val NATIVE_SESSION_REJECTED_FAILURE = "native-session-rejected"
+        private const val NATIVE_TOKEN_REJECTED_FAILURE = "native-token-rejected"
         private const val DEADLINE_FAILURE = "deadline"
         private const val UNSUPPORTED_FAILURE = "unsupported"
         private const val BACKPRESSURE_FAILURE = "backpressure"
         private val FAILURE_CODES = setOf(INVALID_INPUT_FAILURE, INVALID_RESPONSE_FAILURE, NETWORK_FAILURE,
-            CANCELED_FAILURE, UNAUTHORIZED_FAILURE, DEADLINE_FAILURE, UNSUPPORTED_FAILURE, BACKPRESSURE_FAILURE)
+            CANCELED_FAILURE, UNAUTHORIZED_FAILURE, NATIVE_SESSION_REJECTED_FAILURE, NATIVE_TOKEN_REJECTED_FAILURE,
+            DEADLINE_FAILURE, UNSUPPORTED_FAILURE, BACKPRESSURE_FAILURE)
     }
 }

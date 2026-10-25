@@ -265,3 +265,14 @@ test(DeviceBootstrapScreenName, async () => { snapshot = { ...connection(false),
   const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyJamCopy.deviceSessionRejected);
   expect(text).toContain(SpotifyJamCopy.loginSteps[SpotifyLoginStage.Exchanging]); expect(text).not.toContain(SpotifyJamCopy.waitingApproval);
   expect(rendered.root.findAllByType(DefaultButton).some(instance => instance.props.title === SpotifyJamCopy.reopenVerification)).toBe(false); });
+
+const NativeDiagnosticScreenCodes = Object.values({ session: IntegrationFailureCode.NativeSessionRejected,
+  token: IntegrationFailureCode.NativeTokenRejected });
+const NativeDiagnosticScreenName = 'Native rejection %s displays its safe stage instead of a generic pairing failure';
+test.each(NativeDiagnosticScreenCodes)(NativeDiagnosticScreenName, async failure => {
+  snapshot = { ...connection(false), authenticationMethod: SpotifyLoginMethod.Librespot, deviceAuthorizationLogin: true,
+    loginStage: SpotifyLoginStage.Exchanging, failure }; await render();
+  const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyFailureMessages[failure]);
+  expect(text).not.toContain(SpotifyJamCopy.deviceSessionRejected); expect(text).not.toContain(SpotifyJamCopy.deviceRejected);
+  expect(text).not.toContain(SpotifyJamCopy.librespotRejected); expect(controller.restore).not.toHaveBeenCalled();
+});

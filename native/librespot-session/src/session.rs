@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{future::Future, time::{SystemTime, UNIX_EPOCH}};
 
 use librespot_core::{authentication::Credentials, error::ErrorKind, Session, SessionConfig};
 use librespot_protocol::authentication::AuthenticationType;
@@ -6,7 +6,37 @@ use librespot_protocol::authentication::AuthenticationType;
 use crate::model::{decode_stored_session, validate_bootstrap_token, validate_grant, validate_password_input, Failure, SessionGrant, StoredSession, SCHEMA_VERSION};
 
 const MAXIMUM_EPOCH_MILLISECONDS: u128 = u64::MAX as u128;
+const UNAUTHORIZED_STATUS: i32 = 401;
+const ACCOUNT_RESTRICTED_STATUS: i32 = 402;
+const FORBIDDEN_STATUS: i32 = 403;
+const RATE_LIMITED_STATUS: i32 = 429;
 pub const DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER: &str = "65b708073fc0480ea92a077233ca87bd";
+pub const DEVICE_AUTHORIZATION_TOKEN_SCOPES: &str = "streaming,user-read-private,user-read-playback-state,user-read-currently-playing,user-modify-playback-state";
+
+pub fn authentication_stage_failure(failure: Failure, rejected_stage: Failure) -> Failure {
+    match failure {
+        Failure::Unauthorized | Failure::InvalidInput | Failure::InvalidResponse => rejected_stage,
+        _ => failure,
+    }
+}
+
+pub async fn request_session_token<Token, DesktopRequest, DesktopResponse, MobileRequest, MobileResponse>(
+    client_identifier: &str,
+    desktop_request: DesktopRequest,
+    mobile_request: MobileRequest,
+) -> Result<Token, Failure>
+where
+    DesktopRequest: FnOnce() -> DesktopResponse,
+    DesktopResponse: Future<Output = Result<Token, Failure>>,
+    MobileRequest: FnOnce() -> MobileResponse,
+    MobileResponse: Future<Output = Result<Token, Failure>>,
+{
+    if client_identifier == DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER {
+        desktop_request().await
+    } else {
+        mobile_request().await
+    }
+}
 
 struct SessionLifetime(Session);
 
@@ -17,6 +47,13 @@ impl Drop for SessionLifetime {
 }
 
 pub fn sanitized_failure(failure: librespot_core::Error) -> Failure {
+    if let Some(librespot_core::mercury::MercuryError::Response(response)) = failure.error.downcast_ref() {
+        return match response.status_code {
+            UNAUTHORIZED_STATUS | ACCOUNT_RESTRICTED_STATUS | FORBIDDEN_STATUS => Failure::Unauthorized,
+            RATE_LIMITED_STATUS => Failure::Backpressure,
+            _ => Failure::Network,
+        };
+    }
     match failure.kind {
         ErrorKind::Cancelled | ErrorKind::Aborted => Failure::Canceled,
         ErrorKind::Unauthenticated | ErrorKind::PermissionDenied | ErrorKind::FailedPrecondition => Failure::Unauthorized,
@@ -61,12 +98,16 @@ pub async fn bootstrap(access_token: String) -> Result<SessionGrant, Failure> {
     let mut configuration = SessionConfig::default();
     configuration.client_id = DEVICE_AUTHORIZATION_CLIENT_IDENTIFIER.to_owned();
     let session = SessionLifetime(Session::new(configuration, None));
-    session.0.connect(Credentials::with_access_token(access_token), false).await.map_err(sanitized_failure)?;
+    session.0.connect(Credentials::with_access_token(access_token), false).await
+        .map_err(|failure| authentication_stage_failure(sanitized_failure(failure), Failure::NativeSessionRejected))?;
     grant(&session.0).await
 }
 
 async fn grant(session: &Session) -> Result<SessionGrant, Failure> {
-    let token = session.login5().auth_token().await.map_err(sanitized_failure)?;
+    let token = request_session_token(&session.client_id(),
+        || async { session.token_provider().get_token(DEVICE_AUTHORIZATION_TOKEN_SCOPES).await.map_err(sanitized_failure) },
+        || async { session.login5().auth_token().await.map_err(sanitized_failure) },
+    ).await.map_err(|failure| authentication_stage_failure(failure, Failure::NativeTokenRejected))?;
     let account_identifier = session.username();
     let stored = StoredSession {
         schema_version: SCHEMA_VERSION,

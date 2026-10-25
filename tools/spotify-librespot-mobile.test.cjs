@@ -62,7 +62,8 @@ test(Fixture.names.beforeDispatch, async () => { const current = fixture(); cons
   await assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled)); assert.equal(current.calls.login.length, Fixture.zero); assert.equal(current.calls.canceled.length, Fixture.zero); });
 test(Fixture.names.lateFailure, async () => { const current = fixture(); current.state.pending = deferred(); const authorizing = current.authentication.login(input(), current.cancellation.signal);
   await flush(); current.cancellation.abort(); await assert.rejects(authorizing, failure(library.IntegrationFailureCode.Canceled)); current.state.pending.reject(new Error(Fixture.privateMessage)); await flush(); });
-test(Fixture.names.typedFailure, async () => { for (const code of [library.IntegrationFailureCode.Unauthorized, library.IntegrationFailureCode.Unsupported, library.IntegrationFailureCode.Deadline]) {
+test(Fixture.names.typedFailure, async () => { for (const code of [library.IntegrationFailureCode.Unauthorized, library.IntegrationFailureCode.NativeSessionRejected,
+  library.IntegrationFailureCode.NativeTokenRejected, library.IntegrationFailureCode.Unsupported, library.IntegrationFailureCode.Deadline]) {
   const current = fixture(); current.state.pending = deferred(); current.state.pending.reject({ code, message: Fixture.privateMessage });
   await assert.rejects(current.authentication.login(input(), current.cancellation.signal), failure(code)); } });
 test(Fixture.names.unknownFailure, async () => { for (const rejection of [new Error(Fixture.privateMessage), Fixture.privateMessage, null, { code: Fixture.privateCode }]) {

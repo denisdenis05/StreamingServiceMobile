@@ -8,7 +8,7 @@ export const SpotifyJamCopy = Object.freeze({
   testBuild: 'Personal test connection',
   deviceHeading: 'Email code or browser login',
   deviceConnect: 'Log in with Spotify',
-  deviceExplanation: 'Continue in Spotify’s browser page, where you can use an email code or another available login method. Approve the pairing request, then return to this app.',
+  deviceExplanation: 'Continue on Spotify’s page or in the Spotify app. The pairing request is named Spotify for Desktop. Approve it, then return to this app manually; Spotify does not redirect you back.',
   pairingCode: 'Pairing code: ', pairingExpires: 'Expires at ',
   pairingExplanation: 'This pairing code is different from the email code Spotify sends. Enter the email code only on Spotify’s page.',
   reopenVerification: 'Open Spotify login again', cancelSignIn: 'Cancel sign-in',

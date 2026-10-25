@@ -25,6 +25,8 @@ export const SpotifyFailureMessages: Readonly<Record<IntegrationFailureCode, str
   [IntegrationFailureCode.Canceled]: 'The request was cancelled.',
   [IntegrationFailureCode.Superseded]: 'The connection changed. Try again with the current account.',
   [IntegrationFailureCode.Unauthorized]: 'Spotify authorization expired or was rejected. Log in again.',
+  [IntegrationFailureCode.NativeSessionRejected]: 'Spotify rejected the native session. Sign in again. Stage: native-session.',
+  [IntegrationFailureCode.NativeTokenRejected]: 'Spotify rejected the native token exchange. Sign in again. Stage: native-token.',
   [IntegrationFailureCode.Forbidden]: 'Spotify did not allow that action. Check your account, approved permissions and Jam role.',
   [IntegrationFailureCode.NotFound]: 'Spotify could not find that Jam or device. Check the invitation and try again.',
   [IntegrationFailureCode.RateLimited]: 'Spotify is limiting requests. Wait before trying again.',

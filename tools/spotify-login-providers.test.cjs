@@ -7,7 +7,7 @@ const { SpotifyLoginProviders } = require(Imports.providers);
 const Fixture = Object.freeze({ account: 'application-account', spotifyAccount: 'spotify-account', stored: 'opaque-native-session',
   token: 'synthetic-access-token', refreshToken: 'synthetic-refresh-token', client: '0123456789abcdef0123456789abcdef',
   redirect: 'streamingservicespotify://callback', scope: 'user-read-private', deviceClient: '65b708073fc0480ea92a077233ca87bd', deviceCode: 'private-device-code', userCode: 'ABCDEF',
-  verificationAddress: 'https://spotify.com/pair?code=ABCDEF', pollingIntervalMilliseconds: 5000, schema: 1, now: 1000, expiration: 90000,
+  verificationAddress: 'https://spotify.com/pair?code=ABCDEF', pollingIntervalMilliseconds: 5000, schema: 1, deviceSchema: 2, now: 1000, expiration: 90000,
   proofCharacter: 'x', proofLength: 64, challengeLength: 43, zero: 0, one: 1, malformed: 'invalid-json',
   username: 'synthetic-username', password: 'synthetic-password', privateFailure: 'Sensitive store failure',
   names: Object.freeze({ create: 'Librespot creation binds the application account store and keeps OAuth unused',
@@ -42,7 +42,7 @@ function fixture() {
     authentication: { login: async input => { calls.native.push(input); return grant; }, restore: async input => { calls.native.push(input); return grant; } },
     clock: { nowMilliseconds: () => Fixture.now }, createBrowserLogin: (...parameters) => { calls.oauth.push(parameters); return oauthProvider; } });
   return { providers, state, calls, failingOwners, configuration, oauthProvider, Namespace,
-    saveDevice() { state.deviceAuthorization = JSON.stringify({ schemaVersion: Fixture.schema, clientIdentifier: Fixture.deviceClient,
+    saveDevice() { state.deviceAuthorization = JSON.stringify({ schemaVersion: Fixture.deviceSchema, clientIdentifier: Fixture.deviceClient,
       deviceCode: Fixture.deviceCode, userCode: Fixture.userCode, verificationAddress: Fixture.verificationAddress,
       createdAtMilliseconds: Fixture.now, expiresAtMilliseconds: Fixture.expiration, pollingIntervalMilliseconds: Fixture.pollingIntervalMilliseconds }); },
     saveNative() { state.native = JSON.stringify({ schemaVersion: Fixture.schema, accountIdentifier: Fixture.spotifyAccount, storedCredential: Fixture.stored }); },
