@@ -1,3 +1,37 @@
+# Android Connect APK and fresh event checkpoint — 2026-10-26
+
+Built and verified build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk:
+35,138,748 bytes; SHA-256
+6acc5fe437d7f41eb24a4e1cc94bd0ec488cb07b0c8e2d64ef121dd8867ee21f.
+Forced release bundle generation, Android release/JVM assembly, APK signature,
+16 KB archive alignment and native ELF LOAD alignment passed. The embedded
+Hermes bundle is 2,124,000 bytes and includes the Connect event/credential handoff
+markers. ARM64 native session is 5,167,832 bytes, SHA-256
+3c61ff3b22502fd01a74822b34473949c0e9e46b1a074464cf5640f3013d7d43.
+Artifact metadata records library eb7cbb8, mobile c6fdbdd and unchanged player
+ae4666d. ADB reports no devices/emulators, so installation/phone lifecycle is
+not agent verified. This APK adds observer ownership and registration; shared
+guest queue/audio and app-led hosting are still incomplete.
+
+The user then started playback. Live Dealer updates on generation 1 showed an
+active device, new playback anchors, pause/resume transitions and an 80-entry
+queue with occurrence identifiers. This establishes fresh transport observation
+on the approved account. It does not establish audio alignment, guest admission
+or app-owned host behavior. Unified exec 79452 remains active with its grant only
+in memory. A second-account Jam invitation has been requested for guest testing.
+Do not pair again while that process is available; it supports refresh/restart/stop.
+
+The final build passed Android JVM 39. The final source-store regression suite
+has nineteen cases; three were added after the earlier full 293 mobile Node
+suite passed. Library 561, mobile UI/platform 89, Rust/JNI 86, probe 23 and full
+app TypeScript passed. Further source changes require another bundle/build before
+claiming they are included in the APK. Detailed feature mapping follows below.
+
+Next chapter: route queue/playback actions through typed native Connect commands
+with fresh host/track/restriction preflight, generation/account fencing and
+unknown-outcome handling. Continue through the active queue; the APK is a
+checkpoint, not completion.
+
 # Android Connect ownership and hidden-device registration — 2026-10-26
 
 Implemented a React Native SpotifyConnectSession module, a native-owned polling

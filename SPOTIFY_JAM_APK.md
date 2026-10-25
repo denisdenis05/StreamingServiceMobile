@@ -1,3 +1,22 @@
+# Native Connect ownership build — 2026-10-26
+
+Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
+35,138,748 bytes; SHA-256
+6acc5fe437d7f41eb24a4e1cc94bd0ec488cb07b0c8e2d64ef121dd8867ee21f.
+
+Adds account-bound persistent native connection ownership, cancellation/cleanup
+on logout/replacement/reload, actual app device registration and a separate
+connection status in the Jam screen. Native control-mode joining uses the
+verified app device; remote listening remains disabled until playback is ready.
+The working native paired login is preserved. Independent registration and fresh
+Spotify pause/resume/queue events are live verified on the host diagnostic.
+
+Signature, 16 KB ZIP/native alignment, forced Hermes generation, Android release
+assembly and 39 JVM cases pass. The APK has not been installed by the agent;
+no ADB device is available. Guest admission, shared queue mutation, synchronized
+audio, app-led hosting and continuous background playback remain in development.
+See SPOTIFY_INTEGRATION_PROGRESS.md for the active live process and exact tests.
+
 # Spotify Jam personal-test app
 
 Updated 2026-10-25. The source implements primary browser/device login, optional
