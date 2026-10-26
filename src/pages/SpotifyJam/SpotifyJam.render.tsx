@@ -174,6 +174,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
         <DefaultButton title={SpotifyJamCopy.connect} onPress={connect} disabled={busy || !clientIdentifier.trim()} />
       </View> : <>
         <SpotifyJamMembership />
+        {snapshot.canReconcileSharedState === true && session?.ownedByCurrentAccount && session.active && session.hostDeviceIdentifier && <DefaultButton title={SpotifyJamCopy.reconcileSharedState}
+          onPress={() => { void spotifyMobile.reconcileSharedState(); }} disabled={busy} />}
         <SpotifySharedPlayback />
         <SpotifyPlaybackControls />
         <SpotifyHostedQueue />

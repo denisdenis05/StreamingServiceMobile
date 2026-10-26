@@ -43,6 +43,15 @@ export class SpotifyRecordingQueueStore {
     return this.coordinator.enqueue(spotifyIdentifier, this.dependencies.nextIdentifier(), this.cancellation.signal);
   }
 
+  prepareSharedStateRecovery(coordinator: RecordingQueueWorkflow): () => void {
+    const snapshot = this.snapshot;
+    return () => {
+      if (this.disposed || coordinator !== this.coordinator || coordinator !== this.dependencies.getCoordinator()
+        || snapshot !== this.snapshot || snapshot.failure !== IntegrationFailureCode.UnknownOutcome) return;
+      coordinator.clear();
+    };
+  }
+
   clear(): void { this.coordinator?.clear(); }
 
   dispose(): void {

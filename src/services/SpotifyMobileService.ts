@@ -1,5 +1,5 @@
 import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
-  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
+  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
@@ -70,6 +70,17 @@ export const spotifyMobile = new SpotifyMobileController({
   authorizationReturnStatus: () => spotifyLoginBrowser.getReturnStatus(),
   account: authenticationSession, gateway, clock, nextIdentifier,
   membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),
+  prepareSharedStateRecovery: sessions => {
+    const runtime = spotifyIntegration.runtime;
+    if (!runtime || runtime.sessions !== sessions) return () => undefined;
+    const completePlayback = spotifyPlaybackCommands.prepareSharedStateRecovery(runtime);
+    const completeRecording = spotifyRecordingQueue.prepareSharedStateRecovery(runtime.recordingQueue);
+    return () => {
+      if (runtime !== spotifyIntegration.runtime || runtime.sessions !== sessions) return;
+      completePlayback();
+      completeRecording();
+    };
+  },
   connectNative: (provider, accountIdentifier, cancellation) => {
     if (provider.getNativeSessionCredential) void spotifyConnect.attach(provider, accountIdentifier, cancellation).catch(() => undefined);
   },
@@ -127,6 +138,7 @@ export const spotifyMobile = new SpotifyMobileController({
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,
       scheduler: new SystemScheduler(), playbackClock,
       ...(selection.useNativeConnect ? {
+        sharedStateVerifier: new SpotifyConnectSharedStateVerifier(spotifyConnect, identity.accountIdentifier),
         connectMetadata: spotifyConnect,
         hostedQueueReader: new SpotifyConnectHostedQueueReader(spotifyConnect, spotifyConnect, identity.accountIdentifier),
         playbackReader: new SpotifyConnectPlaybackReader(spotifyConnect, identity.accountIdentifier),

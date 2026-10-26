@@ -74,5 +74,6 @@ export const SpotifyJamCopy = Object.freeze({
   sessionChanged: 'The Jam changed while confirmation was open. Review the current session before ending it.',
   shareTitle: 'Join my Spotify Jam', shareFailure: 'The invitation could not be shared. Try again when the session is ready.',
   working: 'Working', noneSelected: 'A device is optional for creating, joining in control mode, and refreshing your Jam.',
-  uncertainty: 'The last action has an unknown outcome. Refresh your Jam before another change.',
+  reconcileSharedState: 'Refresh shared state',
+  uncertainty: 'The last action may have reached Spotify. Refresh shared state before another change.',
 });

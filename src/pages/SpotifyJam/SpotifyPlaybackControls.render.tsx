@@ -12,7 +12,7 @@ export const PlaybackControlCopy = Object.freeze({ title: 'Control Spotify host 
   play: 'Play on Spotify', pause: 'Pause on Spotify', next: 'Next on Spotify', previous: 'Previous on Spotify',
   seek: 'Seek on Spotify', position: 'Position in seconds', keyboard: 'decimal-pad', maximumPositionCharacters: 16,
   emptyText: '', pending: 'Waiting for Spotify playback acknowledgement…',
-  uncertain: 'The playback command may have reached Spotify. Check playback, then disconnect and reconnect before another command.' } as const);
+  uncertain: 'The playback command may have reached Spotify. Refresh shared state before another command.' } as const);
 
 export default function SpotifyPlaybackControls() {
   const snapshot = useSyncExternalStore(spotifyPlaybackCommands.subscribe, spotifyPlaybackCommands.getSnapshot);

@@ -26,7 +26,7 @@ const SeekPolicy = Object.freeze({ secondsPattern: /^(?:0|[1-9]\d*)(?:\.\d{1,3})
 export class SpotifyPlaybackCommandStore {
   private runtime: SpotifyJamRuntime | null = null;
   private lifetime: PlaybackCommandLifetime | null = null;
-  private uncertainRuntime: SpotifyJamRuntime | null = null;
+  private uncertainty: { readonly runtime: SpotifyJamRuntime } | null = null;
   private snapshot = EmptySnapshot;
   private readonly listeners = new Set<() => void>();
   private readonly stopConnection: () => void;
@@ -58,6 +58,19 @@ export class SpotifyPlaybackCommandStore {
     });
   }
 
+  prepareSharedStateRecovery(runtime: SpotifyJamRuntime): () => void {
+    const uncertainty = this.uncertainty;
+    const targetIdentifier = this.targetIdentifier();
+    return () => {
+      if (this.disposed || runtime !== this.runtime || runtime !== this.dependencies.getRuntime()
+        || uncertainty !== this.uncertainty || targetIdentifier !== this.targetIdentifier()) return;
+      this.uncertainty = null;
+      this.publish({ ...this.snapshot, uncertain: false,
+        failure: this.snapshot.failure === IntegrationFailureCode.UnknownOutcome ? null : this.snapshot.failure });
+      this.refresh();
+    };
+  }
+
   dispose(): void {
     this.disposed = true; this.stopConnection(); this.stopSession?.(); this.lifetime?.cancellation.abort();
     this.lifetime = null; this.runtime = null; this.listeners.clear();
@@ -68,7 +81,7 @@ export class SpotifyPlaybackCommandStore {
     const runtime = this.dependencies.getRuntime();
     if (runtime !== this.runtime) {
       this.stopSession?.(); this.lifetime?.cancellation.abort(); this.lifetime = null;
-      this.runtime = runtime; this.uncertainRuntime = null;
+      this.runtime = runtime; this.uncertainty = null;
       this.snapshot = EmptySnapshot;
       this.stopSession = runtime?.sessions.subscribe(() => this.refresh()) ?? null;
     }
@@ -86,7 +99,7 @@ export class SpotifyPlaybackCommandStore {
       && session.active && session.hostDeviceIdentifier
       && (membership?.status === JamConnectionStatus.Ready || membership?.status === JamConnectionStatus.Operating));
     this.publish({ ...this.snapshot, available, pending: this.lifetime !== null,
-      uncertain: this.uncertainRuntime !== null && this.uncertainRuntime === this.runtime });
+      uncertain: this.uncertainty !== null && this.uncertainty.runtime === this.runtime });
   }
 
   private async dispatch(prepare: (lifetime: PlaybackCommandLifetime) => Promise<HostedPlaybackCommand>): Promise<void> {
@@ -102,7 +115,7 @@ export class SpotifyPlaybackCommandStore {
       if (!this.current(lifetime)) return;
       const receipt = await lifetime.runtime.sessions.executeHostedPlayback(command, this.dependencies.nextIdentifier());
       if (!this.current(lifetime)) return;
-      if (receipt.failure === IntegrationFailureCode.UnknownOutcome) this.uncertainRuntime = lifetime.runtime;
+      if (receipt.failure === IntegrationFailureCode.UnknownOutcome) this.uncertainty = Object.freeze({ runtime: lifetime.runtime });
       this.publish({ ...this.snapshot, failure: receipt.failure });
     } catch (failure) {
       if (this.current(lifetime)) this.publish({ ...this.snapshot,

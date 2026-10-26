@@ -14,7 +14,7 @@ const Fixture = Object.freeze({ account: 'spotify-account', session: 'owned-sess
     seek: 'Seeking binds converted milliseconds to a freshly read Spotify track',
     invalid: 'Malformed seek text never reads or mutates playback',
     duplicate: 'Busy controls ignore duplicate taps until the receipt settles',
-    uncertain: 'An uncertain playback receipt disables controls until reconnection',
+    uncertain: 'An uncertain playback receipt survives membership observation and resets on reconnection',
     connection: 'Account runtime replacement ignores late playback receipts',
     membership: 'Host replacement aborts seek preparation and preserves the replacement state',
     dispose: 'Disposed controls cannot send commands or accept late results',

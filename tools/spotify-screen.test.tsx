@@ -30,7 +30,7 @@ const Names = Object.freeze({ connect: 'Login opens only on a press and supplies
 let snapshot: SpotifyMobileSnapshot;
 const controller = {
   getSnapshot: () => snapshot, subscribe: () => () => undefined, connect: jest.fn(), login: jest.fn(), loginWithLibrespot: jest.fn(), loginWithDeviceAuthorization: jest.fn(), openDeviceAuthorization: jest.fn(), restore: jest.fn(), addToQueue: jest.fn(), disconnect: jest.fn(),
-  createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
+  reconcileSharedState: jest.fn(), createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
 const SharedPlaybackScreen = '../src/pages/SpotifyJam/SpotifySharedPlayback.render';
@@ -297,4 +297,30 @@ test.each(NativeDiagnosticScreenCodes)(NativeDiagnosticScreenName, async failure
   const text = JSON.stringify(rendered.toJSON()); expect(text).toContain(SpotifyFailureMessages[failure]);
   expect(text).not.toContain(SpotifyJamCopy.deviceSessionRejected); expect(text).not.toContain(SpotifyJamCopy.deviceRejected);
   expect(text).not.toContain(SpotifyJamCopy.librespotRejected); expect(controller.restore).not.toHaveBeenCalled();
+});
+
+const SharedStateScreenNames = Object.freeze({ explicit: 'Shared state recovery requires an explicit press and is disabled during recovery',
+  unavailable: 'Shared state recovery stays hidden without native capability or owned active hosting' });
+test(SharedStateScreenNames.explicit, async () => {
+  const connected = connection(true, true);
+  snapshot = { ...connected, canReconcileSharedState: true, session: { ...connected.session!,
+    session: { ...connected.session!.session!, hostDeviceIdentifier: Fixture.deviceIdentifier } } };
+  await render();
+  expect(controller.reconcileSharedState).not.toHaveBeenCalled();
+  const recovery = rendered.root.findAllByType(DefaultButton).find(candidate => candidate.props.title === SpotifyJamCopy.reconcileSharedState)!;
+  expect(recovery.props.disabled).toBe(false);
+  await act(async () => recovery.props.onPress());
+  expect(controller.reconcileSharedState).toHaveBeenCalledTimes(Fixture.singleInvocationCount);
+  snapshot = { ...snapshot, operation: SpotifyMobileOperation.Reconciling };
+  await act(async () => rendered.update(<SpotifyJam navigation={navigation} />));
+  expect(rendered.root.findAllByType(DefaultButton).find(candidate => candidate.props.title === SpotifyJamCopy.reconcileSharedState)!.props.disabled).toBe(true);
+});
+test(SharedStateScreenNames.unavailable, async () => {
+  for (const current of [connection(), { ...connection(true, false), canReconcileSharedState: true },
+    { ...connection(true, true), canReconcileSharedState: true }]) {
+    snapshot = current;
+    await render();
+    expect(rendered.root.findAllByType(DefaultButton).some(candidate => candidate.props.title === SpotifyJamCopy.reconcileSharedState)).toBe(false);
+    await act(async () => rendered.unmount());
+  }
 });

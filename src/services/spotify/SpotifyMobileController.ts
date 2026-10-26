@@ -10,12 +10,13 @@ import type { SpotifyConnectSnapshot } from './SpotifyConnectStore';
 
 export enum SpotifyMobileOperation {
   Idle = 'idle', Connecting = 'connecting', Disconnecting = 'disconnecting', Devices = 'devices', Creating = 'creating',
-  Queueing = 'queueing', Joining = 'joining', Refreshing = 'refreshing', Ending = 'ending', Leaving = 'leaving',
+  Queueing = 'queueing', Joining = 'joining', Refreshing = 'refreshing', Reconciling = 'reconciling', Ending = 'ending', Leaving = 'leaving',
 }
 
 export enum SpotifyAuthenticationAction { Login = 'login', Restore = 'restore', Resume = 'resume' }
 
 export interface SpotifyMobileSnapshot {
+  readonly canReconcileSharedState?: boolean;
   readonly nativeConnection?: SpotifyConnectSnapshot;
   readonly authenticationAction?: SpotifyAuthenticationAction;
   readonly authenticationMethod?: SpotifyLoginMethod;
@@ -50,6 +51,7 @@ export interface SpotifyMobileDependencies {
   readonly resumeLogin?: (applicationAccountIdentifier: string, cancellation: AbortSignal, progress?: (stage: SpotifyLoginStage) => void) => Promise<SpotifyLoginProvider | null>;
   readonly forgetSavedLogin?: (applicationAccountIdentifier: string) => Promise<void>;
   readonly membershipRefreshed?: () => void;
+  readonly prepareSharedStateRecovery?: (sessions: JamSessionClient) => () => void;
   readonly connectNative?: (provider: SpotifyLoginProvider, accountIdentifier: string, cancellation: AbortSignal) => void;
   readonly nativeDeviceIdentifier?: (mode: JamJoinMode) => string | null;
   readonly resolveInvitation?: (invitation: string, cancellation: AbortSignal) => Promise<string>;
@@ -341,7 +343,7 @@ export class SpotifyMobileController {
       useNativeConnect: this.loginSession?.getNativeSessionCredential !== undefined,
     });
     this.stopSessionObservation = this.sessions.subscribe(() => this.observeSession(lifetime));
-    this.publish({ ...this.snapshot, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),
+    this.publish({ ...this.snapshot, canReconcileSharedState: this.sessions.capabilities.reconcileSharedState, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),
       ...(this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot && this.dependencies.nativeConnection
         ? { nativeConnection: this.dependencies.nativeConnection.getSnapshot() } : {}),
       operation: SpotifyMobileOperation.Connecting });
@@ -403,6 +405,23 @@ export class SpotifyMobileController {
     return this.run(SpotifyMobileOperation.Refreshing, sessions => sessions.refreshCurrentSession(this.dependencies.nextIdentifier())).then(applied => {
       if (applied && this.current(lifetime)) this.dependencies.membershipRefreshed?.();
       return applied;
+    });
+  }
+
+  reconcileSharedState(): Promise<boolean> {
+    const sessions = this.sessions;
+    if (!sessions?.capabilities.reconcileSharedState) {
+      this.fail(IntegrationFailureCode.Unsupported);
+      return Promise.resolve(false);
+    }
+    const lifetime = this.cancellation;
+    const completeRecovery = this.dependencies.prepareSharedStateRecovery?.(sessions);
+    return this.run(SpotifyMobileOperation.Reconciling,
+      currentSessions => currentSessions.reconcileSharedState(this.dependencies.nextIdentifier(), lifetime.signal)).then(applied => {
+      if (!applied || !this.current(lifetime) || sessions !== this.sessions) return false;
+      completeRecovery?.();
+      this.dependencies.membershipRefreshed?.();
+      return true;
     });
   }
 
@@ -509,7 +528,7 @@ export class SpotifyMobileController {
   private start(operation: SpotifyMobileOperation): boolean {
     if (this.disposed || !this.snapshot.connected) { this.fail(IntegrationFailureCode.Unauthorized); return false; }
     if (this.snapshot.operation !== SpotifyMobileOperation.Idle) { this.fail(IntegrationFailureCode.Backpressure); return false; }
-    if (operation !== SpotifyMobileOperation.Refreshing && operation !== SpotifyMobileOperation.Devices
+    if (operation !== SpotifyMobileOperation.Refreshing && operation !== SpotifyMobileOperation.Reconciling && operation !== SpotifyMobileOperation.Devices
       && this.snapshot.session?.status !== JamConnectionStatus.Ready) {
       this.fail(this.snapshot.session?.status === JamConnectionStatus.Uncertain
         ? IntegrationFailureCode.UnknownOutcome : IntegrationFailureCode.InvalidResponse);
