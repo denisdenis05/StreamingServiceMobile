@@ -10,6 +10,15 @@ class SpotifyConnectOwnerTest {
         val canceled = mutableListOf<Long>()
         val finished = mutableListOf<Long>()
         val refreshed = mutableListOf<Pair<Long, Long>>()
+        val begunCommands = mutableListOf<Pair<Long, String>>()
+        val canceledCommands = mutableListOf<Pair<Long, String>>()
+        val finishedCommands = mutableListOf<Pair<Long, String>>()
+        val commands = mutableListOf<Pair<Long, String>>()
+        var onCommand: () -> Unit = {}
+        override fun beginCommand(handle: Long, requestIdentifier: String) { begunCommands.add(handle to requestIdentifier) }
+        override fun command(handle: Long, requestIdentifier: String, serialized: String) { commands.add(handle to serialized); onCommand() }
+        override fun cancelCommand(handle: Long, requestIdentifier: String) { canceledCommands.add(handle to requestIdentifier) }
+        override fun finishCommand(handle: Long, requestIdentifier: String) { finishedCommands.add(handle to requestIdentifier) }
         var cancelFails = false
         var batch = SpotifyConnectBatch(PAYLOAD, false)
         var onRefresh: () -> Unit = {}
@@ -105,7 +114,51 @@ class SpotifyConnectOwnerTest {
         fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true, false); fixture.owner.pump()
         assertEquals(SINGLE_COUNT, fixture.events.size); assertFalse(fixture.owner.hasConnection())
     }
+    @Test
+    fun commandReservationExistsBeforeWorkerDispatchAndCanceledQueuedWorkNeverExecutes() {
+        val fixture = Fixture(); fixture.start()
+        val reservation = fixture.owner.prepareCommand(IDENTIFIER, REQUEST_IDENTIFIER)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), fixture.execution.begunCommands)
+        fixture.owner.cancelCommand(IDENTIFIER, REQUEST_IDENTIFIER)
+        requireFailure(CANCELED_FAILURE) { fixture.owner.executeCommand(reservation, PAYLOAD) }
+        assertTrue(fixture.execution.commands.isEmpty())
+        requireFailure(BACKPRESSURE_FAILURE) { fixture.owner.prepareCommand(IDENTIFIER, REQUEST_IDENTIFIER) }
+        fixture.owner.finishCommand(reservation); fixture.owner.finishCommand(reservation)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), fixture.execution.finishedCommands)
+    }
+    @Test
+    fun retiredCommandReservationCannotExecuteOrFinishAReplacementWithTheSameRequestIdentifier() {
+        val fixture = Fixture(); fixture.start()
+        val retiredReservation = fixture.owner.prepareCommand(IDENTIFIER, REQUEST_IDENTIFIER)
+        fixture.close(); fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.owner.pump()
+        fixture.start(); val currentReservation = fixture.owner.prepareCommand(IDENTIFIER, REQUEST_IDENTIFIER)
+        requireFailure(CANCELED_FAILURE) { fixture.owner.executeCommand(retiredReservation, PAYLOAD) }
+        fixture.owner.finishCommand(retiredReservation)
+        assertTrue(fixture.execution.finishedCommands.isEmpty())
+        fixture.owner.executeCommand(currentReservation, PAYLOAD); fixture.owner.finishCommand(currentReservation)
+        assertEquals(listOf(HANDLE to PAYLOAD), fixture.execution.commands)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), fixture.execution.finishedCommands)
+    }
+    @Test
+    fun cancellationAfterNativeDispatchReportsUnknownOutcomeAndRetiresExactlyOnce() {
+        val fixture = Fixture(); fixture.start()
+        val reservation = fixture.owner.prepareCommand(IDENTIFIER, REQUEST_IDENTIFIER)
+        fixture.execution.onCommand = { fixture.owner.cancelCommand(IDENTIFIER, REQUEST_IDENTIFIER) }
+        requireFailure(UNKNOWN_OUTCOME_FAILURE) { fixture.owner.executeCommand(reservation, PAYLOAD) }
+        fixture.owner.finishCommand(reservation)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), fixture.execution.canceledCommands)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), fixture.execution.finishedCommands)
+    }
+    @Test
+    fun staleOwnersAndMalformedCommandIdentifiersCannotReserveNativeWork() {
+        val fixture = Fixture(); fixture.start()
+        requireFailure(CANCELED_FAILURE) { fixture.owner.prepareCommand(OTHER_IDENTIFIER, REQUEST_IDENTIFIER) }
+        requireFailure(INVALID_INPUT_FAILURE) { fixture.owner.prepareCommand(IDENTIFIER, EMPTY_TEXT) }
+        assertTrue(fixture.execution.begunCommands.isEmpty())
+    }
     companion object {
+        private const val REQUEST_IDENTIFIER = "synthetic-native-command"
+        private const val UNKNOWN_OUTCOME_FAILURE = "unknown-outcome"
         private const val IDENTIFIER = "synthetic-connection-owner"
         private const val OTHER_IDENTIFIER = "replacement-connection-owner"
         private const val CREDENTIAL = "synthetic-private-credential"

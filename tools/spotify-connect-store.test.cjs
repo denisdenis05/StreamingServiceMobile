@@ -31,12 +31,15 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
-  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], membership: Fixture.zero };
-  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null };
+  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], commands: [], canceledCommands: [], membership: Fixture.zero };
+  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null };
   const provider = { getNativeSessionCredential: async () => state.credential };
   const started = deferred();
   let sequence = Fixture.zero;
-  const native = { async start(identifier, serialized) { calls.starts.push({ identifier, input: JSON.parse(serialized) }); started.resolve(); return state.start ? state.start.promise : Fixture.handle; },
+  const native = { async executeCommand(identifier, requestIdentifier, serialized) {
+      calls.commands.push({ identifier, requestIdentifier, input: JSON.parse(serialized) }); if (state.command) await state.command.promise;
+    }, async cancelCommand(identifier, requestIdentifier) { calls.canceledCommands.push({ identifier, requestIdentifier }); },
+    async start(identifier, serialized) { calls.starts.push({ identifier, input: JSON.parse(serialized) }); started.resolve(); return state.start ? state.start.promise : Fixture.handle; },
     async close(identifier) { calls.closes.push(identifier); if (state.close) await state.close.promise; },
     async refresh(identifier, generation) { calls.refreshes.push({ identifier, generation }); } };
   const dependencies = { native: () => native, observe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
@@ -165,4 +168,106 @@ test(Fixture.names.failedObserver, async () => {
   const start = current.state.start; const attaching = current.attach(); const rejected = assert.rejects(attaching, { code: library.IntegrationFailureCode.Network });
   await current.started.promise; start.reject(new Error(Fixture.privateFailure)); await rejected; await flush();
   assert.equal(current.calls.starts.length, Fixture.one); current.state.close.resolve(); await replacement; stop(); await current.store.detach();
+});
+
+const CommandFixture = Object.freeze({ host: 'synthetic-host', operation: 'command', invalidTarget: 'invalid target',
+  names: { route: 'Typed native commands retain their account binding generation request identifier and host',
+    unsupported: 'Unregistered and cross-account commands never dispatch native mutations',
+    cancellation: 'Canceled dispatched commands cancel their reservation and report uncertainty without retry',
+    replacement: 'Account replacement cancels old commands and ignores late successful receipts',
+    generation: 'A receipt from a previous Dealer generation cannot report success',
+    bounds: 'Malformed targets and pre-canceled commands do not dispatch or allocate native work',
+    failure: 'Native denials remain classified without retry or credential exposure' } });
+const command = () => ({ kind: library.HostedPlaybackCommandKind.Pause });
+test(CommandFixture.names.route, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  await current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  const submitted = current.calls.commands[Fixture.zero];
+  assert.deepEqual(submitted.input, { operation: CommandFixture.operation, generation: Fixture.generation,
+    requestIdentifier: submitted.requestIdentifier, targetDeviceIdentifier: CommandFixture.host, command: command() });
+  assert.equal(submitted.identifier, current.calls.starts[Fixture.zero].identifier); await current.store.detach();
+});
+test(CommandFixture.names.unsupported, async () => {
+  const current = fixture(); await current.attach();
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal), { code: library.IntegrationFailureCode.Unsupported });
+  current.send(registration());
+  await assert.rejects(current.store.execute(Fixture.otherAccount, command(), CommandFixture.host, new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
+  assert.deepEqual(current.calls.commands, []); await current.store.detach();
+});
+test(CommandFixture.names.cancellation, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const abort = new AbortController(); const execution = current.store.execute(Fixture.account, command(), CommandFixture.host, abort.signal);
+  const rejected = assert.rejects(execution, { code: library.IntegrationFailureCode.UnknownOutcome }); abort.abort(); await rejected;
+  assert.equal(current.calls.commands.length, Fixture.one);
+  assert.deepEqual(current.calls.canceledCommands, [{ identifier: current.calls.commands[Fixture.zero].identifier,
+    requestIdentifier: current.calls.commands[Fixture.zero].requestIdentifier }]);
+  current.state.command.resolve(); await flush(); await current.store.detach();
+});
+test(CommandFixture.names.replacement, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const execution = current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  const rejected = assert.rejects(execution, { code: library.IntegrationFailureCode.UnknownOutcome });
+  await current.attach(); current.send(registration()); await rejected;
+  current.state.command.resolve(); await flush(); assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready);
+  assert.equal(current.calls.commands.length, Fixture.one); assert.equal(current.calls.canceledCommands.length, Fixture.one);
+  await current.store.detach();
+});
+test(CommandFixture.names.generation, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const execution = current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  current.send(registration(), Fixture.nextGeneration); current.state.command.resolve();
+  await assert.rejects(execution, { code: library.IntegrationFailureCode.UnknownOutcome }); await current.store.detach();
+});
+test(CommandFixture.names.bounds, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  const abort = new AbortController(); abort.abort();
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, abort.signal), { code: library.IntegrationFailureCode.Canceled });
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.invalidTarget, new AbortController().signal), { code: library.IntegrationFailureCode.InvalidInput });
+  assert.deepEqual(current.calls.commands, []); await current.store.detach();
+});
+test(CommandFixture.names.failure, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const execution = current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  current.state.command.reject({ code: library.IntegrationFailureCode.Forbidden, message: Fixture.privateFailure });
+  await assert.rejects(execution, { code: library.IntegrationFailureCode.Forbidden });
+  assert.equal(current.calls.commands.length, Fixture.one); assert.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
+  await current.store.detach();
+});
+const CapacityFixture = Object.freeze({ maximumPendingCommands: 16, fixedIdentifier: 'fixed-command',
+  names: { capacity: 'Native pending commands are bounded until their transport receipt actually finishes',
+    duplicate: 'A repeated identifier cannot reuse an active native command reservation',
+    immutable: 'Native command values are copied before caller mutation',
+    reentrant: 'Identifier allocation cannot dispatch into an account retired during allocation' } });
+test(CapacityFixture.names.capacity, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const executions = Array.from({ length: CapacityFixture.maximumPendingCommands }, () =>
+    current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal));
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal),
+    { code: library.IntegrationFailureCode.Backpressure });
+  assert.equal(current.calls.commands.length, CapacityFixture.maximumPendingCommands);
+  current.state.command.resolve(); await Promise.all(executions); await flush();
+  await current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  await current.store.detach();
+});
+test(CapacityFixture.names.duplicate, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  current.dependencies.nextIdentifier = () => CapacityFixture.fixedIdentifier;
+  const execution = current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal);
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal),
+    { code: library.IntegrationFailureCode.Backpressure });
+  current.state.command.resolve(); await execution; await current.store.detach();
+});
+test(CapacityFixture.names.immutable, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.command = deferred();
+  const intent = command(); const execution = current.store.execute(Fixture.account, intent, CommandFixture.host, new AbortController().signal);
+  intent.kind = library.HostedPlaybackCommandKind.Next;
+  assert.equal(current.calls.commands[Fixture.zero].input.command.kind, library.HostedPlaybackCommandKind.Pause);
+  current.state.command.resolve(); await execution; await current.store.detach();
+});
+test(CapacityFixture.names.reentrant, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  current.dependencies.nextIdentifier = () => { void current.store.detach(); return CapacityFixture.fixedIdentifier; };
+  await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal),
+    { code: library.IntegrationFailureCode.Canceled });
+  assert.deepEqual(current.calls.commands, []); await current.store.detach();
 });

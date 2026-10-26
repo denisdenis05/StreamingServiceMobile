@@ -13,6 +13,12 @@ class SpotifyConnectNativeExecutionTest {
         var polled = JSONObject().put(HANDLE_FIELD, HANDLE).put(FINISHED_FIELD, false).put(EVENTS_FIELD, JSONArray()).toString()
         var receipt = SUCCESS_RECEIPT
         val commands = mutableListOf<Pair<Long, String>>()
+        val begunCommands = mutableListOf<Pair<Long, String>>()
+        val canceledCommands = mutableListOf<Pair<Long, String>>()
+        val finishedCommands = mutableListOf<Pair<Long, String>>()
+        override fun beginCommand(handle: Long, requestIdentifier: String): String { begunCommands.add(handle to requestIdentifier); return receipt }
+        override fun cancelCommand(handle: Long, requestIdentifier: String): String { canceledCommands.add(handle to requestIdentifier); return receipt }
+        override fun finishCommand(handle: Long, requestIdentifier: String): String { finishedCommands.add(handle to requestIdentifier); return receipt }
         val canceled = mutableListOf<Long>()
         val finished = mutableListOf<Long>()
         override fun start(serialized: String): String { assertEquals(CREDENTIAL, serialized); return opened }
@@ -78,7 +84,32 @@ class SpotifyConnectNativeExecutionTest {
             native.opened = response; requireFailure(INVALID_RESPONSE_FAILURE) { execution.start(CREDENTIAL) }
         }
     }
+    @Test
+    fun commandLifecycleKeepsTheReservedHandleAndRequestIdentifier() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        execution.beginCommand(HANDLE, REQUEST_IDENTIFIER)
+        val serialized = JSONObject().put(OPERATION_FIELD, COMMAND_OPERATION).put(REQUEST_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).toString()
+        execution.command(HANDLE, REQUEST_IDENTIFIER, serialized)
+        execution.cancelCommand(HANDLE, REQUEST_IDENTIFIER); execution.finishCommand(HANDLE, REQUEST_IDENTIFIER)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), native.begunCommands)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), native.canceledCommands)
+        assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), native.finishedCommands)
+        assertEquals(listOf(HANDLE to serialized), native.commands)
+    }
+    @Test
+    fun commandsCannotExecuteWithAnotherRequestsReservationOrAsUnreservedRefreshes() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        for (serialized in listOf(PRIVATE_VALUE, JSONObject().put(OPERATION_FIELD, REFRESH_OPERATION).put(REQUEST_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).toString(),
+            JSONObject().put(OPERATION_FIELD, COMMAND_OPERATION).put(REQUEST_IDENTIFIER_FIELD, PRIVATE_VALUE).toString())) {
+            requireFailure(INVALID_INPUT_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, serialized) }
+        }
+        assertTrue(native.commands.isEmpty())
+    }
     companion object {
+        private const val COMMAND_OPERATION = "command"
+        private const val REQUEST_IDENTIFIER_FIELD = "requestIdentifier"
+        private const val REQUEST_IDENTIFIER = "synthetic-native-command"
+        private const val INVALID_INPUT_FAILURE = "invalid-input"
         private const val HANDLE = 4L
         private const val OTHER_HANDLE = 5L
         private const val GENERATION = 2L

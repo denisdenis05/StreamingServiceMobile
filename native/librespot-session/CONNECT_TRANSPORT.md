@@ -68,9 +68,10 @@ repository. Build diagnostic examples with cargo build --locked --manifest-path
 native/librespot-session/Cargo.toml --example connect_probe --example session_probe.
 Then node tools/probe-spotify-connect.cjs requests fresh browser pairing. Its
 console excludes tokens, credentials, account/device/session/track identifiers
-and raw membership/command payloads. Only refresh and stop are exposed by this
-observer test, along with restart after cleanup, which retains the grant only in
-parent process memory. Failure stages are a fixed enum and never contain raw
+and raw membership/command payloads. The observer test exposes refresh, explicit play/pause/next/previous and queue
+commands against the observed host, plus stop and restart after cleanup. Restart
+retains the grant only in parent process memory. Typed commands carry the
+observed generation and run the same fresh preflight as Android. Failure stages are a fixed enum and never contain raw
 request data. Credentials are not written to disk.
 
 ## Remaining integration
@@ -90,3 +91,27 @@ Android media playback foreground service requirements are documented at
 https://developer.android.com/develop/background-work/services/fgs/service-types.
 Background transport must be composed with actual user-requested playback;
 an observer-only connection is not evidence of background audio support.
+
+## Typed outgoing commands
+
+`tests/connect_commands.rs` covers payload endpoints, logging request identity,
+append occurrence input, seek track/duration, active-host replacement, action and
+global restrictions and malformed bounds. `tests/connect_actor.rs` adds fresh
+preflight, stale generation, closed receipt, scoped preflight cancellation and
+in-flight unknown outcomes without replay. `tests/connect_registry.rs` covers
+individual isolation, capacity, release and spontaneous termination cancellation.
+`tests/connect_bridge.rs` covers the exact typed input shape and unknown fields.
+
+Android SpotifyConnectOwnerTest adds reservation-before-queue, canceled queued
+work, identifier reuse across retired ownership, in-flight uncertainty and stale
+or malformed owners. SpotifyConnectNativeExecutionTest covers exact native
+reservation routing and rejection of a serialized command using another reserved
+request. The JNI smoke resolves the three new scoped-command exports without
+network requests. Source-store command cases cover account/generation/host
+binding, registration gating, abort and replacement, safe failure projection,
+bounded pending work, duplicate IDs, immutable intents and reentrant retirement.
+
+JNI control JSON and reservation request IDs must match. Command reservations
+are registered synchronously before worker queuing so an immediate JS abort
+cannot miss work waiting in the executor. Finishing is identity-bound/idempotent
+at the owner, so an old finally block cannot release a replacement reservation.

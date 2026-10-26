@@ -6,6 +6,9 @@ interface SpotifyConnectNativeCalls {
     fun start(serialized: String): String
     fun poll(handle: Long): String
     fun execute(handle: Long, serialized: String): String
+    fun beginCommand(handle: Long, requestIdentifier: String): String
+    fun cancelCommand(handle: Long, requestIdentifier: String): String
+    fun finishCommand(handle: Long, requestIdentifier: String): String
     fun cancel(handle: Long): String
     fun finish(handle: Long): String
 }
@@ -14,6 +17,9 @@ private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun start(serialized: String): String = SpotifyLibrespotNative.connectStart(serialized)
     override fun poll(handle: Long): String = SpotifyLibrespotNative.connectPoll(handle)
     override fun execute(handle: Long, serialized: String): String = SpotifyLibrespotNative.connectExecute(handle, serialized)
+    override fun beginCommand(handle: Long, requestIdentifier: String): String = SpotifyLibrespotNative.connectBeginCommand(handle, requestIdentifier)
+    override fun cancelCommand(handle: Long, requestIdentifier: String): String = SpotifyLibrespotNative.connectCancelCommand(handle, requestIdentifier)
+    override fun finishCommand(handle: Long, requestIdentifier: String): String = SpotifyLibrespotNative.connectFinishCommand(handle, requestIdentifier)
     override fun cancel(handle: Long): String = SpotifyLibrespotNative.connectCancel(handle)
     override fun finish(handle: Long): String = SpotifyLibrespotNative.connectFinish(handle)
 }
@@ -35,6 +41,17 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
     override fun refresh(handle: Long, generation: Long) {
         val control = JSONObject().put(OPERATION_FIELD, REFRESH_OPERATION).put(GENERATION_FIELD, generation)
         receipt(native.execute(handle, control.toString()))
+    }
+
+    override fun beginCommand(handle: Long, requestIdentifier: String) { receipt(native.beginCommand(handle, requestIdentifier)) }
+    override fun cancelCommand(handle: Long, requestIdentifier: String) { receipt(native.cancelCommand(handle, requestIdentifier)) }
+    override fun finishCommand(handle: Long, requestIdentifier: String) { receipt(native.finishCommand(handle, requestIdentifier)) }
+    override fun command(handle: Long, requestIdentifier: String, serialized: String) {
+        val control = try { JSONObject(serialized) } catch (_failure: Throwable) { throw SpotifyConnectFailure(INVALID_INPUT_FAILURE) }
+        if (control.opt(OPERATION_FIELD) != COMMAND_OPERATION || control.opt(REQUEST_IDENTIFIER_FIELD) != requestIdentifier) {
+            throw SpotifyConnectFailure(INVALID_INPUT_FAILURE)
+        }
+        receipt(native.execute(handle, serialized))
     }
 
     override fun cancel(handle: Long) { receipt(native.cancel(handle)) }
@@ -80,6 +97,9 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         private const val FAILURE_FIELD = "failure"
         private const val OPERATION_FIELD = "operation"
         private const val GENERATION_FIELD = "generation"
+        private const val INVALID_INPUT_FAILURE = "invalid-input"
+        private const val COMMAND_OPERATION = "command"
+        private const val REQUEST_IDENTIFIER_FIELD = "requestIdentifier"
         private const val REFRESH_OPERATION = "refresh"
         private const val INVALID_RESPONSE_FAILURE = "invalid-response"
         private const val NETWORK_FAILURE = "network"

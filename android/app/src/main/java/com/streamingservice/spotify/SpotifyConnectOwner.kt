@@ -4,6 +4,10 @@ interface SpotifyConnectExecution {
     fun start(serialized: String): Long
     fun poll(handle: Long): SpotifyConnectBatch
     fun refresh(handle: Long, generation: Long)
+    fun beginCommand(handle: Long, requestIdentifier: String)
+    fun command(handle: Long, requestIdentifier: String, serialized: String)
+    fun cancelCommand(handle: Long, requestIdentifier: String)
+    fun finishCommand(handle: Long, requestIdentifier: String)
     fun cancel(handle: Long)
     fun finish(handle: Long)
 }
@@ -15,7 +19,13 @@ class SpotifyConnectOwner(
     private val execution: SpotifyConnectExecution,
     private val publish: (String, SpotifyConnectBatch) -> Unit
 ) {
+    class CommandReservation internal constructor(internal val ownerIdentifier: String, internal val handle: Long, internal val requestIdentifier: String) {
+        internal var canceled = false
+        internal var finished = false
+    }
+
     private class Connection(val identifier: String, val handle: Long) {
+        val commands = mutableMapOf<String, CommandReservation>()
         var retiring = false
         var cancellationSent = false
         val completions = mutableListOf<() -> Unit>()
@@ -46,6 +56,51 @@ class SpotifyConnectOwner(
             if (active !== connection || connection.retiring || disposed) throw SpotifyConnectFailure(CANCELED_FAILURE)
         }
     }
+
+    @Synchronized
+    fun prepareCommand(identifier: String, requestIdentifier: String): CommandReservation {
+        val connection = active?.takeIf { connection -> connection.identifier == identifier && !connection.retiring && !disposed }
+            ?: throw SpotifyConnectFailure(CANCELED_FAILURE)
+        if (requestIdentifier.isBlank() || requestIdentifier.length > MAXIMUM_IDENTIFIER_CHARACTERS
+            || requestIdentifier.any { character -> character.isWhitespace() || character.isISOControl() }) throw SpotifyConnectFailure(INVALID_INPUT_FAILURE)
+        if (connection.commands.containsKey(requestIdentifier)) throw SpotifyConnectFailure(BACKPRESSURE_FAILURE)
+        execution.beginCommand(connection.handle, requestIdentifier)
+        val reservation = CommandReservation(identifier, connection.handle, requestIdentifier)
+        connection.commands[requestIdentifier] = reservation
+        return reservation
+    }
+
+    fun executeCommand(reservation: CommandReservation, serialized: String) {
+        synchronized(this) {
+            if (!isCurrent(reservation) || reservation.canceled || active?.retiring == true || disposed) throw SpotifyConnectFailure(CANCELED_FAILURE)
+        }
+        execution.command(reservation.handle, reservation.requestIdentifier, serialized)
+        synchronized(this) {
+            if (!isCurrent(reservation) || reservation.canceled || active?.retiring == true || disposed) throw SpotifyConnectFailure(UNKNOWN_OUTCOME_FAILURE)
+        }
+    }
+
+    @Synchronized
+    fun cancelCommand(identifier: String, requestIdentifier: String) {
+        val connection = active?.takeIf { connection -> connection.identifier == identifier } ?: return
+        val reservation = connection.commands[requestIdentifier] ?: return
+        reservation.canceled = true
+        execution.cancelCommand(connection.handle, requestIdentifier)
+    }
+
+    @Synchronized
+    fun finishCommand(reservation: CommandReservation) {
+        if (reservation.finished) return
+        reservation.finished = true
+        if (!isCurrent(reservation)) return
+        try { execution.finishCommand(reservation.handle, reservation.requestIdentifier) }
+        finally { active?.commands?.remove(reservation.requestIdentifier) }
+    }
+
+    private fun isCurrent(reservation: CommandReservation): Boolean = active?.let { connection ->
+        connection.identifier == reservation.ownerIdentifier && connection.handle == reservation.handle
+            && connection.commands[reservation.requestIdentifier] === reservation
+    } == true
 
     @Synchronized
     fun close(identifier: String, completed: () -> Unit) {
@@ -97,6 +152,7 @@ class SpotifyConnectOwner(
     companion object {
         private const val MAXIMUM_IDENTIFIER_CHARACTERS = 128
         private const val MINIMUM_HANDLE = 1L
+        private const val UNKNOWN_OUTCOME_FAILURE = "unknown-outcome"
         private const val CANCELED_FAILURE = "canceled"
         private const val INVALID_INPUT_FAILURE = "invalid-input"
         private const val INVALID_RESPONSE_FAILURE = "invalid-response"

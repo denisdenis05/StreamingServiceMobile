@@ -338,6 +338,7 @@ export class SpotifyMobileController {
       nextRequestIdentifier: this.dependencies.nextIdentifier,
       refreshAccountWhenDeviceUnavailable: true,
       preferAccountRefresh: true,
+      useNativeConnect: this.loginSession?.getNativeSessionCredential !== undefined,
     });
     this.stopSessionObservation = this.sessions.subscribe(() => this.observeSession(lifetime));
     this.publish({ ...this.snapshot, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),

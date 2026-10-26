@@ -92,3 +92,24 @@ fn native_replies_reject_missing_control_bearing_and_excessive_keys() {
             (KEY_FIELD): key, (ACCEPTED_FIELD): true }).to_string()).is_err());
     }
 }
+
+const REQUEST_IDENTIFIER_FIELD: &str = "requestIdentifier";
+const TARGET_IDENTIFIER_FIELD: &str = "targetDeviceIdentifier";
+const COMMAND_FIELD: &str = "command";
+const KIND_FIELD: &str = "kind";
+const PAUSE_KIND: &str = "pause";
+
+#[test]
+fn typed_native_commands_require_the_exact_validated_request_target_and_payload() {
+    let valid = json!({ (OPERATION_FIELD): RAW_COMMAND, (GENERATION_FIELD): VALID_GENERATION,
+        (REQUEST_IDENTIFIER_FIELD): REQUEST_KEY, (TARGET_IDENTIFIER_FIELD): DEVICE, (COMMAND_FIELD): { (KIND_FIELD): PAUSE_KIND } });
+    assert!(matches!(decode_control(&valid.to_string()), Ok(ConnectControl::Command { .. })));
+    for field in [REQUEST_IDENTIFIER_FIELD, TARGET_IDENTIFIER_FIELD, COMMAND_FIELD] {
+        let mut missing = valid.clone(); missing.as_object_mut().unwrap().remove(field);
+        assert!(decode_control(&missing.to_string()).is_err());
+    }
+    let mut unknown = valid.clone(); unknown[COMMAND_FIELD][UNKNOWN_FIELD] = json!(true);
+    assert!(decode_control(&unknown.to_string()).is_err());
+    let mut unsafe_generation = valid.clone(); unsafe_generation[GENERATION_FIELD] = json!(UNSAFE_GENERATION);
+    assert!(decode_control(&unsafe_generation.to_string()).is_err());
+}

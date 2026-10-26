@@ -1,5 +1,5 @@
 import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
-  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession,
+  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectQueueProtocol,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
@@ -125,7 +125,12 @@ export const spotifyMobile = new SpotifyMobileController({
         RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,
-      scheduler: new SystemScheduler(), playbackClock }, selection).sessions;
+      scheduler: new SystemScheduler(), playbackClock,
+      ...(selection.useNativeConnect ? {
+        queueProtocol: new SpotifyConnectQueueProtocol(spotifyConnect, identity.accountIdentifier, nextIdentifier),
+        playbackCommandProtocol: new SpotifyConnectPlaybackCommandProtocol(spotifyConnect, identity.accountIdentifier),
+      } : {}),
+    }, selection).sessions;
   },
   disconnect: () => spotifyIntegration.disconnect(),
   resolveInvitation: (invitation, cancellation) => invitationResolver.resolve(invitation, cancellation),

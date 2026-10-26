@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use librespot_protocol::connect::Cluster;
-use protobuf::Message;
+use librespot_protocol::{connect::Cluster, player::PlayerState};
+use protobuf::{Message, MessageField};
 use serde_json::{json, Value};
-use streaming_spotify_session::{connect_session::ConnectSessionOperations,
+use streaming_spotify_session::{connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
     connect_transport::{process_connected_events, ConnectAction, ConnectEvent, ConnectEventData, OutgoingFrame},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, DealerInput}, model::Failure};
 use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
@@ -26,11 +26,18 @@ const EMPTY_CALL_COUNT: usize = 0;
 const ONE_CALL: usize = 1;
 const FIRST_CALL: usize = 0;
 const EXPIRATION_SECONDS: u64 = 11;
+const REQUEST: &str = "synthetic-checked-command";
+const OTHER_TARGET: &str = "replacement-host-device";
+const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
 struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize }
 
-struct FakeSession { calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure> }
+struct FakeSession {
+    calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
+    refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>,
+    command_gate: Option<oneshot::Receiver<()>>, command_started: Option<oneshot::Sender<()>>,
+}
 
 fn cluster() -> ConnectCluster { decode_cluster_snapshot(&Cluster::new().write_to_bytes().unwrap()).unwrap() }
 
@@ -43,15 +50,21 @@ impl ConnectSessionOperations for FakeSession {
     }
     async fn refresh(&mut self) -> Result<ConnectCluster, Failure> {
         self.calls.lock().unwrap().refreshes += ONE_CALL;
-        Ok(cluster())
+        if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
+        Ok(self.snapshot.lock().unwrap().clone())
     }
     async fn command(&mut self, target: &str, body: Value) -> Result<(), Failure> {
-        self.calls.lock().unwrap().commands.push((target.to_owned(), body)); Ok(())
+        self.calls.lock().unwrap().commands.push((target.to_owned(), body));
+        if let Some(started) = self.command_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.command_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
+        Ok(())
     }
 }
 
 struct Harness {
     calls: Arc<Mutex<Calls>>,
+    snapshot: Arc<Mutex<ConnectCluster>>,
     incoming: mpsc::Sender<DealerInput>,
     actions: mpsc::Sender<ConnectAction>,
     events: mpsc::Receiver<ConnectEvent>,
@@ -63,8 +76,18 @@ struct Harness {
 
 impl Harness {
     fn start(registration_failure: Option<Failure>) -> Self {
+        Self::with_refresh(registration_failure, None, None)
+    }
+
+    fn with_refresh(registration_failure: Option<Failure>, refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>) -> Self {
+        Self::with_gates(registration_failure, refresh_gate, refresh_started, None, None)
+    }
+
+    fn with_gates(registration_failure: Option<Failure>, refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>,
+        command_gate: Option<oneshot::Receiver<()>>, command_started: Option<oneshot::Sender<()>>) -> Self {
         let calls = Arc::new(Mutex::new(Calls::default()));
-        let mut session = FakeSession { calls: Arc::clone(&calls), registration_failure };
+        let snapshot = Arc::new(Mutex::new(cluster()));
+        let mut session = FakeSession { calls: Arc::clone(&calls), registration_failure, snapshot: Arc::clone(&snapshot), refresh_gate, refresh_started, command_gate, command_started };
         let (incoming, mut inputs) = mpsc::channel(CAPACITY);
         let (actions, mut commands) = mpsc::channel(CAPACITY);
         let (events_sender, events) = mpsc::channel(CAPACITY);
@@ -82,7 +105,7 @@ impl Harness {
                 if let Some(receipt) = frame.receipt { let _ = receipt.send(Ok(())); }
             }
         });
-        Self { calls, incoming, actions, events, replies, cancellation, actor, writer }
+        Self { calls, snapshot, incoming, actions, events, replies, cancellation, actor, writer }
     }
 
     async fn register(&mut self) {
@@ -108,6 +131,63 @@ impl Harness {
         assert!(matches!(self.actor.await.unwrap(), Err(Failure::Canceled)));
         self.writer.await.unwrap();
     }
+}
+
+fn playable_cluster(target: &str) -> ConnectCluster {
+    decode_cluster_snapshot(&Cluster { active_device_id: target.to_owned(), player_state: MessageField::some(PlayerState::new()),
+        ..Default::default() }.write_to_bytes().unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn checked_commands_refresh_the_actual_host_before_sending_the_typed_payload_once() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(receipt.await.unwrap().is_ok());
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { .. }));
+    {
+        let calls = harness.calls.lock().unwrap(); assert_eq!(calls.refreshes, ONE_CALL); assert_eq!(calls.commands.len(), ONE_CALL);
+        assert_eq!(calls.commands[FIRST_CALL].0, TARGET); assert_eq!(calls.commands[FIRST_CALL].1[COMMAND_FIELD][ENDPOINT_FIELD], PAUSE);
+    }
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn a_replaced_host_during_checked_preflight_never_receives_the_old_target_command() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(OTHER_TARGET);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Superseded)));
+    assert!(harness.calls.lock().unwrap().commands.is_empty());
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn canceled_checked_receipts_after_preflight_cannot_dispatch_a_mutation() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    observing.await.unwrap(); drop(receipt); release.send(()).unwrap();
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { .. }));
+    assert!(harness.calls.lock().unwrap().commands.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_checked_generations_fail_before_any_refresh_or_mutation() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: STALE_GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().refreshes, EMPTY_CALL_COUNT);
+    assert!(harness.calls.lock().unwrap().commands.is_empty()); harness.stop().await;
 }
 
 #[tokio::test]
@@ -222,4 +302,34 @@ async fn commands_before_registration_and_unknown_request_topics_receive_explici
     assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], false);
     assert!(harness.events.try_recv().is_err());
     harness.stop().await;
+}
+
+#[tokio::test]
+async fn individual_cancellation_during_preflight_prevents_mutation_without_retiring_the_connection() {
+    let (_release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let command_cancellation = CancellationToken::new();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: command_cancellation.clone(), result }).await.unwrap();
+    observing.await.unwrap(); command_cancellation.cancel();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().commands.is_empty());
+    assert!(!harness.cancellation.is_cancelled()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn individual_cancellation_after_dispatch_reports_unknown_outcome_and_never_replays() {
+    let (_release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_gates(None, None, None, Some(gate), Some(started)); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let command_cancellation = CancellationToken::new();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: command_cancellation.clone(), result }).await.unwrap();
+    observing.await.unwrap(); command_cancellation.cancel();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
+    assert_eq!(harness.calls.lock().unwrap().commands.len(), ONE_CALL);
+    assert!(!harness.cancellation.is_cancelled()); harness.stop().await;
 }

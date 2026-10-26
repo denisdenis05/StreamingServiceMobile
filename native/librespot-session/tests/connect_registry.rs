@@ -9,6 +9,11 @@ const EMITTED_EVENTS: usize = 7;
 const MAXIMUM_BATCH_SIZE: usize = 4;
 const REMAINING_EVENTS: usize = 3;
 const NEXT_HANDLE_INCREMENT: u64 = 1;
+const FIRST_REQUEST: &str = "first-native-command";
+const SECOND_REQUEST: &str = "second-native-command";
+const MAXIMUM_PENDING_COMMANDS: usize = 16;
+const REQUEST_PREFIX: &str = "bounded-native-command-";
+const FIRST_REQUEST_POSITION: usize = 0;
 
 #[tokio::test]
 async fn replacement_is_blocked_until_the_old_connection_has_completed_cleanup() {
@@ -87,4 +92,44 @@ async fn account_bound_action_channel_closes_when_the_transport_finishes() {
     assert!(actions.send(ConnectAction::Refresh { generation: GENERATION, result }).await.is_err());
     assert!(matches!(registry.actions(handle), Err(Failure::Canceled)));
     registry.finish(handle).unwrap();
+}
+
+#[tokio::test]
+async fn individual_command_cancellation_preserves_other_requests_and_cannot_reuse_a_pending_identifier() {
+    let registry = ConnectRegistry::default(); let (finished, completed) = oneshot::channel();
+    let handle = registry.start(&Handle::current(), |_, _, cancellation| async move {
+        cancellation.cancelled().await; let _ = finished.send(());
+    }).unwrap();
+    registry.begin_command(handle, FIRST_REQUEST).unwrap(); registry.begin_command(handle, SECOND_REQUEST).unwrap();
+    let first = registry.command_cancellation(handle, FIRST_REQUEST).unwrap(); let second = registry.command_cancellation(handle, SECOND_REQUEST).unwrap();
+    registry.cancel_command(handle, FIRST_REQUEST).unwrap(); assert!(first.is_cancelled()); assert!(!second.is_cancelled());
+    assert!(matches!(registry.begin_command(handle, FIRST_REQUEST), Err(Failure::Backpressure)));
+    registry.finish_command(handle, FIRST_REQUEST).unwrap(); registry.begin_command(handle, FIRST_REQUEST).unwrap();
+    assert!(!registry.command_cancellation(handle, FIRST_REQUEST).unwrap().is_cancelled());
+    assert!(matches!(registry.cancel_command(STALE_HANDLE, SECOND_REQUEST), Err(Failure::Canceled)));
+    assert!(!second.is_cancelled()); registry.cancel(handle).unwrap(); assert!(second.is_cancelled());
+    completed.await.unwrap(); registry.finish(handle).unwrap();
+}
+
+#[tokio::test]
+async fn native_command_capacity_is_bounded_and_released_only_after_finishing_a_request() {
+    let registry = ConnectRegistry::default(); let (finished, completed) = oneshot::channel();
+    let handle = registry.start(&Handle::current(), |_, _, cancellation| async move {
+        cancellation.cancelled().await; let _ = finished.send(());
+    }).unwrap();
+    for position in FIRST_REQUEST_POSITION..MAXIMUM_PENDING_COMMANDS {
+        registry.begin_command(handle, &format!("{REQUEST_PREFIX}{position}")).unwrap();
+    }
+    assert!(matches!(registry.begin_command(handle, FIRST_REQUEST), Err(Failure::Backpressure)));
+    registry.finish_command(handle, &format!("{REQUEST_PREFIX}{FIRST_REQUEST_POSITION}")).unwrap();
+    registry.begin_command(handle, FIRST_REQUEST).unwrap(); registry.cancel(handle).unwrap(); completed.await.unwrap(); registry.finish(handle).unwrap();
+}
+
+#[tokio::test]
+async fn spontaneous_transport_completion_cancels_reserved_command_tokens() {
+    let registry = ConnectRegistry::default(); let (finish_transport, transport) = oneshot::channel();
+    let handle = registry.start(&Handle::current(), |_, _, _| async move { let _ = transport.await; }).unwrap();
+    registry.begin_command(handle, FIRST_REQUEST).unwrap(); let token = registry.command_cancellation(handle, FIRST_REQUEST).unwrap();
+    finish_transport.send(()).unwrap(); tokio::task::yield_now().await;
+    assert!(token.is_cancelled()); registry.finish(handle).unwrap();
 }

@@ -87,3 +87,21 @@ test(Fixture.names.stage, () => {
   assert.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.privateValue })),
     failure => !failure.message.includes(Fixture.privateValue));
 });
+
+const CommandFixture = Object.freeze({ pause: 'pause', play: 'play', checkedCommand: 'checkedCommand', commandPrefix: 'connect-probe-',
+  name: 'Typed probe commands use the observed host and generation and stop dispatching on reconnect' });
+test(CommandFixture.name, async () => {
+  const fixture = childFixture();
+  const observing = observeConnect(Fixture.privateValue, () => undefined, () => fixture.child, fixture.input);
+  fixture.input.write(CommandFixture.pause + Fixture.line);
+  assert.equal(fixture.writes.length, Fixture.one);
+  fixture.child.stdout.write(JSON.stringify(registration()) + Fixture.line);
+  fixture.input.write(CommandFixture.pause + Fixture.line);
+  assert.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: CommandFixture.checkedCommand,
+    generation: Fixture.generation, requestIdentifier: CommandFixture.commandPrefix + Fixture.one,
+    targetDeviceIdentifier: Fixture.privateValue, command: { kind: CommandFixture.pause } });
+  const count = fixture.writes.length;
+  fixture.child.stdout.write(JSON.stringify(event({ type: Fixture.reconnecting, failure: Fixture.forbidden })) + Fixture.line);
+  fixture.input.write(CommandFixture.play + Fixture.line); assert.equal(fixture.writes.length, count);
+  fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
+});

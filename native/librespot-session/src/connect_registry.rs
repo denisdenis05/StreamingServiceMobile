@@ -1,16 +1,17 @@
-use std::{future::Future, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}};
+use std::{collections::HashMap, future::Future, sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}}};
 
 use serde::Serialize;
 use tokio::{runtime::Handle, sync::mpsc};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_transport::{native_monotonic_milliseconds, ConnectAction, ConnectEvent}, model::Failure};
+use crate::{connect_transport::{native_monotonic_milliseconds, ConnectAction, ConnectEvent}, model::{validate_request_identifier, Failure}};
 
 const CHANNEL_CAPACITY: usize = 32;
 const MAXIMUM_BATCH_EVENTS: usize = 4;
 const INITIAL_HANDLE: u64 = 0;
 const HANDLE_INCREMENT: u64 = 1;
 const MAXIMUM_SAFE_JAVASCRIPT_INTEGER: u64 = 9007199254740991;
+const MAXIMUM_PENDING_COMMANDS: usize = 16;
 
 struct ConnectionEntry {
     handle: u64,
@@ -18,6 +19,7 @@ struct ConnectionEntry {
     events: mpsc::Receiver<ConnectEvent>,
     cancellation: CancellationToken,
     finished: Arc<AtomicBool>,
+    commands: HashMap<String, CancellationToken>,
 }
 
 struct RegistryState { last_handle: u64, active: Option<ConnectionEntry> }
@@ -33,10 +35,10 @@ pub struct ConnectEventBatch {
     pub events: Vec<ConnectEvent>,
 }
 
-struct CompletionGuard(Arc<AtomicBool>);
+struct CompletionGuard { finished: Arc<AtomicBool>, cancellation: CancellationToken }
 
 impl Drop for CompletionGuard {
-    fn drop(&mut self) { self.0.store(true, Ordering::Release); }
+    fn drop(&mut self) { self.cancellation.cancel(); self.finished.store(true, Ordering::Release); }
 }
 
 impl Default for ConnectRegistry {
@@ -55,11 +57,11 @@ impl ConnectRegistry {
         let (actions, commands) = mpsc::channel(CHANNEL_CAPACITY);
         let cancellation = CancellationToken::new();
         let finished = Arc::new(AtomicBool::new(false));
-        let guard = CompletionGuard(Arc::clone(&finished));
+        let guard = CompletionGuard { finished: Arc::clone(&finished), cancellation: cancellation.clone() };
         let running = transport(events_sender, commands, cancellation.clone());
         runtime.spawn(async move { let _guard = guard; running.await; });
         state.last_handle = handle;
-        state.active = Some(ConnectionEntry { handle, actions, events, cancellation, finished });
+        state.active = Some(ConnectionEntry { handle, actions, events, cancellation, finished, commands: HashMap::new() });
         Ok(handle)
     }
 
@@ -68,6 +70,32 @@ impl ConnectRegistry {
         let entry = state.active.as_ref().filter(|entry| entry.handle == handle).ok_or(Failure::Canceled)?;
         if entry.cancellation.is_cancelled() || entry.finished.load(Ordering::Acquire) { return Err(Failure::Canceled); }
         Ok(entry.actions.clone())
+    }
+
+    pub fn begin_command(&self, handle: u64, request_identifier: &str) -> Result<(), Failure> {
+        validate_request_identifier(request_identifier)?;
+        let mut state = self.state.lock().map_err(|_| Failure::Network)?;
+        let entry = state.active.as_mut().filter(|entry| entry.handle == handle).ok_or(Failure::Canceled)?;
+        if entry.cancellation.is_cancelled() || entry.finished.load(Ordering::Acquire) { return Err(Failure::Canceled); }
+        if entry.commands.len() >= MAXIMUM_PENDING_COMMANDS || entry.commands.contains_key(request_identifier) { return Err(Failure::Backpressure); }
+        entry.commands.insert(request_identifier.to_owned(), entry.cancellation.child_token()); Ok(())
+    }
+
+    pub fn command_cancellation(&self, handle: u64, request_identifier: &str) -> Result<CancellationToken, Failure> {
+        let state = self.state.lock().map_err(|_| Failure::Network)?;
+        state.active.as_ref().filter(|entry| entry.handle == handle).and_then(|entry| entry.commands.get(request_identifier))
+            .cloned().ok_or(Failure::Canceled)
+    }
+
+    pub fn cancel_command(&self, handle: u64, request_identifier: &str) -> Result<(), Failure> {
+        self.command_cancellation(handle, request_identifier)?.cancel(); Ok(())
+    }
+
+    pub fn finish_command(&self, handle: u64, request_identifier: &str) -> Result<(), Failure> {
+        let mut state = self.state.lock().map_err(|_| Failure::Network)?;
+        let entry = state.active.as_mut().filter(|entry| entry.handle == handle).ok_or(Failure::Canceled)?;
+        if let Some(cancellation) = entry.commands.remove(request_identifier) { cancellation.cancel(); }
+        Ok(())
     }
 
     pub fn poll(&self, handle: u64) -> Result<ConnectEventBatch, Failure> {

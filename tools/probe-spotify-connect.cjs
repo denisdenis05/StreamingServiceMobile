@@ -10,15 +10,17 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
   initialGeneration: 0, firstGeneration: 1, emptyCount: 0, exitFailure: 1,
   objectType: 'object', stringType: 'string', connecting: 'connecting', registered: 'registered', cluster: 'cluster',
   membership: 'membership', sessionMessage: 'sessionMessage', command: 'command', reconnecting: 'reconnecting', stopped: 'stopped',
+  checkedCommand: 'checkedCommand', commandPrefix: 'connect-probe-', play: 'play', pause: 'pause',
+  next: 'next', previous: 'previous', queuePrefix: 'queue ', addToQueue: 'addToQueue', trackPattern: /^[a-zA-Z0-9]{22}$/,
   refresh: 'refresh', stop: 'stop', quit: 'quit', restart: 'restart', interrupt: 'SIGINT', terminate: 'SIGTERM',
   failureStages: ['restore', 'dealerResolution', 'dealerAddress', 'dealerWebsocket', 'dealerEvents',
     'registrationEncoding', 'registrationHttp', 'registrationProtobuf', 'registrationDevice'],
   lineEvent: 'line', closeEvent: 'close', errorEvent: 'error', dataEvent: 'data', endEvent: 'end', failureField: 'failure',
   networkFailure: 'network', invalidResponse: 'invalid-response', canceled: 'canceled',
   allowedFailures: ['network', 'invalid-response', 'invalid-input', 'unauthorized', 'forbidden', 'not-found',
-    'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported'],
+    'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported', 'superseded'],
   stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'ignore' });
-const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
+const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, play, pause, next, previous, queue <Spotify track ID>, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
 
 function projectEvent(value) {
   if (!value || typeof value !== Policy.objectType || !Number.isSafeInteger(value.generation)
@@ -59,6 +61,9 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
     let ended = false;
     let terminalFailure = null;
     let restarting = false;
+    let activeHost = null;
+    let generation = Policy.initialGeneration;
+    let commandSequence = Policy.emptyCount;
     const controls = readline.createInterface({ input });
     const stop = () => {
       if (ended) return;
@@ -90,7 +95,15 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
           if (Object.hasOwn(value, Policy.failureField)) {
             if (value.failure !== null && !Policy.allowedFailures.includes(value.failure)) throw new Error(Policy.invalidResponse);
             onSummary({ stage: Policy.stage, operation: Policy.refresh, failure: value.failure });
-          } else onSummary(projectEvent(value));
+          } else {
+            const summary = projectEvent(value);
+            if (value.generation >= generation) {
+              generation = value.generation;
+              if ([Policy.registered, Policy.cluster].includes(value.data.type)) activeHost = value.data.cluster.activeDeviceIdentifier || null;
+              else if ([Policy.connecting, Policy.reconnecting, Policy.stopped].includes(value.data.type)) activeHost = null;
+            }
+            onSummary(summary);
+          }
         } catch { fail(); return; }
         boundary = buffer.indexOf(Policy.lineSeparator);
       }
@@ -98,6 +111,20 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
     });
     controls.on(Policy.lineEvent, command => {
       if (command === Policy.refresh && !ended) write(Policy.refresh);
+      if (!ended && activeHost && generation >= Policy.firstGeneration) {
+        let intent = null;
+        if ([Policy.play, Policy.pause, Policy.next, Policy.previous].includes(command)) intent = { kind: command };
+        if (command.startsWith(Policy.queuePrefix)) {
+          const spotifyTrackIdentifier = command.slice(Policy.queuePrefix.length);
+          if (Policy.trackPattern.test(spotifyTrackIdentifier)) intent = { kind: Policy.addToQueue, spotifyTrackIdentifier,
+            occurrenceIdentifier: Policy.commandPrefix + generation + Policy.commandPrefix + (commandSequence + Policy.firstGeneration) };
+        }
+        if (intent !== null) {
+          commandSequence += Policy.firstGeneration;
+          child.stdin.write(JSON.stringify({ operation: Policy.checkedCommand, generation,
+            requestIdentifier: Policy.commandPrefix + commandSequence, targetDeviceIdentifier: activeHost, command: intent }) + Policy.lineSeparator);
+        }
+      }
       if (command === Policy.restart && !ended) { restarting = true; stop(); }
       if ([Policy.stop, Policy.quit].includes(command)) stop();
     });

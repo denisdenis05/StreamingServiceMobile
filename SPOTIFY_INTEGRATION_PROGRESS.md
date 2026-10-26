@@ -1,3 +1,38 @@
+# Native typed command path — 2026-10-26
+
+Native-login queue/playback adapters now bypass the public player mutation API.
+They retain the library session coordinator's owned-host membership checks and
+serialize with existing queue/membership work. Guest permissions remain disabled.
+The Rust actor refreshes the cluster before checking the expected active host,
+action restrictions, seek track and position. Mutations have one dispatch only.
+
+Android registers scoped command cancellation before worker queueing. Canceling
+queued/preflight work prevents mutation; canceling in-flight work is uncertain.
+Owner reservations fence retired accounts and reused identifiers, and bounded
+command capacity is released after native execution actually finishes. JS binds
+requests to account/generation, copies intents, cancels retired work and ignores
+late success. No public API fallback or automatic mutation replay is added.
+
+Validation: full library 566 cases; Rust/JNI 102 cases plus JNI smoke;
+Android release JVM 45 cases; mobile source 307 cases plus 89 UI/platform cases;
+24 diagnostic probe cases; full app TypeScript passes. Android build uses the
+cached Rustup toolchain through CARGO_HOME/RUSTUP_HOME/CARGO; the first attempt
+with system Cargo failed for its missing Android target, then the configured
+cached toolchain built and all JVM tests passed.
+
+Live process 85329 uses an interactive terminal, holds approved credentials only
+in memory, and supports refresh/play/pause/next/previous/queue <Spotify ID>, restart
+and stop. It registered successfully; the initial snapshot has no active device.
+The previous noninteractive process 75330 ended on stdin EOF after approval and
+lost its grant. Previous process 79452 is also terminal, not a reusable session.
+The APK in build/spotify-jam is still the earlier observer checkpoint; these
+changes require a fresh Hermes bundle and release assembly before delivery.
+
+Next: live private pause/resume and append confirmation; actual second-account
+Jam admission/permission changes; private queue/playback observation with valid
+clock mapping; local audio/host publication; foreground service integration and
+physical-device lifecycle verification. The objective remains active.
+
 # Android Connect APK and fresh event checkpoint — 2026-10-26
 
 Built and verified build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk:

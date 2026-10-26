@@ -11,6 +11,7 @@ export interface SpotifyDeviceSelection {
   nextRequestIdentifier(): string;
   readonly refreshAccountWhenDeviceUnavailable?: boolean;
   readonly preferAccountRefresh?: boolean;
+  readonly useNativeConnect?: boolean;
 }
 
 export class SpotifyIntegrationConnection {

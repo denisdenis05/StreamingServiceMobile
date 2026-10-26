@@ -9,7 +9,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
 use tokio_util::sync::CancellationToken;
 
 use crate::{connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
-    connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, model::Failure};
+    connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
 const PING_INTERVAL_SECONDS: u64 = 30;
@@ -40,6 +40,8 @@ pub struct OutgoingFrame {
 pub enum ConnectAction {
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
     Command { generation: u64, target_device_identifier: String, body: Value, result: ActionResult<()> },
+    CheckedCommand { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand,
+        command_cancellation: CancellationToken, result: ActionResult<()> },
     Reply { generation: u64, key: String, accepted: bool, result: ActionResult<()> },
 }
 
@@ -122,7 +124,7 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
 fn retire_action(action: ConnectAction) {
     match action {
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Command { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Command { result, .. } | ConnectAction::CheckedCommand { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
     }
 }
 
@@ -182,6 +184,32 @@ pub async fn process_connected_events(session: &mut impl ConnectSessionOperation
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
                         let receipt = session.command(&target_device_identifier, body).await;
+                        let _ = result.send(receipt);
+                    },
+                    ConnectAction::CheckedCommand { generation: expected, request_identifier, target_device_identifier, command, command_cancellation, result } => {
+                        if result.is_closed() { continue; }
+                        if cancellation.is_cancelled() || command_cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
+                        let prepare = async {
+                            command.validate(&request_identifier, &target_device_identifier)?;
+                            let cluster = session.refresh().await?;
+                            let body = command.prepare(&request_identifier, &target_device_identifier, &cluster)?;
+                            Ok::<_, Failure>((body, cluster))
+                        };
+                        let preparation = tokio::select! { biased;
+                            _ = command_cancellation.cancelled() => Err(Failure::Canceled),
+                            prepared = prepare => prepared,
+                        };
+                        let (body, cluster) = match preparation {
+                            Ok(prepared) => prepared,
+                            Err(failure) => { let _ = result.send(Err(failure)); continue; },
+                        };
+                        emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
+                        if result.is_closed() { continue; }
+                        if cancellation.is_cancelled() || command_cancellation.is_cancelled() { let _ = result.send(Err(Failure::Canceled)); continue; }
+                        let receipt = tokio::select! { biased;
+                            _ = command_cancellation.cancelled() => Err(Failure::UnknownOutcome),
+                            receipt = session.command(&target_device_identifier, body) => receipt,
+                        };
                         let _ = result.send(receipt);
                     },
                     ConnectAction::Reply { generation: expected, key, accepted, result } => {

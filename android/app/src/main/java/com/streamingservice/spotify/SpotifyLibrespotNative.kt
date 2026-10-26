@@ -13,6 +13,9 @@ internal object SpotifyLibrespotNative : SpotifyLibrespotExecution {
     external fun connectStart(serialized: String): String
     external fun connectPoll(connectionHandle: Long): String
     external fun connectExecute(connectionHandle: Long, serialized: String): String
+    external fun connectBeginCommand(connectionHandle: Long, requestIdentifier: String): String
+    external fun connectCancelCommand(connectionHandle: Long, requestIdentifier: String): String
+    external fun connectFinishCommand(connectionHandle: Long, requestIdentifier: String): String
     external fun connectCancel(connectionHandle: Long): String
     external fun connectFinish(connectionHandle: Long): String
 

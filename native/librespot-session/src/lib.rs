@@ -6,6 +6,7 @@ pub mod connect_session;
 pub mod connect_transport;
 pub mod connect_registry;
 pub mod connect_bridge;
+pub mod connect_commands;
 pub mod operations;
 pub mod session;
 

@@ -1,5 +1,5 @@
-import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
-import type { SpotifyLoginProvider } from 'streaming-service-spotify-jam';
+import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand } from 'streaming-service-spotify-jam';
+import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort } from 'streaming-service-spotify-jam';
 
 export enum SpotifyConnectStatus {
   Detached = 'detached', Connecting = 'connecting', Ready = 'ready', Reconnecting = 'reconnecting', Failed = 'failed',
@@ -16,6 +16,8 @@ export interface SpotifyConnectNative {
   start(identifier: string, serialized: string): Promise<number>;
   close(identifier: string): Promise<void>;
   refresh(identifier: string, generation: number): Promise<void>;
+  executeCommand(identifier: string, requestIdentifier: string, serialized: string): Promise<void>;
+  cancelCommand(identifier: string, requestIdentifier: string): Promise<void>;
 }
 
 export interface SpotifyConnectDependencies {
@@ -27,6 +29,7 @@ export interface SpotifyConnectDependencies {
 
 const Policy = Object.freeze({ zero: 0, firstGeneration: 1, stringType: 'string', objectType: 'object',
   booleanType: 'boolean', maximumRequestIdentifierCharacters: 128,
+  maximumDeviceCharacters: 512, maximumPendingCommands: 16,
   abortEvent: 'abort', deviceName: 'StreamingService', maximumBatchCharacters: 2097152, maximumBatchEvents: 4,
   maximumIdentifierCharacters: 2048, controlPattern: /[\u0000-\u0020\u007f]/,
   connecting: 'connecting', registered: 'registered', cluster: 'cluster', reconnecting: 'reconnecting',
@@ -46,6 +49,7 @@ interface Binding {
   handle: number | null;
   dispatched: boolean;
   stopObservation: (() => void) | null;
+  readonly commands: Set<string>;
 }
 
 function object(value: unknown): Record<string, unknown> {
@@ -67,7 +71,7 @@ function failureCode(failure: unknown): IntegrationFailureCode {
   return typeof code === Policy.stringType && FailureCodes.has(code as string) ? code as IntegrationFailureCode : IntegrationFailureCode.Network;
 }
 
-export class SpotifyConnectStore {
+export class SpotifyConnectStore implements SpotifyConnectCommandPort {
   private snapshot = EmptySnapshot;
   private readonly listeners = new Set<() => void>();
   private binding: Binding | null = null;
@@ -94,7 +98,7 @@ export class SpotifyConnectStore {
     const binding: Binding = { identifier: requestIdentifier, accountIdentifier: selectedAccountIdentifier,
       cancellation: new AbortController(), externalCancellation: cancellation, abort: () => {
         if (this.binding === binding) void this.detach().catch(() => undefined);
-      }, native: null, handle: null, dispatched: false, stopObservation: null };
+      }, native: null, handle: null, dispatched: false, stopObservation: null, commands: new Set() };
     this.binding = binding;
     cancellation.addEventListener(Policy.abortEvent, binding.abort, { once: true });
     this.publish({ ...EmptySnapshot, status: SpotifyConnectStatus.Connecting });
@@ -134,6 +138,60 @@ export class SpotifyConnectStore {
       await binding.native.refresh(binding.identifier, this.snapshot.generation);
       this.requireCurrent(binding);
     } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
+  }
+
+  async execute(accountIdentifier: string, input: SpotifyConnectCommand, hostDeviceIdentifier: string, cancellation: AbortSignal): Promise<void> {
+    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    const command = copySpotifyConnectCommand(input);
+    const binding = this.binding;
+    if (!binding || binding.accountIdentifier !== accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.requireCurrent(binding);
+    if (!binding.native || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    let requestIdentifier: string;
+    try {
+      identifier(hostDeviceIdentifier);
+      requestIdentifier = identifier(this.dependencies.nextIdentifier());
+      if (hostDeviceIdentifier.length > Policy.maximumDeviceCharacters || requestIdentifier.length > Policy.maximumRequestIdentifierCharacters) {
+        throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
+      }
+    } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidInput); }
+    if (binding.commands.size >= Policy.maximumPendingCommands || binding.commands.has(requestIdentifier)) throw new IntegrationFailure(IntegrationFailureCode.Backpressure);
+    this.requireCurrent(binding);
+    if (this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    const native = binding.native;
+    const generation = this.snapshot.generation;
+    const serialized = JSON.stringify({ operation: Policy.command, generation, requestIdentifier, targetDeviceIdentifier: hostDeviceIdentifier, command });
+    binding.commands.add(requestIdentifier);
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      let dispatched = false;
+      const finish = (failure: IntegrationFailureCode | null): void => {
+        if (settled) return;
+        settled = true;
+        cancellation.removeEventListener(Policy.abortEvent, abort);
+        binding.cancellation.signal.removeEventListener(Policy.abortEvent, abort);
+        if (failure === null) resolve(); else reject(new IntegrationFailure(failure));
+      };
+      const abort = (): void => {
+        if (settled) return;
+        if (dispatched) {
+          try { void native.cancelCommand(binding.identifier, requestIdentifier).catch(() => undefined); } catch {}
+        }
+        finish(dispatched ? IntegrationFailureCode.UnknownOutcome : IntegrationFailureCode.Canceled);
+      };
+      cancellation.addEventListener(Policy.abortEvent, abort, { once: true });
+      binding.cancellation.signal.addEventListener(Policy.abortEvent, abort, { once: true });
+      if (cancellation.aborted || binding.cancellation.signal.aborted) { abort(); binding.commands.delete(requestIdentifier); return; }
+      dispatched = true;
+      let execution: Promise<void>;
+      try { execution = native.executeCommand(binding.identifier, requestIdentifier, serialized); }
+      catch (failure) { binding.commands.delete(requestIdentifier); finish(failureCode(failure)); return; }
+      void execution.then(() => {
+        const current = this.binding === binding && !binding.cancellation.signal.aborted && this.snapshot.generation === generation
+          && this.snapshot.status === SpotifyConnectStatus.Ready;
+        finish(current ? null : IntegrationFailureCode.UnknownOutcome);
+      }, failure => { finish(failureCode(failure)); }).finally(() => { binding.commands.delete(requestIdentifier); });
+    });
   }
 
   detach(): Promise<void> {

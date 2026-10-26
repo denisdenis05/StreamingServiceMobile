@@ -25,6 +25,7 @@ const NATIVE_TOKEN_REJECTED_CODE: &str = "native-token-rejected";
 const FORBIDDEN_CODE: &str = "forbidden";
 const NOT_FOUND_CODE: &str = "not-found";
 const UNKNOWN_OUTCOME_CODE: &str = "unknown-outcome";
+const SUPERSEDED_CODE: &str = "superseded";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Failure {
@@ -41,6 +42,7 @@ pub enum Failure {
     Forbidden,
     NotFound,
     UnknownOutcome,
+    Superseded,
 }
 
 impl Failure {
@@ -59,6 +61,7 @@ impl Failure {
             Self::Forbidden => FORBIDDEN_CODE,
             Self::NotFound => NOT_FOUND_CODE,
             Self::UnknownOutcome => UNKNOWN_OUTCOME_CODE,
+            Self::Superseded => SUPERSEDED_CODE,
         }
     }
 }

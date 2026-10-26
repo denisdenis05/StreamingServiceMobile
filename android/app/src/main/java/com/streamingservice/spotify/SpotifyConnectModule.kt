@@ -67,6 +67,32 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
     }
 
     @ReactMethod
+    fun executeCommand(identifier: String, requestIdentifier: String, serialized: String, promise: Promise) {
+        if (serialized.length > MAXIMUM_INPUT_CHARACTERS) { reject(promise, INVALID_INPUT_FAILURE); return }
+        val reservation = try { owner.prepareCommand(identifier, requestIdentifier) }
+        catch (failure: Throwable) { reject(promise, safeCode(failure)); return }
+        try {
+            workers.execute {
+                try {
+                    if (disposed.get()) throw SpotifyConnectFailure(CANCELED_FAILURE)
+                    owner.executeCommand(reservation, serialized)
+                    promise.resolve(null)
+                } catch (failure: Throwable) { reject(promise, safeCode(failure)) }
+                finally { try { owner.finishCommand(reservation) } catch (_failure: Throwable) {} }
+            }
+        } catch (_failure: Throwable) {
+            try { owner.finishCommand(reservation) } catch (_cleanupFailure: Throwable) {}
+            reject(promise, if (disposed.get()) CANCELED_FAILURE else BACKPRESSURE_FAILURE)
+        }
+    }
+
+    @ReactMethod
+    fun cancelCommand(identifier: String, requestIdentifier: String, promise: Promise) {
+        try { owner.cancelCommand(identifier, requestIdentifier); promise.resolve(null) }
+        catch (failure: Throwable) { reject(promise, safeCode(failure)) }
+    }
+
+    @ReactMethod
     fun close(identifier: String, promise: Promise) {
         dispatch(promise, lifecycle) { owner.close(identifier) { promise.resolve(null) } }
     }
@@ -137,5 +163,5 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
 enum class SpotifyConnectFailureCode(val wireValue: String) {
     Network("network"), InvalidInput("invalid-input"), Canceled("canceled"), InvalidResponse("invalid-response"),
     Deadline("deadline"), Unauthorized("unauthorized"), Forbidden("forbidden"), NotFound("not-found"),
-    Backpressure("backpressure"), Unsupported("unsupported"), UnknownOutcome("unknown-outcome")
+    Backpressure("backpressure"), Unsupported("unsupported"), UnknownOutcome("unknown-outcome"), Superseded("superseded")
 }

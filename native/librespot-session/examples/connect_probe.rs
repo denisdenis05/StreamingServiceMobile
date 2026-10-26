@@ -3,7 +3,7 @@ use std::{io::{self, BufRead, Read}, sync::{Arc, atomic::{AtomicU64, Ordering}}}
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use streaming_spotify_session::{connect_device::ConnectDeviceConfiguration,
-    connect_transport::{run_connect_transport, ConnectAction}, model::Failure};
+    connect_commands::ConnectCommand, connect_transport::{run_connect_transport, ConnectAction}, model::Failure};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -29,6 +29,7 @@ enum ProbeControl {
     Stop,
     Reply { key: String, accepted: bool },
     Command { target_device_identifier: String, body: Value },
+    CheckedCommand { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand },
 }
 
 #[derive(Serialize)]
@@ -83,6 +84,11 @@ fn main() {
                 ProbeControl::Reply { key, accepted } => {
                     let (result, response) = oneshot::channel(); worker.spawn(receipt(response));
                     ConnectAction::Reply { generation, key, accepted, result }
+                },
+                ProbeControl::CheckedCommand { generation, request_identifier, target_device_identifier, command } => {
+                    let (result, response) = oneshot::channel(); worker.spawn(receipt(response));
+                    ConnectAction::CheckedCommand { generation, request_identifier, target_device_identifier, command,
+                        command_cancellation: reader_cancellation.child_token(), result }
                 },
                 ProbeControl::Command { target_device_identifier, body } => {
                     let (result, response) = oneshot::channel(); worker.spawn(receipt(response));
