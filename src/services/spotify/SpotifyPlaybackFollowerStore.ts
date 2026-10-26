@@ -137,7 +137,7 @@ export class SpotifyPlaybackFollowerStore {
       }
       if (!samePlaybackIdentity(sample, lifetime.identity)) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
       this.acceptSample(lifetime, sample);
-      const following = lifetime.follower.accept({ ...sample, sequence: lifetime.sequence, occurrenceIdentifier: lifetime.occurrenceIdentifier, buffering: false });
+      const following = lifetime.follower.accept({ ...sample, sequence: lifetime.sequence, occurrenceIdentifier: lifetime.occurrenceIdentifier, buffering: sample.buffering ?? false });
       if (this.current(lifetime)) {
         this.retryAtMonotonicMilliseconds = null;
         lifetime.cancelPoll = this.dependencies.scheduler.schedule(HostedPlaybackPolicy.pollIntervalMilliseconds,
@@ -148,10 +148,12 @@ export class SpotifyPlaybackFollowerStore {
   }
 
   private acceptSample(lifetime: PlaybackFollowLifetime, sample: HostedPlaybackSample): void {
-    if (lifetime.trackIdentifier !== sample.spotifyTrackIdentifier) {
+    const trackChanged = lifetime.trackIdentifier !== sample.spotifyTrackIdentifier;
+    if (trackChanged
+      || sample.occurrenceIdentifier !== undefined && lifetime.occurrenceIdentifier !== sample.occurrenceIdentifier) {
       lifetime.trackIdentifier = sample.spotifyTrackIdentifier;
-      lifetime.occurrenceIdentifier = this.dependencies.nextIdentifier();
-      lifetime.match = null;
+      lifetime.occurrenceIdentifier = sample.occurrenceIdentifier ?? this.dependencies.nextIdentifier();
+      if (trackChanged) lifetime.match = null;
     }
     if (!Number.isSafeInteger(lifetime.sequence + HostedPlaybackPolicy.sequenceIncrement)) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
     lifetime.sequence += HostedPlaybackPolicy.sequenceIncrement;

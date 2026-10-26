@@ -31,18 +31,23 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
-  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], commands: [], canceledCommands: [], membership: Fixture.zero };
-  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null };
+  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], commands: [], canceledCommands: [], membership: Fixture.zero };
+  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null, reading: null, nowMonotonicMilliseconds: ReadFixture.sent };
   const provider = { getNativeSessionCredential: async () => state.credential };
   const started = deferred();
   let sequence = Fixture.zero;
-  const native = { async executeCommand(identifier, requestIdentifier, serialized) {
+  const native = { async read(identifier, generation) {
+      calls.reads.push({ identifier, generation });
+      const value = state.reading ? await state.reading.promise : readResponse();
+      state.nowMonotonicMilliseconds = ReadFixture.received;
+      return JSON.stringify(value);
+    }, async executeCommand(identifier, requestIdentifier, serialized) {
       calls.commands.push({ identifier, requestIdentifier, input: JSON.parse(serialized) }); if (state.command) await state.command.promise;
     }, async cancelCommand(identifier, requestIdentifier) { calls.canceledCommands.push({ identifier, requestIdentifier }); },
     async start(identifier, serialized) { calls.starts.push({ identifier, input: JSON.parse(serialized) }); started.resolve(); return state.start ? state.start.promise : Fixture.handle; },
     async close(identifier) { calls.closes.push(identifier); if (state.close) await state.close.promise; },
     async refresh(identifier, generation) { calls.refreshes.push({ identifier, generation }); } };
-  const dependencies = { native: () => native, observe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
+  const dependencies = { clock: { nowMonotonicMilliseconds: () => state.nowMonotonicMilliseconds }, native: () => native, observe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     nextIdentifier: () => Fixture.requestPrefix + (sequence += Fixture.one), membershipChanged: () => { calls.membership += Fixture.one; } };
   const store = new SpotifyConnectStore(dependencies); const cancellation = new AbortController();
   return { store, state, provider, calls, dependencies, cancellation, listeners, started,
@@ -270,4 +275,47 @@ test(CapacityFixture.names.reentrant, async () => {
   await assert.rejects(current.store.execute(Fixture.account, command(), CommandFixture.host, new AbortController().signal),
     { code: library.IntegrationFailureCode.Canceled });
   assert.deepEqual(current.calls.commands, []); await current.store.detach();
+});
+
+const ReadFixture = Object.freeze({ sent: 1000, received: 1100, nativeStart: 8, nativeEnd: 25, nativeSample: 28,
+  epoch: 1700000000000, position: 12000, duration: 180000, speed: 1, trackUri: 'spotify:track:aaaaaaaaaaaaaaaaaaaaaa',
+  provider: 'queue', occurrence: 'source-occurrence', revision: 'source-queue-revision',
+  names: { fresh: 'Native source reads preserve the fresh account host generation and measured request timing',
+    cancel: 'Native source reads cancel promptly and discard a late result without mutating registration',
+    generation: 'Source reads from a retired generation cannot drive the current playback',
+    malformed: 'Malformed native observation data is rejected without exposing private diagnostics' } });
+function readResponse() { return { handle: Fixture.handle, generation: Fixture.generation, sampledNativeMonotonicMilliseconds: ReadFixture.nativeSample,
+  reading: { requestStartedNativeMonotonicMilliseconds: ReadFixture.nativeStart, requestCompletedNativeMonotonicMilliseconds: ReadFixture.nativeEnd,
+    cluster: { activeDeviceIdentifier: CommandFixture.host, serverAtMilliseconds: ReadFixture.epoch,
+      playback: { track: { uri: ReadFixture.trackUri, occurrenceIdentifier: ReadFixture.occurrence, provider: ReadFixture.provider },
+        queueRevision: ReadFixture.revision, timestampMilliseconds: ReadFixture.epoch,
+        positionAsOfTimestampMilliseconds: ReadFixture.position, durationMilliseconds: ReadFixture.duration, playbackSpeed: ReadFixture.speed,
+        playing: true, paused: false, buffering: false, nextTracks: [], previousTracks: [] } } } }; }
+test(ReadFixture.names.fresh, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  const observed = await current.store.read(Fixture.account, CommandFixture.host, new AbortController().signal);
+  assert.equal(observed.currentTrack.occurrenceIdentifier, ReadFixture.occurrence);
+  assert.equal(observed.playback.observedMonotonicMilliseconds, ReadFixture.received);
+  assert.deepEqual(current.calls.reads, [{ identifier: current.calls.starts[Fixture.zero].identifier, generation: Fixture.generation }]);
+  await current.store.detach();
+});
+test(ReadFixture.names.cancel, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.reading = deferred();
+  const abort = new AbortController(); const reading = current.store.read(Fixture.account, CommandFixture.host, abort.signal);
+  const rejected = assert.rejects(reading, { code: library.IntegrationFailureCode.Canceled }); abort.abort(); await rejected;
+  current.state.reading.resolve(readResponse()); await flush();
+  assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready); await current.store.detach();
+});
+test(ReadFixture.names.generation, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.reading = deferred();
+  const reading = current.store.read(Fixture.account, CommandFixture.host, new AbortController().signal);
+  current.send(registration(), Fixture.nextGeneration); current.state.reading.resolve(readResponse());
+  await assert.rejects(reading, { code: library.IntegrationFailureCode.Superseded }); await current.store.detach();
+});
+test(ReadFixture.names.malformed, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.reading = deferred();
+  const reading = current.store.read(Fixture.account, CommandFixture.host, new AbortController().signal);
+  current.state.reading.resolve({ reading: Fixture.privateFailure });
+  await assert.rejects(reading, { code: library.IntegrationFailureCode.InvalidResponse });
+  assert.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false); await current.store.detach();
 });

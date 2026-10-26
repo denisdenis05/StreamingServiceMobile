@@ -115,3 +115,26 @@ JNI control JSON and reservation request IDs must match. Command reservations
 are registered synchronously before worker queuing so an immediate JS abort
 cannot miss work waiting in the executor. Finishing is identity-bound/idempotent
 at the owner, so an old finally block cannot release a replacement reservation.
+
+## Fresh observation reads
+
+connectRead returns handle/generation plus a fresh cluster and native request
+start/end/delivery clocks. It uses the existing observer refresh (registration
+PUT) and never mutates host playback. Tests in connect_actor.rs cover fresh
+intervals, stale generation rejection and abandoned queued reads; JNI smoke
+resolves the read export without authentication traffic. Android tests reject
+foreign/coerced envelopes and post-read ownership retirement. Source-store tests
+cover binding, prompt cancellation, late generation and malformed results.
+
+SpotifyConnectObservationValues in the library brackets the whole call with
+JavaScript time; source position is advanced using server_at minus player
+anchor only while actually progressing. Native clock origin never substitutes
+for JavaScript time. Buffered/paused state remains nonprogressing even if Spotify
+reports is_playing. Remote occurrence IDs reach the local follower, including
+repeated tracks. Source URI/metadata is not yet a rendered shared queue.
+
+The diagnostic example writes only nonidentifying numeric/boolean summaries to
+build/spotify-jam/live-observation-summary.json. Its dedicated example test checks
+exact appended occurrence correlation and excludes host/track/occurrence strings.
+Run cargo test --locked --manifest-path native/librespot-session/Cargo.toml
+--example connect_probe in addition to the normal native test script.

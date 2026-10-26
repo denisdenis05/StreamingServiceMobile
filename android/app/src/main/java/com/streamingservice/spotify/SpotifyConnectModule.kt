@@ -67,6 +67,14 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
     }
 
     @ReactMethod
+    fun read(identifier: String, generation: Double, promise: Promise) {
+        if (!generation.isFinite() || generation < MINIMUM_GENERATION || generation > MAXIMUM_GENERATION || generation != generation.toLong().toDouble()) {
+            reject(promise, INVALID_INPUT_FAILURE); return
+        }
+        dispatch(promise) { promise.resolve(owner.read(identifier, generation.toLong())) }
+    }
+
+    @ReactMethod
     fun executeCommand(identifier: String, requestIdentifier: String, serialized: String, promise: Promise) {
         if (serialized.length > MAXIMUM_INPUT_CHARACTERS) { reject(promise, INVALID_INPUT_FAILURE); return }
         val reservation = try { owner.prepareCommand(identifier, requestIdentifier) }

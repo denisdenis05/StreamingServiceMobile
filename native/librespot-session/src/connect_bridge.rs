@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
 
 use crate::{connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
-    connect_transport::{run_connect_transport, ConnectAction}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
+    connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
 const MAXIMUM_KEY_CHARACTERS: usize = 2048;
@@ -34,6 +34,19 @@ pub enum ConnectControl {
 
 #[derive(Serialize)]
 struct ConnectStarted { handle: u64 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectReadReceipt { handle: u64, generation: u64, sampled_native_monotonic_milliseconds: u64, reading: ConnectReading }
+
+async fn read(handle: u64, generation: u64) -> Result<ConnectReadReceipt, Failure> {
+    if generation < MINIMUM_HANDLE as u64 || generation > MAXIMUM_SAFE_JAVASCRIPT_INTEGER { return Err(Failure::InvalidInput); }
+    let (result, response) = oneshot::channel();
+    connections().actions(handle)?.try_send(ConnectAction::Read { generation, result }).map_err(|_| Failure::Backpressure)?;
+    let reading = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+        .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
+    Ok(ConnectReadReceipt { handle, generation, sampled_native_monotonic_milliseconds: native_monotonic_milliseconds(), reading })
+}
 
 #[derive(Serialize)]
 struct ConnectReceipt { failure: Option<&'static str> }
@@ -175,4 +188,10 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
 pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectFinishCommand(
     mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, request_identifier: JString) -> jstring {
     boundary(&mut environment, |environment| receipt(connections().finish_command(handle(connection_handle)?, &crate::read_string(environment, request_identifier)?)))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectRead(
+    mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong) -> jstring {
+    boundary(&mut environment, |_| runtime()?.block_on(read(handle(connection_handle)?, handle(generation)?)))
 }

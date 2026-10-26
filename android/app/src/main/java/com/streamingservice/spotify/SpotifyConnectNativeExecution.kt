@@ -4,6 +4,7 @@ import org.json.JSONObject
 
 interface SpotifyConnectNativeCalls {
     fun start(serialized: String): String
+    fun read(handle: Long, generation: Long): String
     fun poll(handle: Long): String
     fun execute(handle: Long, serialized: String): String
     fun beginCommand(handle: Long, requestIdentifier: String): String
@@ -15,6 +16,7 @@ interface SpotifyConnectNativeCalls {
 
 private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun start(serialized: String): String = SpotifyLibrespotNative.connectStart(serialized)
+    override fun read(handle: Long, generation: Long): String = SpotifyLibrespotNative.connectRead(handle, generation)
     override fun poll(handle: Long): String = SpotifyLibrespotNative.connectPoll(handle)
     override fun execute(handle: Long, serialized: String): String = SpotifyLibrespotNative.connectExecute(handle, serialized)
     override fun beginCommand(handle: Long, requestIdentifier: String): String = SpotifyLibrespotNative.connectBeginCommand(handle, requestIdentifier)
@@ -35,6 +37,15 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
             val eventCount = response.getJSONArray(EVENTS_FIELD).length()
             if (eventCount > MAXIMUM_BATCH_EVENTS) throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)
             SpotifyConnectBatch(serialized, finished, eventCount > EMPTY_EVENT_COUNT)
+        }
+    }
+
+    override fun read(handle: Long, generation: Long): String {
+        val serialized = native.read(handle, generation)
+        return decode(serialized) { response ->
+            if (handle(response) != handle || response.get(GENERATION_FIELD) !is Number
+                || response.getDouble(GENERATION_FIELD) != generation.toDouble()) throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)
+            serialized
         }
     }
 

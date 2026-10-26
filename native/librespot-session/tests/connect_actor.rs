@@ -333,3 +333,36 @@ async fn individual_cancellation_after_dispatch_reports_unknown_outcome_and_neve
     assert_eq!(harness.calls.lock().unwrap().commands.len(), ONE_CALL);
     assert!(!harness.cancellation.is_cancelled()); harness.stop().await;
 }
+
+#[tokio::test]
+async fn native_read_returns_a_fresh_cluster_with_a_request_interval_in_its_own_clock_domain() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    let reading = receipt.await.unwrap().unwrap();
+    assert_eq!(reading.cluster.active_device_identifier, TARGET);
+    assert!(reading.request_completed_native_monotonic_milliseconds >= reading.request_started_native_monotonic_milliseconds);
+    assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL);
+    assert!(harness.calls.lock().unwrap().commands.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_native_reads_are_rejected_without_querying_another_generation() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: STALE_GENERATION, result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().refreshes, EMPTY_CALL_COUNT); harness.stop().await;
+}
+
+#[tokio::test]
+async fn abandoned_native_reads_do_not_refresh_or_emit_an_uncorrelated_playback_event() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, receipt) = oneshot::channel(); drop(receipt);
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Refresh { generation: GENERATION, result }).await.unwrap();
+    receipt.await.unwrap().unwrap();
+    assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL); harness.stop().await;
+}

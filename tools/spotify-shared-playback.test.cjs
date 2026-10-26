@@ -197,3 +197,28 @@ test(Fixture.names.staleCleanupFailure, async () => { const current = storeEnvir
   } });
   const stopping = assert.rejects(current.store.stop()); await flush(); pending.reject(new Error(Fixture.privateFailure));
   await stopping; await replacement; assert.equal(current.store.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized); await current.store.dispose(); });
+
+const ConnectFixture = Object.freeze({ nextOccurrence: 'next-remote-occurrence',
+  names: { occurrence: 'Repeated Spotify tracks with a new remote occurrence prepare a distinct local playback execution',
+    buffering: 'Native source buffering holds local playback rather than discarding the source buffering state' } });
+function connectSample(current, occurrenceIdentifier, buffering = false) { return { ...identity,
+  spotifyTrackIdentifier: Fixture.track, occurrenceIdentifier, buffering,
+  positionMilliseconds: Fixture.position, durationMilliseconds: Fixture.duration, playing: !buffering,
+  anchorMonotonicMilliseconds: current.state.now, observedMonotonicMilliseconds: current.state.now,
+  uncertaintyMilliseconds: Fixture.zero, stateChangedAtUnixMilliseconds: Fixture.one }; }
+test(ConnectFixture.names.occurrence, async () => {
+  const current = storeEnvironment(); let occurrenceIdentifier = Fixture.occurrence;
+  current.storeState.read = () => connectSample(current, occurrenceIdentifier);
+  await current.store.start(Fixture.market); const firstOccurrence = current.state.currentEntry.entryIdentifier;
+  occurrenceIdentifier = ConnectFixture.nextOccurrence; await current.tick();
+  assert.notEqual(current.state.currentEntry.entryIdentifier, firstOccurrence);
+  assert.equal(current.store.getSnapshot().occurrenceIdentifier, ConnectFixture.nextOccurrence);
+  assert.equal(current.storeState.matches, Fixture.one);
+  await current.store.dispose();
+});
+test(ConnectFixture.names.buffering, async () => {
+  const current = storeEnvironment(); current.storeState.read = () => connectSample(current, Fixture.occurrence, true);
+  await current.store.start(Fixture.market); assert.equal(current.state.playing, false);
+  assert.equal(current.store.getSnapshot().status, library.SharedPlaybackStatus.Buffering);
+  await current.store.dispose();
+});

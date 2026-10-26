@@ -39,10 +39,19 @@ pub struct OutgoingFrame {
 
 pub enum ConnectAction {
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
+    Read { generation: u64, result: ActionResult<ConnectReading> },
     Command { generation: u64, target_device_identifier: String, body: Value, result: ActionResult<()> },
     CheckedCommand { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand,
         command_cancellation: CancellationToken, result: ActionResult<()> },
     Reply { generation: u64, key: String, accepted: bool, result: ActionResult<()> },
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectReading {
+    pub request_started_native_monotonic_milliseconds: u64,
+    pub request_completed_native_monotonic_milliseconds: u64,
+    pub cluster: ConnectCluster,
 }
 
 #[derive(Serialize)]
@@ -123,6 +132,7 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
 
 fn retire_action(action: ConnectAction) {
     match action {
+        ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Command { result, .. } | ConnectAction::CheckedCommand { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
     }
@@ -171,6 +181,16 @@ pub async fn process_connected_events(session: &mut impl ConnectSessionOperation
             action = actions.recv() => {
                 let action = action.ok_or(Failure::Canceled)?;
                 match action {
+                    ConnectAction::Read { generation: expected, result } => {
+                        if result.is_closed() { continue; }
+                        if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
+                        let request_started_native_monotonic_milliseconds = native_monotonic_milliseconds();
+                        let refreshed = session.refresh().await;
+                        let request_completed_native_monotonic_milliseconds = native_monotonic_milliseconds();
+                        let reading = refreshed.map(|cluster| ConnectReading { request_started_native_monotonic_milliseconds,
+                            request_completed_native_monotonic_milliseconds, cluster });
+                        let _ = result.send(reading);
+                    },
                     ConnectAction::Refresh { generation: expected, result } => {
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }

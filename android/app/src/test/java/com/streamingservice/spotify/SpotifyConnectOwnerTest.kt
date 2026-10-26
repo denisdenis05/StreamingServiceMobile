@@ -24,6 +24,7 @@ class SpotifyConnectOwnerTest {
         var onRefresh: () -> Unit = {}
         override fun start(serialized: String): Long { assertEquals(CREDENTIAL, serialized); return HANDLE }
         override fun poll(handle: Long): SpotifyConnectBatch { assertEquals(HANDLE, handle); return batch }
+        override fun read(handle: Long, generation: Long): String { refreshed.add(handle to generation); onRefresh(); return PAYLOAD }
         override fun refresh(handle: Long, generation: Long) { refreshed.add(handle to generation); onRefresh() }
         override fun cancel(handle: Long) { if (cancelFails) throw SpotifyConnectFailure(NETWORK_FAILURE); canceled.add(handle) }
         override fun finish(handle: Long) { finished.add(handle) }
@@ -155,6 +156,14 @@ class SpotifyConnectOwnerTest {
         requireFailure(CANCELED_FAILURE) { fixture.owner.prepareCommand(OTHER_IDENTIFIER, REQUEST_IDENTIFIER) }
         requireFailure(INVALID_INPUT_FAILURE) { fixture.owner.prepareCommand(IDENTIFIER, EMPTY_TEXT) }
         assertTrue(fixture.execution.begunCommands.isEmpty())
+    }
+    @Test
+    fun nativeReadFencesTheAccountBeforeAndAfterTheNetworkSnapshot() {
+        val fixture = Fixture(); fixture.start()
+        assertEquals(PAYLOAD, fixture.owner.read(IDENTIFIER, GENERATION))
+        requireFailure(CANCELED_FAILURE) { fixture.owner.read(OTHER_IDENTIFIER, GENERATION) }
+        fixture.execution.onRefresh = { fixture.close() }
+        requireFailure(CANCELED_FAILURE) { fixture.owner.read(IDENTIFIER, GENERATION) }
     }
     companion object {
         private const val REQUEST_IDENTIFIER = "synthetic-native-command"

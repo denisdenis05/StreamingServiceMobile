@@ -27,6 +27,7 @@ public final class SpotifyLibrespotNative {
     public native void finish(String identifier);
     public native void cancelAll();
     public native String connectStart(String serialized);
+    public native String connectRead(long connectionHandle, long generation);
     public native String connectPoll(long connectionHandle);
     public native String connectExecute(long connectionHandle, String serialized);
     public native String connectBeginCommand(long connectionHandle, String requestIdentifier);
@@ -72,6 +73,8 @@ public final class SpotifyLibrespotNative {
         requireEqual(CANCELED_RESULT, implementation.connectCancelCommand(ABSENT_CONNECTION_HANDLE, FIRST_REQUEST));
         requireEqual(CANCELED_RESULT, implementation.connectFinishCommand(ABSENT_CONNECTION_HANDLE, FIRST_REQUEST));
         requireEqual(INVALID_INPUT_RESULT, implementation.connectBeginCommand(INVALID_CONNECTION_HANDLE, FIRST_REQUEST));
+        requireEqual(CANCELED_RESULT, implementation.connectRead(ABSENT_CONNECTION_HANDLE, ABSENT_CONNECTION_HANDLE));
+        requireEqual(INVALID_INPUT_RESULT, implementation.connectRead(ABSENT_CONNECTION_HANDLE, INVALID_CONNECTION_HANDLE));
         System.out.println(SUCCESS_MESSAGE);
     }
 }

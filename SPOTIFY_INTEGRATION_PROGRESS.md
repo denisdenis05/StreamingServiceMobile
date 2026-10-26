@@ -1,3 +1,45 @@
+# Fresh native observations and occurrence-aware following — 2026-10-26
+
+Added ConnectAction::Read and JNI connectRead. It returns a fresh cluster with
+native request start/end and delivery sample clocks. It performs no song edit,
+rejects old generations and skips abandoned queued reads. Android and JS fence
+ownership before/after asynchronous work. JS cancellation retires the waiting
+reader promptly and discards late native results. Native-login runtime playback
+reads now use this port instead of the public player read endpoint.
+
+The library validates all timing/identity bounds, preserves occurrence IDs and
+queue revision, and uses Spotify server time to advance position from the player
+anchor only while playing and neither paused nor buffering. The mobile follower
+retains source buffering and prepares a new execution for a repeated song's new
+occurrence. Matching for that song remains cached. Guest role remains disabled;
+this does not establish synchronized audio or a native foreground service.
+
+Validation: library 573 cases, mobile 313 source cases plus 89 UI/platform cases,
+Android JVM 47 cases, Rust/JNI 105 cases plus JNI smoke, diagnostic example one
+case, and full app TypeScript pass. The example writes only fixed nonidentifying
+clock/playback metrics to build/spotify-jam/live-observation-summary.json and can
+confirm an explicitly appended URI/occurrence internally without exporting IDs.
+The diagnostic artifact test checks exact correlation and identifier omission.
+
+Live interactive process 85329 is still running and retains the approved grant
+only in parent memory. Its rebuilt child was restarted without pairing again.
+Two explicit reads returned server elapsed 79392 ms versus native request-start
+elapsed 79399 ms, with a 247 ms latest request. The active device is still absent,
+playback paused, queue length 79. Waiting for the pending user playback response
+before native commands; a second-account Jam invitation is still needed for actual
+guest admission. refresh/restart/stop and explicit play/pause/next/previous/queue
+controls are available. Never assume this handle survives a process restart.
+
+A native-command APK was built from mobile 613fd9b and library 2a10829: 35207336
+bytes, SHA256 4c8f3c7cd630e4049f5f2a2477ff73ea82be9560c4df64ad7622ce4a1be0f3fc.
+It passed signature, Hermes/native markers, ZIP/16 KB ELF alignment. It does not
+yet include this observation chapter; another forced bundle/assembly is needed.
+No ADB/device execution or second-account/audio correctness is claimed.
+
+Next independent chapter: native metadata/queue display and revision-based
+reconciliation, guest permission evidence/admission, local authority/host state
+publication and Android foreground recovery. The full objective remains active.
+
 # Native typed command path — 2026-10-26
 
 Native-login queue/playback adapters now bypass the public player mutation API.

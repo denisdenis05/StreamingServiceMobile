@@ -1,5 +1,5 @@
-import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand } from 'streaming-service-spotify-jam';
-import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort } from 'streaming-service-spotify-jam';
+import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand, decodeSpotifyConnectObservation } from 'streaming-service-spotify-jam';
+import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort, SpotifyConnectObservation, SpotifyConnectObservationPort, SharedPlaybackClock } from 'streaming-service-spotify-jam';
 
 export enum SpotifyConnectStatus {
   Detached = 'detached', Connecting = 'connecting', Ready = 'ready', Reconnecting = 'reconnecting', Failed = 'failed',
@@ -16,12 +16,14 @@ export interface SpotifyConnectNative {
   start(identifier: string, serialized: string): Promise<number>;
   close(identifier: string): Promise<void>;
   refresh(identifier: string, generation: number): Promise<void>;
+  read(identifier: string, generation: number): Promise<string>;
   executeCommand(identifier: string, requestIdentifier: string, serialized: string): Promise<void>;
   cancelCommand(identifier: string, requestIdentifier: string): Promise<void>;
 }
 
 export interface SpotifyConnectDependencies {
   readonly native: () => SpotifyConnectNative | null;
+  readonly clock?: SharedPlaybackClock;
   readonly observe: (listener: (event: unknown) => void) => () => void;
   readonly nextIdentifier: () => string;
   readonly membershipChanged?: () => void;
@@ -71,7 +73,7 @@ function failureCode(failure: unknown): IntegrationFailureCode {
   return typeof code === Policy.stringType && FailureCodes.has(code as string) ? code as IntegrationFailureCode : IntegrationFailureCode.Network;
 }
 
-export class SpotifyConnectStore implements SpotifyConnectCommandPort {
+export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyConnectObservationPort {
   private snapshot = EmptySnapshot;
   private readonly listeners = new Set<() => void>();
   private binding: Binding | null = null;
@@ -137,6 +139,43 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort {
     try {
       await binding.native.refresh(binding.identifier, this.snapshot.generation);
       this.requireCurrent(binding);
+    } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
+  }
+
+  async read(accountIdentifier: string, hostDeviceIdentifier: string, cancellation: AbortSignal): Promise<SpotifyConnectObservation> {
+    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    const binding = this.binding;
+    if (!binding || binding.accountIdentifier !== accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.requireCurrent(binding);
+    const native = binding.native; const clock = this.dependencies.clock;
+    if (!native || !clock || binding.handle === null || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    try { identifier(hostDeviceIdentifier); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidInput); }
+    const generation = this.snapshot.generation; const handle = binding.handle;
+    try {
+      const sentMonotonicMilliseconds = clock.nowMonotonicMilliseconds();
+      const serialized = await new Promise<string>((resolve, reject) => {
+        let settled = false;
+        const finish = (value: string | null, failure: unknown): void => {
+          if (settled) return;
+          settled = true;
+          cancellation.removeEventListener(Policy.abortEvent, abort);
+          binding.cancellation.signal.removeEventListener(Policy.abortEvent, abort);
+          if (value !== null) resolve(value); else reject(failure);
+        };
+        const abort = (): void => finish(null, new IntegrationFailure(IntegrationFailureCode.Canceled));
+        cancellation.addEventListener(Policy.abortEvent, abort, { once: true });
+        binding.cancellation.signal.addEventListener(Policy.abortEvent, abort, { once: true });
+        if (cancellation.aborted || binding.cancellation.signal.aborted) { abort(); return; }
+        try { void native.read(binding.identifier, generation).then(value => finish(value, null), failure => finish(null, failure)); }
+        catch (failure) { finish(null, failure); }
+      });
+      const receivedMonotonicMilliseconds = clock.nowMonotonicMilliseconds();
+      this.requireCurrent(binding);
+      if (this.snapshot.generation !== generation || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (typeof serialized !== Policy.stringType || serialized.length > Policy.maximumBatchCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      let response: unknown;
+      try { response = JSON.parse(serialized); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
+      return decodeSpotifyConnectObservation(response, { handle, generation, hostDeviceIdentifier, sentMonotonicMilliseconds, receivedMonotonicMilliseconds });
     } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
   }
 

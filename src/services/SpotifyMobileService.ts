@@ -1,5 +1,5 @@
 import { FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
-  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectQueueProtocol,
+  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
@@ -58,7 +58,7 @@ function nextIdentifier(): string {
   return identifierPrefix + MobileCompositionPolicy.identifierSeparator + sequence;
 }
 
-export const spotifyConnect = new SpotifyConnectStore({ native: spotifyConnectNative, observe: observeSpotifyConnect, nextIdentifier,
+export const spotifyConnect = new SpotifyConnectStore({ clock: playbackClock, native: spotifyConnectNative, observe: observeSpotifyConnect, nextIdentifier,
   membershipChanged: () => {
     const runtime = spotifyIntegration.runtime;
     if (runtime) void runtime.membership.refresh().catch(() => undefined);
@@ -127,6 +127,7 @@ export const spotifyMobile = new SpotifyMobileController({
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,
       scheduler: new SystemScheduler(), playbackClock,
       ...(selection.useNativeConnect ? {
+        playbackReader: new SpotifyConnectPlaybackReader(spotifyConnect, identity.accountIdentifier),
         queueProtocol: new SpotifyConnectQueueProtocol(spotifyConnect, identity.accountIdentifier, nextIdentifier),
         playbackCommandProtocol: new SpotifyConnectPlaybackCommandProtocol(spotifyConnect, identity.accountIdentifier),
       } : {}),
