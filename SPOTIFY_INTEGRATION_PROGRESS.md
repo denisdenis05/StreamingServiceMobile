@@ -1,3 +1,47 @@
+# Private track metadata and shared queue display — 2026-10-26
+
+Added the pinned extended-metadata protocol through the existing native session's
+bounded account-bound HTTP adapter. Requests contain at most 20 unique real
+base62 IDs. Decoding checks extension kind, each entity URI, numeric status,
+actual protobuf track gid, title/artists/duration and explicit ISRC codes. It
+reorders responses to the requested IDs and rejects missing/duplicate/foreign
+entities. Explicit 404 is not-found. No audio data or keys are read.
+
+Metadata is exposed through generation-fenced actor/JNI/Kotlin/JS reads. The
+native owner now shares its read-retirement guard for observation/metadata.
+Native-login runtime uses private metadata for song lookup and a private queue
+reader which resolves repeated songs once per read, preserves occurrence and
+revision values, and confirms the same host/generation/revision after metadata.
+Search remains the existing catalog adapter. The queue display retains its 100
+entry bound; native episode metadata is unsupported and full private search is
+not claimed. JS read cancellation also covers the receipt-settlement/continuation
+race, with a dedicated reproducing test.
+
+Live process 85329 reused its in-memory credential while its native child was
+rebuilt/restarted. A fresh paused-track metadata lookup succeeded with title,
+one artist, duration and one recording code. The safe summary is in
+build/spotify-jam/live-metadata-summary.json, and exports only presence/counts and
+fixed failure codes. Paused source playbackSpeed is 0.0; the library's new test
+accepts paused zero speed and still rejects unsupported active speed. Spotify
+still reports no active device, so explicit native song controls/queue mutation
+remain unverified. Pending user request is to resume Spotify playback and reply
+playing. Actual second-account invitation is still needed for guest tests.
+
+Checks: library 584 cases; mobile 317 source plus 89 UI/platform cases; Android
+JVM 49 cases; full Rust/JNI 113 cases plus JNI smoke; diagnostic example two
+cases; full app TypeScript. Core codec cases cover bounds, ordering/identity,
+malformed responses, ISRC filtering and explicit not-found. Actor cases cover
+exact request routing/provider failure and stale generations. Kotlin/source tests
+cover envelope/account binding, retirement, malformed/foreign receipts and
+prompt cancellation. Example tests exclude song identifiers/details from output.
+
+Previous artifact still contains only the command chapter (mobile 613fd9b,
+library 2a10829); it does not yet contain the observation/metadata changes.
+A forced Hermes bundle and release assembly follow this chapter. Continue through
+guest permission/admission, live commands/reconciliation, simultaneous local
+playback, host state publication and foreground/lifecycle recovery. Do not mark
+the full objective complete from these tests or APK assembly.
+
 # Fresh native observations and occurrence-aware following — 2026-10-26
 
 Added ConnectAction::Read and JNI connectRead. It returns a fresh cluster with

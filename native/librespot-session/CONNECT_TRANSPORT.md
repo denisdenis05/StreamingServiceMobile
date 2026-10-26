@@ -138,3 +138,22 @@ build/spotify-jam/live-observation-summary.json. Its dedicated example test chec
 exact appended occurrence correlation and excludes host/track/occurrence strings.
 Run cargo test --locked --manifest-path native/librespot-session/Cargo.toml
 --example connect_probe in addition to the normal native test script.
+
+## Track metadata
+
+connect_metadata.rs builds the pinned extended-metadata TRACK_V4 request and
+checks all returned entity URIs/gids. Metadata comes from this account's existing
+native HTTP session; response bodies remain bounded. The codec does not expose
+track files or audio keys. Metadata actions are generation-bound and passive;
+failed or abandoned requests are not mutation outcomes. JNI and Kotlin preserve
+handle/generation, and JS verifies the exact requested result sequence.
+
+`tests/connect_metadata.rs` covers unique/bounded requests, reordered entities,
+exact gid matching, missing/duplicated/foreign data, malformed/oversized bodies,
+ISRC filtering and 404. `tests/connect_actor.rs` covers metadata routing and old
+generations. Android owner/execution cases cover metadata account retirement and
+foreign envelopes. Source-store cases cover account binding, cancellation, foreign
+handles and cancellation after receipt settlement. The diagnostic example's
+metadata projection test excludes title, artists, identifiers and recording codes
+from its report. Live private metadata succeeded on 2026-10-26; the safe artifact
+reports title/duration presence, artist/code counts and a fixed failure category.

@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use librespot_protocol::{connect::Cluster, player::PlayerState};
 use protobuf::{Message, MessageField};
 use serde_json::{json, Value};
-use streaming_spotify_session::{connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
+use streaming_spotify_session::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
     connect_transport::{process_connected_events, ConnectAction, ConnectEvent, ConnectEventData, OutgoingFrame},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, DealerInput}, model::Failure};
 use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
@@ -31,7 +31,7 @@ const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
-struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize }
+struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
@@ -40,6 +40,12 @@ struct FakeSession {
 }
 
 fn cluster() -> ConnectCluster { decode_cluster_snapshot(&Cluster::new().write_to_bytes().unwrap()).unwrap() }
+
+impl ConnectMetadataOperations for FakeSession {
+    async fn metadata(&mut self, identifiers: Vec<String>) -> Result<Vec<ConnectTrackMetadata>, Failure> {
+        self.calls.lock().unwrap().metadata_requests.push(identifiers); Err(Failure::Unsupported)
+    }
+}
 
 impl ConnectSessionOperations for FakeSession {
     fn device_identifier(&self) -> &str { DEVICE }
@@ -365,4 +371,25 @@ async fn abandoned_native_reads_do_not_refresh_or_emit_an_uncorrelated_playback_
     harness.actions.send(ConnectAction::Refresh { generation: GENERATION, result }).await.unwrap();
     receipt.await.unwrap().unwrap();
     assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL); harness.stop().await;
+}
+
+const METADATA_TRACK_IDENTIFIER: &str = "0000000000000000000001";
+
+#[tokio::test]
+async fn metadata_actions_keep_the_exact_request_and_preserve_the_provider_failure_without_replaying() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let identifiers = vec![METADATA_TRACK_IDENTIFIER.to_owned()];
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Metadata { generation: GENERATION, identifiers: identifiers.clone(), result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Unsupported)));
+    assert_eq!(harness.calls.lock().unwrap().metadata_requests, vec![identifiers]); harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_metadata_generations_cannot_query_the_current_accounts_catalog() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Metadata { generation: STALE_GENERATION, identifiers: vec![METADATA_TRACK_IDENTIFIER.to_owned()], result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().metadata_requests.is_empty()); harness.stop().await;
 }

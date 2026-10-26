@@ -31,12 +31,15 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
-  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], commands: [], canceledCommands: [], membership: Fixture.zero };
-  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null, reading: null, nowMonotonicMilliseconds: ReadFixture.sent };
+  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], metadata: [], commands: [], canceledCommands: [], membership: Fixture.zero };
+  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null, reading: null, metadata: null, nowMonotonicMilliseconds: ReadFixture.sent };
   const provider = { getNativeSessionCredential: async () => state.credential };
   const started = deferred();
   let sequence = Fixture.zero;
-  const native = { async read(identifier, generation) {
+  const native = { async metadata(identifier, generation, serialized) {
+      const requested = JSON.parse(serialized); calls.metadata.push({ identifier, generation, requested });
+      return JSON.stringify(state.metadata ? await state.metadata.promise : metadataResponse());
+    }, async read(identifier, generation) {
       calls.reads.push({ identifier, generation });
       const value = state.reading ? await state.reading.promise : readResponse();
       state.nowMonotonicMilliseconds = ReadFixture.received;
@@ -318,4 +321,44 @@ test(ReadFixture.names.malformed, async () => {
   current.state.reading.resolve({ reading: Fixture.privateFailure });
   await assert.rejects(reading, { code: library.IntegrationFailureCode.InvalidResponse });
   assert.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false); await current.store.detach();
+});
+
+const MetadataFixture = Object.freeze({ track: 'aaaaaaaaaaaaaaaaaaaaaa', title: 'Synthetic metadata title', artist: 'Synthetic artist', duration: 180000,
+  names: { binding: 'Native metadata remains bound to its account generation and copied requested identities',
+    cancel: 'Metadata cancellation rejects promptly and discards late private data',
+    foreign: 'Metadata from a replaced native handle cannot supply another songs identity' } });
+function metadataResponse() { return { handle: Fixture.handle, generation: Fixture.generation, tracks: [{ spotifyTrackIdentifier: MetadataFixture.track,
+  title: MetadataFixture.title, artistNames: [MetadataFixture.artist], durationMilliseconds: MetadataFixture.duration, recordingCodes: [] }] }; }
+test(MetadataFixture.names.binding, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  const songs = await current.store.readMetadata(Fixture.account, [MetadataFixture.track], new AbortController().signal);
+  assert.equal(songs[Fixture.zero].title, MetadataFixture.title);
+  assert.deepEqual(current.calls.metadata, [{ identifier: current.calls.starts[Fixture.zero].identifier, generation: Fixture.generation, requested: [MetadataFixture.track] }]);
+  await assert.rejects(current.store.readMetadata(Fixture.otherAccount, [MetadataFixture.track], new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
+  await current.store.detach();
+});
+test(MetadataFixture.names.cancel, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.metadata = deferred();
+  const abort = new AbortController(); const reading = current.store.readMetadata(Fixture.account, [MetadataFixture.track], abort.signal);
+  const rejected = assert.rejects(reading, { code: library.IntegrationFailureCode.Canceled }); abort.abort(); await rejected;
+  current.state.metadata.resolve(metadataResponse()); await flush(); assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready);
+  await current.store.detach();
+});
+test(MetadataFixture.names.foreign, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.metadata = deferred();
+  const reading = current.store.readMetadata(Fixture.account, [MetadataFixture.track], new AbortController().signal);
+  current.state.metadata.resolve({ ...metadataResponse(), handle: Fixture.otherHandle });
+  await assert.rejects(reading, { code: library.IntegrationFailureCode.InvalidResponse }); await current.store.detach();
+});
+
+const SettledCancellationFixture = Object.freeze({ name: 'Cancellation after native receipt settlement still retires metadata before returning it to the caller' });
+test(SettledCancellationFixture.name, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); const abort = new AbortController();
+  current.dependencies.native().metadata = () => {
+    const receipt = Promise.resolve(JSON.stringify(metadataResponse()));
+    void receipt.then(() => queueMicrotask(() => abort.abort()));
+    return receipt;
+  };
+  await assert.rejects(current.store.readMetadata(Fixture.account, [MetadataFixture.track], abort.signal), { code: library.IntegrationFailureCode.Canceled });
+  await current.store.detach();
 });

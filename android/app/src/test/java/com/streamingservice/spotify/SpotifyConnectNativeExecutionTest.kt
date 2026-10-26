@@ -23,6 +23,7 @@ class SpotifyConnectNativeExecutionTest {
         val finished = mutableListOf<Long>()
         override fun start(serialized: String): String { assertEquals(CREDENTIAL, serialized); return opened }
         var reading = JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, GENERATION).toString()
+        override fun metadata(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
         override fun read(handle: Long, generation: Long): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); return reading }
         override fun poll(handle: Long): String { assertEquals(HANDLE, handle); return polled }
         override fun execute(handle: Long, serialized: String): String { commands.add(handle to serialized); return receipt }
@@ -115,6 +116,13 @@ class SpotifyConnectNativeExecutionTest {
             JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, GENERATION.toString()))) {
             native.reading = reading.toString(); requireFailure(INVALID_RESPONSE_FAILURE) { execution.read(HANDLE, GENERATION) }
         }
+    }
+    @Test
+    fun metadataEnvelopesMustKeepTheExpectedNativeHandleAndGeneration() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        assertEquals(native.reading, execution.metadata(HANDLE, GENERATION, CREDENTIAL))
+        native.reading = JSONObject().put(HANDLE_FIELD, OTHER_HANDLE).put(GENERATION_FIELD, GENERATION).toString()
+        requireFailure(INVALID_RESPONSE_FAILURE) { execution.metadata(HANDLE, GENERATION, CREDENTIAL) }
     }
     companion object {
         private const val COMMAND_OPERATION = "command"

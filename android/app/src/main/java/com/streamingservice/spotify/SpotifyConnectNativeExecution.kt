@@ -4,6 +4,7 @@ import org.json.JSONObject
 
 interface SpotifyConnectNativeCalls {
     fun start(serialized: String): String
+    fun metadata(handle: Long, generation: Long, serialized: String): String
     fun read(handle: Long, generation: Long): String
     fun poll(handle: Long): String
     fun execute(handle: Long, serialized: String): String
@@ -16,6 +17,7 @@ interface SpotifyConnectNativeCalls {
 
 private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun start(serialized: String): String = SpotifyLibrespotNative.connectStart(serialized)
+    override fun metadata(handle: Long, generation: Long, serialized: String): String = SpotifyLibrespotNative.connectMetadata(handle, generation, serialized)
     override fun read(handle: Long, generation: Long): String = SpotifyLibrespotNative.connectRead(handle, generation)
     override fun poll(handle: Long): String = SpotifyLibrespotNative.connectPoll(handle)
     override fun execute(handle: Long, serialized: String): String = SpotifyLibrespotNative.connectExecute(handle, serialized)
@@ -40,8 +42,10 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         }
     }
 
-    override fun read(handle: Long, generation: Long): String {
-        val serialized = native.read(handle, generation)
+    override fun metadata(handle: Long, generation: Long, serialized: String): String = boundResponse(handle, generation, native.metadata(handle, generation, serialized))
+    override fun read(handle: Long, generation: Long): String = boundResponse(handle, generation, native.read(handle, generation))
+
+    private fun boundResponse(handle: Long, generation: Long, serialized: String): String {
         return decode(serialized) { response ->
             if (handle(response) != handle || response.get(GENERATION_FIELD) !is Number
                 || response.getDouble(GENERATION_FIELD) != generation.toDouble()) throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)

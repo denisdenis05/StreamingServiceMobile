@@ -3,7 +3,7 @@ use std::{io::{self, BufRead, Read}, sync::{Arc, Mutex, atomic::{AtomicU64, Orde
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use streaming_spotify_session::{connect_device::ConnectDeviceConfiguration,
-    connect_commands::ConnectCommand, connect_transport::{run_connect_transport, ConnectAction, ConnectReading, ConnectEventData}, connect_wire::ConnectCluster, model::Failure};
+    connect_commands::ConnectCommand, connect_metadata::ConnectTrackMetadata, connect_transport::{run_connect_transport, ConnectAction, ConnectReading, ConnectEventData}, connect_wire::ConnectCluster, model::Failure};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -11,6 +11,8 @@ const MAXIMUM_INPUT_BYTES: usize = 131072;
 const INPUT_BOUNDARY_INCREMENT: usize = 1;
 const CHANNEL_CAPACITY: usize = 32;
 const MAXIMUM_RUNTIME_WORKERS: usize = 2;
+const METADATA_SUMMARY_PATH: &str = "build/spotify-jam/live-metadata-summary.json";
+const METADATA_REQUEST_POSITION: usize = 0;
 const OBSERVATION_SUMMARY_PATH: &str = "build/spotify-jam/live-observation-summary.json";
 const OBSERVATION_SUMMARY_TEMPORARY_PATH: &str = "build/spotify-jam/live-observation-summary.json.tmp";
 const TRACK_URI_PREFIX: &str = "spotify:track:";
@@ -85,10 +87,37 @@ fn write_summary(cluster: &ConnectCluster, expected: &Mutex<Option<(String, Stri
     }
 }
 
-async fn read_receipt(result: oneshot::Receiver<Result<ConnectReading, Failure>>, expected: Arc<Mutex<Option<(String, String)>>>) {
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MetadataSummary { failure: Option<&'static str>, has_title: bool, artist_count: usize, has_duration: bool, recording_code_count: usize }
+
+fn metadata_diagnostic_summary(result: Result<Vec<ConnectTrackMetadata>, Failure>) -> MetadataSummary {
+    match result {
+        Ok(metadata) => match metadata.get(METADATA_REQUEST_POSITION) {
+            Some(track) => MetadataSummary { failure: None, has_title: !track.title.is_empty(), artist_count: track.artist_names.len(),
+                has_duration: track.duration_milliseconds > INITIAL_GENERATION, recording_code_count: track.recording_codes.len() },
+            None => MetadataSummary { failure: Some(Failure::InvalidResponse.code()), has_title: false, artist_count: EMPTY_TRACK_COUNT, has_duration: false, recording_code_count: EMPTY_TRACK_COUNT },
+        },
+        Err(failure) => MetadataSummary { failure: Some(failure.code()), has_title: false, artist_count: EMPTY_TRACK_COUNT, has_duration: false, recording_code_count: EMPTY_TRACK_COUNT },
+    }
+}
+
+async fn metadata_summary(cluster: &ConnectCluster, actions: &mpsc::Sender<ConnectAction>, generation: u64) {
+    let Some(identifier) = cluster.playback.as_ref().and_then(|state| state.track.as_ref()).and_then(|track| track.uri.strip_prefix(TRACK_URI_PREFIX)) else { return; };
+    let (result, response) = oneshot::channel();
+    let result = match actions.try_send(ConnectAction::Metadata { generation, identifiers: vec![identifier.to_owned()], result }) {
+        Ok(()) => response.await.unwrap_or(Err(Failure::Canceled)), Err(_) => Err(Failure::Backpressure),
+    };
+    let summary = metadata_diagnostic_summary(result);
+    if let Ok(serialized) = serde_json::to_vec(&summary) { let _ = std::fs::write(METADATA_SUMMARY_PATH, serialized); }
+}
+
+async fn read_receipt(result: oneshot::Receiver<Result<ConnectReading, Failure>>, expected: Arc<Mutex<Option<(String, String)>>>,
+    actions: mpsc::Sender<ConnectAction>, generation: u64) {
     let result = match result.await {
         Ok(Ok(reading)) => { write_summary(&reading.cluster, &expected,
-            Some((reading.request_started_native_monotonic_milliseconds, reading.request_completed_native_monotonic_milliseconds))); Ok(()) },
+            Some((reading.request_started_native_monotonic_milliseconds, reading.request_completed_native_monotonic_milliseconds)));
+            metadata_summary(&reading.cluster, &actions, generation).await; Ok(()) },
         Ok(Err(failure)) => Err(failure), Err(_) => Err(Failure::Canceled),
     };
     let (sender, receiver) = oneshot::channel(); let _ = sender.send(result); receipt(receiver).await;
@@ -139,7 +168,7 @@ fn main() {
             let action = match control {
                 ProbeControl::Stop => break,
                 ProbeControl::Refresh => {
-                    let (result, response) = oneshot::channel(); worker.spawn(read_receipt(response, Arc::clone(&reader_expected_queue)));
+                    let (result, response) = oneshot::channel(); worker.spawn(read_receipt(response, Arc::clone(&reader_expected_queue), commands.clone(), generation));
                     ConnectAction::Read { generation, result }
                 },
                 ProbeControl::Reply { key, accepted } => {
@@ -182,7 +211,8 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::observation_summary;
+    use super::{observation_summary, metadata_diagnostic_summary};
+    use streaming_spotify_session::{connect_metadata::ConnectTrackMetadata, model::Failure};
     use librespot_protocol::{connect::Cluster, player::{PlayerState, ProvidedTrack}};
     use protobuf::MessageField;
     use streaming_spotify_session::connect_wire::normalize_cluster;
@@ -192,6 +222,23 @@ mod tests {
     const OTHER_OCCURRENCE: &str = "synthetic-other-occurrence";
     const STARTED: u64 = 5;
     const COMPLETED: u64 = 9;
+
+    const PRIVATE_TITLE: &str = "synthetic-private-title";
+    const PRIVATE_ARTIST: &str = "synthetic-private-artist";
+    const PRIVATE_CODE: &str = "synthetic-private-recording-code";
+    const DURATION_MILLISECONDS: u64 = 180000;
+    const SINGLE_METADATA_VALUE: usize = 1;
+
+    #[test]
+    fn metadata_diagnostics_report_presence_and_safe_failure_without_exporting_song_details() {
+        let summary = metadata_diagnostic_summary(Ok(vec![ConnectTrackMetadata { spotify_track_identifier: URI.to_owned(),
+            title: PRIVATE_TITLE.to_owned(), artist_names: vec![PRIVATE_ARTIST.to_owned()], duration_milliseconds: DURATION_MILLISECONDS,
+            recording_codes: vec![PRIVATE_CODE.to_owned()] }]));
+        assert!(summary.has_title); assert!(summary.has_duration); assert_eq!(summary.artist_count, SINGLE_METADATA_VALUE);
+        let serialized = serde_json::to_string(&summary).unwrap();
+        for private in [URI, PRIVATE_TITLE, PRIVATE_ARTIST, PRIVATE_CODE] { assert!(!serialized.contains(private)); }
+        assert_eq!(metadata_diagnostic_summary(Err(Failure::Network)).failure, Some(Failure::Network.code()));
+    }
 
     #[test]
     fn diagnostic_summary_verifies_exact_queued_occurrence_without_exporting_identifiers() {

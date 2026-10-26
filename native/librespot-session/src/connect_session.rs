@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -256,5 +256,13 @@ impl ConnectSessionOperations for NativeConnectSession {
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::refresh(self) }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<(), Failure>> + Send {
         NativeConnectSession::command(self, target_device_identifier, body)
+    }
+}
+
+impl ConnectMetadataOperations for NativeConnectSession {
+    async fn metadata(&mut self, identifiers: Vec<String>) -> Result<Vec<ConnectTrackMetadata>, Failure> {
+        let body = encode_metadata_request(&identifiers)?;
+        let response = self.request(Method::POST, METADATA_PATH.to_owned(), body, PROTOBUF_MEDIA_TYPE, false).await?;
+        decode_metadata_response(&identifiers, &response)
     }
 }

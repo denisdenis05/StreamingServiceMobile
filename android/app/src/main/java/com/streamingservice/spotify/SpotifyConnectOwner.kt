@@ -3,6 +3,7 @@ package com.streamingservice.spotify
 interface SpotifyConnectExecution {
     fun start(serialized: String): Long
     fun poll(handle: Long): SpotifyConnectBatch
+    fun metadata(handle: Long, generation: Long, serialized: String): String
     fun read(handle: Long, generation: Long): String
     fun refresh(handle: Long, generation: Long)
     fun beginCommand(handle: Long, requestIdentifier: String)
@@ -46,13 +47,16 @@ class SpotifyConnectOwner(
         return handle
     }
 
-    fun read(identifier: String, generation: Long): String {
+    fun read(identifier: String, generation: Long): String = observe(identifier, generation) { handle -> execution.read(handle, generation) }
+    fun metadata(identifier: String, generation: Long, serialized: String): String = observe(identifier, generation) { handle -> execution.metadata(handle, generation, serialized) }
+
+    private fun observe(identifier: String, generation: Long, operation: (Long) -> String): String {
         val connection = synchronized(this) {
             active?.takeIf { connection -> connection.identifier == identifier && !connection.retiring && !disposed }
                 ?: throw SpotifyConnectFailure(CANCELED_FAILURE)
         }
         if (generation < MINIMUM_HANDLE) throw SpotifyConnectFailure(INVALID_INPUT_FAILURE)
-        val serialized = execution.read(connection.handle, generation)
+        val serialized = operation(connection.handle)
         synchronized(this) {
             if (active !== connection || connection.retiring || disposed) throw SpotifyConnectFailure(CANCELED_FAILURE)
         }

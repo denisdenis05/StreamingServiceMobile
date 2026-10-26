@@ -24,6 +24,7 @@ class SpotifyConnectOwnerTest {
         var onRefresh: () -> Unit = {}
         override fun start(serialized: String): Long { assertEquals(CREDENTIAL, serialized); return HANDLE }
         override fun poll(handle: Long): SpotifyConnectBatch { assertEquals(HANDLE, handle); return batch }
+        override fun metadata(handle: Long, generation: Long, serialized: String): String { assertEquals(PAYLOAD, serialized); refreshed.add(handle to generation); onRefresh(); return PAYLOAD }
         override fun read(handle: Long, generation: Long): String { refreshed.add(handle to generation); onRefresh(); return PAYLOAD }
         override fun refresh(handle: Long, generation: Long) { refreshed.add(handle to generation); onRefresh() }
         override fun cancel(handle: Long) { if (cancelFails) throw SpotifyConnectFailure(NETWORK_FAILURE); canceled.add(handle) }
@@ -164,6 +165,13 @@ class SpotifyConnectOwnerTest {
         requireFailure(CANCELED_FAILURE) { fixture.owner.read(OTHER_IDENTIFIER, GENERATION) }
         fixture.execution.onRefresh = { fixture.close() }
         requireFailure(CANCELED_FAILURE) { fixture.owner.read(IDENTIFIER, GENERATION) }
+    }
+    @Test
+    fun metadataReadsCannotOutliveTheirSelectedAccount() {
+        val fixture = Fixture(); fixture.start()
+        assertEquals(PAYLOAD, fixture.owner.metadata(IDENTIFIER, GENERATION, PAYLOAD))
+        fixture.execution.onRefresh = { fixture.close() }
+        requireFailure(CANCELED_FAILURE) { fixture.owner.metadata(IDENTIFIER, GENERATION, PAYLOAD) }
     }
     companion object {
         private const val REQUEST_IDENTIFIER = "synthetic-native-command"

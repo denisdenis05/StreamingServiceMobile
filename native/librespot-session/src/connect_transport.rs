@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
+use crate::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -39,6 +39,7 @@ pub struct OutgoingFrame {
 
 pub enum ConnectAction {
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
+    Metadata { generation: u64, identifiers: Vec<String>, result: ActionResult<Vec<ConnectTrackMetadata>> },
     Read { generation: u64, result: ActionResult<ConnectReading> },
     Command { generation: u64, target_device_identifier: String, body: Value, result: ActionResult<()> },
     CheckedCommand { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand,
@@ -132,13 +133,14 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
 
 fn retire_action(action: ConnectAction) {
     match action {
+        ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Command { result, .. } | ConnectAction::CheckedCommand { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
     }
 }
 
-pub async fn process_connected_events(session: &mut impl ConnectSessionOperations, incoming: &mut mpsc::Receiver<DealerInput>, socket: &mpsc::Sender<OutgoingFrame>,
+pub async fn process_connected_events(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations), incoming: &mut mpsc::Receiver<DealerInput>, socket: &mpsc::Sender<OutgoingFrame>,
     generation: u64, events: &mpsc::Sender<ConnectEvent>, actions: &mut mpsc::Receiver<ConnectAction>,
     cancellation: &CancellationToken) -> Result<(), Failure> {
     let mut registered = false;
@@ -181,6 +183,12 @@ pub async fn process_connected_events(session: &mut impl ConnectSessionOperation
             action = actions.recv() => {
                 let action = action.ok_or(Failure::Canceled)?;
                 match action {
+                    ConnectAction::Metadata { generation: expected, identifiers, result } => {
+                        if result.is_closed() { continue; }
+                        if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
+                        let metadata = session.metadata(identifiers).await;
+                        let _ = result.send(metadata);
+                    },
                     ConnectAction::Read { generation: expected, result } => {
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }

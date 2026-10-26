@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
 
 use crate::{connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
-    connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
+    connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
 const MAXIMUM_KEY_CHARACTERS: usize = 2048;
@@ -46,6 +46,19 @@ async fn read(handle: u64, generation: u64) -> Result<ConnectReadReceipt, Failur
     let reading = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
         .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
     Ok(ConnectReadReceipt { handle, generation, sampled_native_monotonic_milliseconds: native_monotonic_milliseconds(), reading })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectMetadataReceipt { handle: u64, generation: u64, tracks: Vec<ConnectTrackMetadata> }
+
+async fn metadata(handle: u64, generation: u64, identifiers: Vec<String>) -> Result<ConnectMetadataReceipt, Failure> {
+    encode_metadata_request(&identifiers)?;
+    let (result, response) = oneshot::channel();
+    connections().actions(handle)?.try_send(ConnectAction::Metadata { generation, identifiers, result }).map_err(|_| Failure::Backpressure)?;
+    let tracks = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+        .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
+    Ok(ConnectMetadataReceipt { handle, generation, tracks })
 }
 
 #[derive(Serialize)]
@@ -194,4 +207,15 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
 pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectRead(
     mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong) -> jstring {
     boundary(&mut environment, |_| runtime()?.block_on(read(handle(connection_handle)?, handle(generation)?)))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectMetadata(
+    mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong, serialized: JString) -> jstring {
+    boundary(&mut environment, |environment| {
+        let serialized = crate::read_string(environment, serialized)?;
+        if serialized.len() > MAXIMUM_INPUT_BYTES { return Err(Failure::InvalidInput); }
+        let identifiers = serde_json::from_str(&serialized).map_err(|_| Failure::InvalidInput)?;
+        runtime()?.block_on(metadata(handle(connection_handle)?, handle(generation)?, identifiers))
+    })
 }
