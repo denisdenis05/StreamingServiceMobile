@@ -37,7 +37,7 @@ const Policy = Object.freeze({ zero: 0, firstGeneration: 1, stringType: 'string'
   maximumIdentifierCharacters: 2048, controlPattern: /[\u0000-\u0020\u007f]/,
   connecting: 'connecting', registered: 'registered', cluster: 'cluster', reconnecting: 'reconnecting',
   stopped: 'stopped', membership: 'membership', sessionMessage: 'sessionMessage', command: 'command' } as const);
-const RegistrationSource = Object.freeze({ cluster: 'cluster', deviceStatus: 'deviceStatus' } as const);
+const RegistrationSource = Object.freeze({ cluster: 'cluster', deviceStatus: 'deviceStatus', acknowledgedObserver: 'acknowledgedObserver' } as const);
 const FailureCodes = new Set<string>(Object.values(IntegrationFailureCode));
 const EmptySnapshot: SpotifyConnectSnapshot = Object.freeze({ status: SpotifyConnectStatus.Detached,
   deviceIdentifier: null, generation: Policy.zero, failure: null });
@@ -334,6 +334,7 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
         const deviceIdentifier = identifier(data.deviceIdentifier);
         const devices = object(data.cluster).devices;
         if (!Array.isArray(devices) || data.verificationSource !== RegistrationSource.cluster && data.verificationSource !== RegistrationSource.deviceStatus
+          && data.verificationSource !== RegistrationSource.acknowledgedObserver
           || data.verificationSource === RegistrationSource.cluster && !devices.some(device => object(device).identifier === deviceIdentifier)) {
           throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
         }

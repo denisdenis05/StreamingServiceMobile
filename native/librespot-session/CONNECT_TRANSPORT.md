@@ -9,8 +9,9 @@ No extracted Spotify application code is packaged.
 A connection identifier received in Spotify-Connection-Id is used as
 x-spotify-connection-id for device registration. The returned protobuf Cluster
 must include this device before player readiness is published. A hidden observer
-can be omitted from that map; its exact identifier must instead be confirmed by
-the existing account-bound Jam device-status endpoint. Registration starts
+can be omitted from that map. Its successful authenticated registration response
+is the observer acknowledgement; Jam device status is not a registration echo
+and can differ while another device plays. No device-map entry is invented. Registration starts
 inactive. The Android bridge currently accepts observer configuration only;
 playback readiness is rejected until an actual local player adapter can accept
 commands. Registration alone establishes neither Jam admission nor audio output.
@@ -157,3 +158,27 @@ handles and cancellation after receipt settlement. The diagnostic example's
 metadata projection test excludes title, artists, identifiers and recording codes
 from its report. Live private metadata succeeded on 2026-10-26; the safe artifact
 reports title/duration presence, artist/code counts and a fixed failure category.
+
+## Live observer acknowledgement and developer channel
+
+An acknowledgedObserver event is emitted only after the account-authenticated
+registration PUT with the actual Dealer connection ID succeeds and its Cluster
+body decodes. Player readiness still requires explicit device presence. The
+native source-store recognizes this distinct proof source. Tests in connect_http
+and spotify-connect-store reproduce the active-device observer failure.
+
+The host diagnostic example has a Unix-only local channel at
+build/spotify-jam/connect-probe.sock. It accepts one bounded JSON line, keeps the
+write side open until a response, and returns typed read/metadata/command results.
+It never accepts a credential or starts another account. Socket permissions are
+0600; live sockets and regular files are preserved; disconnected commands cancel
+their token. This channel can return private account song/device data to the local
+caller; verification scripts print only safe metrics and never save raw replies.
+It is not packaged in Android. #[path] and std Unix ino/mode names are compiler/OS
+API boundaries. Example tests cover framing, ownership, cancellation and cleanup.
+
+Fixed-stage inspection is generation-bound and only reports ConnectFailureStage;
+its dedicated actor case checks current/stale generations. Production commands
+still use their typed cancellation and uncertainty rules. Live pause/resume and
+one append of the playing available track succeeded. Spotify assigned a different
+queue occurrence identifier; logging request IDs are not delivery receipts.

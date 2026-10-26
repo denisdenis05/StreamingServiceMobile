@@ -362,3 +362,12 @@ test(SettledCancellationFixture.name, async () => {
   await assert.rejects(current.store.readMetadata(Fixture.account, [MetadataFixture.track], abort.signal), { code: library.IntegrationFailureCode.Canceled });
   await current.store.detach();
 });
+
+const ObserverAcknowledgementFixture = Object.freeze({ source: 'acknowledgedObserver',
+  name: 'A native authenticated observer acknowledgement establishes readiness without inventing its presence in the playback device map' });
+test(ObserverAcknowledgementFixture.name, async () => {
+  const current = fixture(); await current.attach();
+  current.send({ ...registration(), verificationSource: ObserverAcknowledgementFixture.source, cluster: { devices: [] } });
+  assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready);
+  assert.equal(current.store.getSnapshot().deviceIdentifier, Fixture.device); await current.store.detach();
+});

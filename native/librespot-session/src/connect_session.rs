@@ -23,8 +23,6 @@ const JSON_MEDIA_TYPE: &str = "application/json";
 const DEVICE_PATH_PREFIX: &str = "/connect-state/v1/devices/";
 const COMMAND_PATH_PREFIX: &str = "/connect-state/v1/player/command/from/";
 const COMMAND_TARGET_SEPARATOR: &str = "/to/";
-const JAM_DEVICE_PATH_PREFIX: &str = "/social-connect/v2/devices/";
-const JAM_DEVICE_STATUS_SUFFIX: &str = "/jam_status";
 const DEALER_SERVICE: &str = "dealer";
 const SECURE_WEBSOCKET_SCHEME: &str = "wss://";
 const TOKEN_QUERY_PARAMETER: &str = "access_token";
@@ -46,7 +44,7 @@ pub enum ConnectFailureStage { Restore, DealerResolution, DealerAddress, DealerW
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum RegistrationVerification { Cluster, DeviceStatus }
+pub enum RegistrationVerification { Cluster, DeviceStatus, AcknowledgedObserver }
 
 #[derive(Deserialize)]
 struct DeviceStatusResponse { device_broadcast_status: DeviceBroadcastStatus }
@@ -60,6 +58,13 @@ pub fn verify_device_status(serialized: &[u8], expected_device_identifier: &str)
     if response.device_broadcast_status.device_id != expected_device_identifier { return Err(Failure::InvalidResponse); }
     identifier_segment(expected_device_identifier)?;
     Ok(())
+}
+
+pub fn verify_registered_device(cluster: &ConnectCluster, expected_device_identifier: &str, playback_ready: bool) -> Result<RegistrationVerification, Failure> {
+    identifier_segment(expected_device_identifier)?;
+    if cluster.devices.iter().any(|device| device.identifier == expected_device_identifier) { return Ok(RegistrationVerification::Cluster); }
+    if playback_ready { return Err(Failure::InvalidResponse); }
+    Ok(RegistrationVerification::AcknowledgedObserver)
 }
 
 pub struct NativeConnectSession {
@@ -77,6 +82,7 @@ pub struct NativeConnectSession {
 pub trait ConnectSessionOperations: Send {
     fn device_identifier(&self) -> &str;
     fn account_identifier(&self) -> String;
+    fn failure_stage(&self) -> ConnectFailureStage { ConnectFailureStage::DealerEvents }
     fn registration_verification(&self) -> RegistrationVerification { RegistrationVerification::Cluster }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
@@ -208,15 +214,7 @@ impl NativeConnectSession {
         self.failure_stage = ConnectFailureStage::RegistrationProtobuf;
         let cluster = decode_cluster_snapshot(&response)?;
         self.failure_stage = ConnectFailureStage::RegistrationDevice;
-        if cluster.devices.iter().any(|device| device.identifier == self.device_identifier()) {
-            self.verification = RegistrationVerification::Cluster;
-        } else {
-            if self.registration.device.device_info.can_play { return Err(Failure::InvalidResponse); }
-            let path = JAM_DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())? + JAM_DEVICE_STATUS_SUFFIX;
-            let response = self.request(Method::GET, path, Vec::new(), JSON_MEDIA_TYPE, false).await?;
-            verify_device_status(&response, self.device_identifier())?;
-            self.verification = RegistrationVerification::DeviceStatus;
-        }
+        self.verification = verify_registered_device(&cluster, self.device_identifier(), self.registration.device.device_info.can_play)?;
         self.registered = true;
         self.failure_stage = ConnectFailureStage::DealerEvents;
         Ok(cluster)
@@ -249,6 +247,7 @@ impl NativeConnectSession {
 impl ConnectSessionOperations for NativeConnectSession {
     fn device_identifier(&self) -> &str { NativeConnectSession::device_identifier(self) }
     fn account_identifier(&self) -> String { NativeConnectSession::account_identifier(self) }
+    fn failure_stage(&self) -> ConnectFailureStage { self.failure_stage }
     fn registration_verification(&self) -> RegistrationVerification { self.verification }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send {
         NativeConnectSession::register(self, connection_identifier)

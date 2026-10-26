@@ -60,3 +60,16 @@ fn missing_malformed_coerced_and_oversized_status_responses_cannot_verify_regist
     assert!(verify_device_status(PRIVATE_DIAGNOSTIC.as_bytes(), DEVICE_IDENTIFIER).is_err());
     assert!(verify_device_status(&vec![PADDING_BYTE; EXCESSIVE_RESPONSE_BYTES], DEVICE_IDENTIFIER).is_err());
 }
+
+#[test]
+fn successful_hidden_observer_registration_does_not_require_an_unrelated_jam_status_echo() {
+    let cluster = streaming_spotify_session::connect_wire::normalize_cluster(librespot_protocol::connect::Cluster::new()).unwrap();
+    assert!(matches!(streaming_spotify_session::connect_session::verify_registered_device(&cluster, DEVICE_IDENTIFIER, false),
+        Ok(streaming_spotify_session::connect_session::RegistrationVerification::AcknowledgedObserver)));
+}
+
+#[test]
+fn playable_registration_still_requires_its_exact_device_in_the_returned_cluster() {
+    let cluster = streaming_spotify_session::connect_wire::normalize_cluster(librespot_protocol::connect::Cluster::new()).unwrap();
+    assert!(matches!(streaming_spotify_session::connect_session::verify_registered_device(&cluster, DEVICE_IDENTIFIER, true), Err(Failure::InvalidResponse)));
+}

@@ -38,6 +38,7 @@ pub struct OutgoingFrame {
 }
 
 pub enum ConnectAction {
+    InspectFailure { generation: u64, result: ActionResult<ConnectFailureStage> },
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
     Metadata { generation: u64, identifiers: Vec<String>, result: ActionResult<Vec<ConnectTrackMetadata>> },
     Read { generation: u64, result: ActionResult<ConnectReading> },
@@ -133,6 +134,7 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
 
 fn retire_action(action: ConnectAction) {
     match action {
+        ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
@@ -183,6 +185,10 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
             action = actions.recv() => {
                 let action = action.ok_or(Failure::Canceled)?;
                 match action {
+                    ConnectAction::InspectFailure { generation: expected, result } => {
+                        let inspection = if expected == generation { Ok(session.failure_stage()) } else { Err(Failure::Canceled) };
+                        let _ = result.send(inspection);
+                    },
                     ConnectAction::Metadata { generation: expected, identifiers, result } => {
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }

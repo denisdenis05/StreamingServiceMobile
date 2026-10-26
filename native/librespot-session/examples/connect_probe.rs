@@ -1,3 +1,6 @@
+#[path = "support/connect_probe_control.rs"]
+mod connect_probe_control;
+
 use std::{io::{self, BufRead, Read}, sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}}};
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +14,8 @@ const MAXIMUM_INPUT_BYTES: usize = 131072;
 const INPUT_BOUNDARY_INCREMENT: usize = 1;
 const CHANNEL_CAPACITY: usize = 32;
 const MAXIMUM_RUNTIME_WORKERS: usize = 2;
+const LOCAL_CONTROL_PATH: &str = "build/spotify-jam/connect-probe.sock";
+const FAILURE_SUMMARY_PATH: &str = "build/spotify-jam/live-registration-failure.json";
 const METADATA_SUMMARY_PATH: &str = "build/spotify-jam/live-metadata-summary.json";
 const METADATA_REQUEST_POSITION: usize = 0;
 const OBSERVATION_SUMMARY_PATH: &str = "build/spotify-jam/live-observation-summary.json";
@@ -89,6 +94,10 @@ fn write_summary(cluster: &ConnectCluster, expected: &Mutex<Option<(String, Stri
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct FailureSummary { failure: &'static str, stage: streaming_spotify_session::connect_session::ConnectFailureStage }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct MetadataSummary { failure: Option<&'static str>, has_title: bool, artist_count: usize, has_duration: bool, recording_code_count: usize }
 
 fn metadata_diagnostic_summary(result: Result<Vec<ConnectTrackMetadata>, Failure>) -> MetadataSummary {
@@ -118,7 +127,17 @@ async fn read_receipt(result: oneshot::Receiver<Result<ConnectReading, Failure>>
         Ok(Ok(reading)) => { write_summary(&reading.cluster, &expected,
             Some((reading.request_started_native_monotonic_milliseconds, reading.request_completed_native_monotonic_milliseconds)));
             metadata_summary(&reading.cluster, &actions, generation).await; Ok(()) },
-        Ok(Err(failure)) => Err(failure), Err(_) => Err(Failure::Canceled),
+        Ok(Err(failure)) => {
+            let (result, response) = oneshot::channel();
+            if actions.try_send(ConnectAction::InspectFailure { generation, result }).is_ok() {
+                if let Ok(Ok(stage)) = response.await {
+                    if let Ok(serialized) = serde_json::to_vec(&FailureSummary { failure: failure.code(), stage }) {
+                        let _ = std::fs::write(FAILURE_SUMMARY_PATH, serialized);
+                    }
+                }
+            }
+            Err(failure)
+        }, Err(_) => Err(Failure::Canceled),
     };
     let (sender, receiver) = oneshot::channel(); let _ = sender.send(result); receipt(receiver).await;
 }
@@ -156,6 +175,8 @@ fn main() {
     let current_generation = Arc::clone(&generation);
     let expected_queue = Arc::new(Mutex::new(None));
     let reader_expected_queue = Arc::clone(&expected_queue);
+    let local_actions = commands.clone();
+    let local_generation = Arc::clone(&generation);
     let worker = runtime.handle().clone();
     std::thread::spawn(move || {
         let mut input = io::stdin().lock();
@@ -195,7 +216,7 @@ fn main() {
         reader_cancellation.cancel();
     });
     runtime.block_on(async {
-        let transport = run_connect_transport(input.stored_credential, input.configuration, events, actions, cancellation);
+        let transport = run_connect_transport(input.stored_credential, input.configuration, events, actions, cancellation.clone());
         let observe = async {
             while let Some(event) = observed.recv().await {
                 generation.store(event.generation, Ordering::Release);
@@ -205,7 +226,13 @@ fn main() {
                 if let Ok(serialized) = serde_json::to_string(&event) { println!("{serialized}"); }
             }
         };
-        tokio::join!(transport, observe);
+        let running = async { tokio::join!(transport, observe); cancellation.cancel(); };
+        let controls = async {
+            if connect_probe_control::serve(std::path::Path::new(LOCAL_CONTROL_PATH), local_actions, local_generation, cancellation.clone(), None).await.is_err() {
+                println!("{RUNTIME_FAILURE_REPORT}"); cancellation.cancel();
+            }
+        };
+        tokio::join!(running, controls);
     });
 }
 

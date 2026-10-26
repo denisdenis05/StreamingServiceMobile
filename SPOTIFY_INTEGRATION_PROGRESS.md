@@ -1,3 +1,61 @@
+# Live controls, observer fix and local test channel — 2026-10-26
+
+The installed official Spotify client was not running. It was launched for the
+peer test and resumed through its MPRIS interface. The independent probe then
+received an active host and fresh position/pause/buffer/track updates. Native
+pause and resume each returned success, changed the official client's MPRIS
+status, and produced matching Dealer state with acknowledgements. This proves
+same-account Connect controls; it does not prove guest permission or local audio.
+
+That test exposed a real preflight bug: hidden observers are omitted from the
+returned device map, and the additional jam_status echo check rejects while a
+different active device plays. Observer readiness now uses the successful
+account-authenticated, Dealer-connection-bound registration response, classified
+acknowledgedObserver, without adding a fake device to the cluster. Playable
+registration still requires its exact device in the returned map. Two native
+registration cases and a source-store acknowledgement regression cover this.
+The old exact device-status validator remains a separate legacy utility.
+
+A new host-only Unix channel at build/spotify-jam/connect-probe.sock exposes typed
+fresh reads, metadata and checked commands to local verification scripts. It is
+not part of the Android app, binds mode 0600, has bounded framing/clients/timeouts,
+never accepts credentials, cancels a disconnected command, preserves live or
+regular existing files and removes only its own socket. Seven diagnostic example
+cases cover projections plus typed input, permissions/read envelope, disconnect,
+binding and cleanup. The same live process 85329 retained its paired grant during
+child rebuild/restart. Restart leaves socket cleanup to the old child before the
+new child binds. Keep the write side open until a local channel reply arrives.
+
+The channel allowed actual library integration checks without another pairing.
+Source had spotify:meta and spotify:delimiter queue markers. The strict song-only
+raw decoder rejected them and blocked valid playback. Library now retains them
+in raw state and excludes known structural markers from displayed queue metadata.
+Live result: progressing observation, 71.739192 ms timing uncertainty, 50 raw next
+entries, 48 displayed songs, three metadata batches for 49 songs including current,
+and unchanged authoritative occurrence order. This is not an Android UI test.
+
+A controlled append of the currently playing available song was accepted, changed
+queue revision on the same host, and created one new matching occurrence from the
+queue provider. The supplied occurrence UUID was not retained and the player
+session command ID did not echo the request UUID. The earlier public test song
+request changed the queue but its exact track delivery was not established; it
+must not be counted as occurrence-confirmed. No unknown command is replayed.
+Further receipt/Dealer acknowledgement research is needed for uncertain edits.
+
+Current checks: full library 586 cases; full mobile 318 source plus 89 UI/platform
+cases; full Rust/JNI 116 cases plus JNI smoke; diagnostic example seven cases.
+The active local Spotify app process is exec session 6380; do not terminate
+unrelated client processes. Its native probe remains 85329, currently with an
+active same-account peer. No further manual playback click is required for this
+peer. A genuinely different account/Jam invitation is still needed for guest tests.
+
+The delivered artifact currently predates acknowledgedObserver and marker fixes
+(metadata build: 35331036 bytes, SHA d6d62066984bd2f3f1fef79b3e42a8789d9feabe0587a823832989ca5c7c3879).
+Force a fresh Hermes bundle and release assembly after this chapter before
+replacing it. Native registration/commands/metadata/queue reading are live checked
+independently; APK install, guest operation and simultaneous/background audio
+remain unverified. The complete objective remains active.
+
 # Private track metadata and shared queue display — 2026-10-26
 
 Added the pinned extended-metadata protocol through the existing native session's

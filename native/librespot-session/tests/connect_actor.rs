@@ -393,3 +393,14 @@ async fn stale_metadata_generations_cannot_query_the_current_accounts_catalog() 
     assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
     assert!(harness.calls.lock().unwrap().metadata_requests.is_empty()); harness.stop().await;
 }
+
+#[tokio::test]
+async fn protocol_failure_inspection_exposes_only_the_fixed_stage_for_the_matching_generation() {
+    let harness = Harness::start(None);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::InspectFailure { generation: GENERATION, result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Ok(streaming_spotify_session::connect_session::ConnectFailureStage::DealerEvents)));
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::InspectFailure { generation: STALE_GENERATION, result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled))); harness.stop().await;
+}
