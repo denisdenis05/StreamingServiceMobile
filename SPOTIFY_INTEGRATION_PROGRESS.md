@@ -1,3 +1,22 @@
+# Native authentication and build watcher follow-up — 2026-10-27
+
+Mobile 9e36048 adds one bounded rejected-bearer renewal for paired Desktop safe
+observation/metadata reads. Commands/removal never replay automatically. The
+upstream password-token cache has no invalidation API, so that path preserves
+its existing expiry behavior and surfaces rejection for explicit recovery.
+Nine dedicated authentication cases and the new pending-ack rollover regression
+bring the full Rust suite to 143 passing cases plus JNI loading smoke.
+SPOTIFY_CONNECT_AUTHENTICATION.md records the contract and remaining live gaps.
+The delivered receipt/recovery APK predates this source chapter.
+
+Concurrent Rust compilation exposed a real Metro watcher failure on a temporary
+native target/debug/deps/rustcoelbFY entry. metro.config.js now excludes the
+native target directory while preserving Metro's default block list. Direct
+configuration checks cover debug/cross-compile descendants, the target root,
+unchanged app/library/native source visibility and the existing __tests__ rule.
+The final forced bundle/release build will verify the combined native/runtime
+checkpoint. No audio/background success is inferred from this build change.
+
 # Packaged receipt and recovery checkpoint — 2026-10-27
 
 Delivered APK now includes Mobile c756ea5 and library cee7db9: 35,353,872 bytes,
