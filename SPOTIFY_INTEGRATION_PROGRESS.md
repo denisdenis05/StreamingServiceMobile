@@ -1,3 +1,21 @@
+# Packaged receipt and recovery checkpoint — 2026-10-27
+
+Delivered APK now includes Mobile c756ea5 and library cee7db9: 35,353,872 bytes,
+SHA256 cd02a2333b7f19737fd9d3fc493a0684cac4ea42d079526cb787e93555b1bb11.
+Fresh Hermes (2,146,780 bytes), ARM64 native (5,360,176 bytes), release assembly,
+signature, ZIP alignment and ELF LOAD alignment passed. Frozen library 612,
+mobile 332+91, native 133/JNI, example seven, full app TypeScript and Android
+JVM 51 passed. Build logs and source hashes are retained in build/spotify-jam.
+Physical APK/audio/guest/background behavior remains unverified.
+
+The old probe handle is missing and an actual Unix-channel connection failed;
+there is no current live-test owner. Preserve the earlier live results as
+historical evidence and request a new pairing only when live work needs it.
+Independent development continues: application-scoped native Connect runtime
+with safe React reattachment, and bounded native token renewal on safe reads.
+Do not remove foreground follower background-stop protection until a native
+audio/resolution handoff is actually acknowledged. The goal remains active.
+
 # Dealer-confirmed outgoing command receipts — 2026-10-26
 
 Implemented chapter; APK replacement follows this checkpoint. Native command HTTP returns a

@@ -1,3 +1,31 @@
+# Dealer receipts and explicit recovery build — 2026-10-27
+
+Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
+35,353,872 bytes; SHA-256
+cd02a2333b7f19737fd9d3fc493a0684cac4ea42d079526cb787e93555b1bb11.
+Source: Mobile c756ea5, SpotifyJam cee7db9, Player ae4666d.
+
+Includes private metadata/queue reads, structural queue markers, hidden observer
+registration, server Dealer-confirmed outgoing commands and explicit owned-host
+shared-state recovery after uncertain edits. Recovery verifies fresh membership
+and native state without replaying the old request. Working paired Login5 is
+preserved. The APK does not include subsequent application-runtime work.
+
+Frozen checks passed: library 612; mobile 332 Node and 91 Jest; native 133 plus
+JNI loading; diagnostic example seven; Android JVM 51; full mobile TypeScript.
+Fresh Hermes generation and release assembly passed. Debug signing, 16 KB ZIP
+and native ELF alignment passed. Native 5,360,176 bytes; bundle 2,146,780 bytes.
+Artifact details and verification logs are in build/spotify-jam.
+
+Same-account protocol controls, acknowledgements, metadata and library queue
+reads have earlier live evidence. This APK has not been installed or exercised
+by the agent. Guest admission/audio, measured alignment, app-led hosting and
+continuous background synchronization remain unfinished. The local live probe
+channel is unavailable now; earlier pair approval is not a current live handle.
+
+Earlier build notes follow chronologically; their artifact/status statements
+refer to those checkpoints, not this current APK.
+
 # Native Connect ownership build — 2026-10-26
 
 Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
