@@ -105,6 +105,21 @@ class SpotifyPlayerServicePort(
         val snapshot = coordinator.snapshot()
         requireIdentity(snapshot, expectedIdentity)
         if (authority(snapshot) != null || activeLease != null) fail(SpotifyPlayerFailureReason.Conflict)
+        claim(snapshot, expectedIdentity, accountIdentifier)
+    }
+
+    fun recoverExpiredLease(lease: SpotifyPlayerLease): SpotifyPlayerOperation<SpotifyPlayerLease> = submit {
+        val snapshot = requireLease(lease, allowExpired = true)
+        if (!boolean(snapshot, ProtocolFields.ExternalAuthorityExpired)) fail(SpotifyPlayerFailureReason.Conflict)
+        execute(snapshot, lease, PlayerOperation.SetExternalAuthority) { command -> command.put(ProtocolFields.AuthorityIdentifier, JSONObject.NULL) }
+        activeLease = null
+        val releasedSnapshot = coordinator.snapshot()
+        requireIdentity(releasedSnapshot, lease.identity)
+        if (authority(releasedSnapshot) != null) fail(SpotifyPlayerFailureReason.Superseded)
+        claim(releasedSnapshot, lease.identity, lease.accountIdentifier)
+    }
+
+    private fun claim(snapshot: JSONObject, expectedIdentity: SpotifyPlayerIdentity, accountIdentifier: String): SpotifyPlayerLease {
         val authorityIdentifier = identifierSource.nextIdentifier()
         requireText(authorityIdentifier)
         if (authorityIdentifier.length > ExternalPlaybackPolicy.MaximumIdentifierCharacters) fail(SpotifyPlayerFailureReason.InvalidInput)
@@ -114,13 +129,17 @@ class SpotifyPlayerServicePort(
             execute(snapshot, lease, PlayerOperation.SetExternalAuthority, includeAuthority = false) { command ->
                 command.put(ProtocolFields.AuthorityIdentifier, authorityIdentifier)
             }
+            synchronized(monitor) {
+                val work = runningWork ?: fail(SpotifyPlayerFailureReason.Unavailable)
+                if (work.completion.isDone || work.submittedGeneration != generation) fail(SpotifyPlayerFailureReason.UnknownOutcome)
+            }
         } catch (failure: SpotifyPlayerFailure) {
             if (failure.reason == SpotifyPlayerFailureReason.UnknownOutcome) {
                 try { releaseExact(lease, cleanup = true) } catch (_cleanupFailure: Throwable) { Unit }
             } else activeLease = null
             throw failure
         }
-        lease
+        return lease
     }
 
     fun prepare(lease: SpotifyPlayerLease, recording: SpotifyPlayerRecording): SpotifyPlayerOperation<Unit> = submit {
@@ -346,7 +365,8 @@ class SpotifyPlayerServicePort(
                     else completion.complete(response)
                 }
             } catch (failure: Throwable) {
-                completion.completeExceptionally(if (failure is SpotifyPlayerFailure) failure else SpotifyPlayerFailure(SpotifyPlayerFailureReason.InvalidResponse))
+                completion.completeExceptionally(if (failure is SpotifyPlayerFailure) failure else SpotifyPlayerFailure(
+                    if (mutationDispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.InvalidResponse))
             }
         }
     }

@@ -36,11 +36,12 @@ class SpotifyPlayerServicePortTest {
         var receiptStatus = PlayerProtocol.AppliedStatus
         var onSnapshot: () -> Unit = {}
         var onExecute: () -> Unit = {}
+        var onConfigure: () -> Unit = {}
         fun cursor(): JSONObject = JSONObject().put(ProtocolFields.EngineEpoch, engineEpoch)
             .put(ProtocolFields.AuthenticationEpoch, authenticationEpoch).put(ProtocolFields.QueueIdentifier, QueueIdentifier)
             .put(ProtocolFields.QueueRevision, Revision).put(ProtocolFields.PlaybackControlRevision, Revision)
         override fun playbackOutputReady(): Boolean? = outputReady
-        override fun configure(baseAddress: String, accessToken: String) { configurations.add(baseAddress to accessToken) }
+        override fun configure(baseAddress: String, accessToken: String) { configurations.add(baseAddress to accessToken); onConfigure() }
         override fun clearSession() { clears += SingleCount; authenticationEpoch = OtherAuthenticationEpoch }
         override fun snapshot(): JSONObject {
             onSnapshot()
@@ -92,6 +93,14 @@ class SpotifyPlayerServicePortTest {
         assertEquals(fixture.identity, fixture.resolve(operation))
         assertEquals(listOf(BaseAddress to AccessToken), fixture.coordinator.configurations)
     }
+    @Test fun unexpectedAuthenticationMutationFailuresRemainUncertainWhileReadFailuresHaveNoMutationClaim() {
+        val mutation = Fixture(); mutation.coordinator.onConfigure = { throw IllegalStateException(MalformedReceipt) }
+        failure(SpotifyPlayerFailureReason.UnknownOutcome,
+            mutation.port.configureAuthentication(mutation.identity, AccountIdentifier, BaseAddress, AccessToken, false), mutation)
+        assertEquals(SingleCount, mutation.coordinator.configurations.size)
+        val reading = Fixture(); reading.coordinator.onSnapshot = { throw IllegalStateException(MalformedReceipt) }
+        failure(SpotifyPlayerFailureReason.InvalidResponse, reading.port.identity(), reading)
+    }
     @Test fun accountReplacementRequiresExplicitResetAndAdvancesActualAuthenticationIdentity() {
         val fixture = Fixture(); fixture.configure()
         failure(SpotifyPlayerFailureReason.Conflict, fixture.port.configureAuthentication(fixture.identity, OtherAccountIdentifier, BaseAddress, AccessToken, false), fixture)
@@ -136,6 +145,37 @@ class SpotifyPlayerServicePortTest {
         val fixture = Fixture(); fixture.configure(); fixture.coordinator.authorityIdentifier = OtherAuthorityIdentifier; fixture.coordinator.expired = true
         failure(SpotifyPlayerFailureReason.Conflict, fixture.port.acquire(fixture.identity, AccountIdentifier), fixture)
         assertTrue(fixture.coordinator.commands.isEmpty())
+    }
+    @Test fun cancellationDuringDispatchedClaimCompensatesUnreturnedExactLease() {
+        val fixture = Fixture(); fixture.configure()
+        val acquisition = fixture.port.acquire(fixture.identity, AccountIdentifier)
+        fixture.coordinator.onExecute = { fixture.coordinator.onExecute = {}; acquisition.cancel() }
+        failure(SpotifyPlayerFailureReason.UnknownOutcome, acquisition, fixture)
+        assertNull(fixture.coordinator.authorityIdentifier)
+        fixture.resolve(fixture.port.acquire(fixture.identity, AccountIdentifier))
+    }
+    @Test fun expiredRecoveryRechecksLocalSuspensionBeforeAtomicReleaseAndNewClaim() {
+        val fixture = Fixture(); val lease = fixture.preparedLease(); fixture.coordinator.expired = true
+        assertTrue(fixture.resolve(fixture.port.sample(lease)).expired)
+        fixture.coordinator.suspended = true
+        val count = fixture.coordinator.commands.size
+        failure(SpotifyPlayerFailureReason.Suspended, fixture.port.recoverExpiredLease(lease), fixture)
+        assertEquals(count, fixture.coordinator.commands.size)
+        assertEquals(lease.authorityIdentifier, fixture.coordinator.authorityIdentifier)
+    }
+    @Test fun expiredRecoveryUsesNewAuthorityAndCancellationCompensatesNewClaim() {
+        val fixture = Fixture(); val lease = fixture.preparedLease(); fixture.coordinator.expired = true
+        val recovered = fixture.resolve(fixture.port.recoverExpiredLease(lease))
+        assertFalse(lease.authorityIdentifier == recovered.authorityIdentifier)
+        fixture.coordinator.expired = true
+        val recovery = fixture.port.recoverExpiredLease(recovered)
+        fixture.coordinator.onExecute = {
+            if (fixture.coordinator.commands.last().optString(ProtocolFields.AuthorityIdentifier).isNotEmpty()) {
+                fixture.coordinator.onExecute = {}; recovery.cancel()
+            }
+        }
+        failure(SpotifyPlayerFailureReason.UnknownOutcome, recovery, fixture)
+        assertNull(fixture.coordinator.authorityIdentifier)
     }
     @Test fun prepareUsesActualCatalogAndOccurrenceWithPausedReplacementAndExpectedRevisions() {
         val fixture = Fixture(); val lease = fixture.preparedLease()
