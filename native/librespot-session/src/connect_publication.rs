@@ -25,7 +25,7 @@ pub struct ConnectPublicationTrack {
 }
 
 #[derive(Clone, Copy)]
-pub enum ConnectPublicationPlayback { Playing, Paused, Buffering }
+pub enum ConnectPublicationPlayback { Playing, Paused, Buffering, PausedBuffering }
 
 #[derive(Clone)]
 pub struct ConnectPublicationCommand {
@@ -108,9 +108,9 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
         prev_tracks: snapshot.previous_tracks.iter().map(provided_track).collect::<Result<_, _>>()?,
         next_tracks: snapshot.next_tracks.iter().map(provided_track).collect::<Result<_, _>>()?,
         position_as_of_timestamp: snapshot.position_milliseconds as i64, duration: snapshot.duration_milliseconds as i64,
-        is_playing: true, is_paused: matches!(snapshot.playback, ConnectPublicationPlayback::Paused),
-        is_buffering: !matches!(snapshot.playback, ConnectPublicationPlayback::Playing),
-        playback_speed: if matches!(snapshot.playback, ConnectPublicationPlayback::Paused) { PAUSED_PLAYBACK_SPEED } else { NORMAL_PLAYBACK_SPEED }, options: registration.device.player_state.options.clone(),
+        is_playing: true, is_paused: matches!(snapshot.playback, ConnectPublicationPlayback::Paused | ConnectPublicationPlayback::PausedBuffering),
+        is_buffering: matches!(snapshot.playback, ConnectPublicationPlayback::Buffering | ConnectPublicationPlayback::PausedBuffering),
+        playback_speed: if matches!(snapshot.playback, ConnectPublicationPlayback::Paused | ConnectPublicationPlayback::PausedBuffering) { PAUSED_PLAYBACK_SPEED } else { NORMAL_PLAYBACK_SPEED }, options: registration.device.player_state.options.clone(),
         play_origin: registration.device.player_state.play_origin.clone(), suppressions: registration.device.player_state.suppressions.clone(),
         ..Default::default() };
     if let Some(command) = &snapshot.accepted_command {

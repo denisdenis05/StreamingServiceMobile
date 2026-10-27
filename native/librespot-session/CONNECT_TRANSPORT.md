@@ -246,8 +246,13 @@ elapsed native time. Future native samples, samples older than 15 seconds and
 clock uncertainty above two seconds are rejected. These are conservative input
 policies, not measured synchronization guarantees. Player position remains at
 the supplied anchor; serialization never extrapolates paused or buffered audio.
-The pinned state.rs paused compatibility flags set playing, paused and buffering
-true and speed zero. Buffering without pause sets playing/buffering true.
+Paused-ready samples set playing/paused true, buffering false and speed zero.
+Buffering samples set playing/buffering true and paused false. PausedBuffering
+samples set playing/paused/buffering true and speed zero. These four modes keep
+readiness separate from user pause state. The pinned
+state.rs also sets buffering for paused compatibility, but that would invent
+buffering absent from the actual local sample; publication preserves the supplied
+state. The observed desktop peer also reports paused without buffering.
 The active-since server timestamp is supplied by the adapter. Unknown accumulated
 audible duration remains unset. No device wall clock replaces the server mapping.
 

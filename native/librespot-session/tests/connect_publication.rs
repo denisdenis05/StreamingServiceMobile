@@ -18,6 +18,8 @@ const COMMAND_SENDER: &str = "synthetic-command-sender";
 const COMMAND_SESSION: &str = "synthetic-command-session";
 const EXCEEDS_LIMIT: usize = 1;
 const EXCEEDS_CLOCK_LIMIT: u64 = 1;
+const PAUSED_PLAYBACK_SPEED: f64 = 0.0;
+const NORMAL_PLAYBACK_SPEED: f64 = 1.0;
 
 fn registration() -> PutStateRequest {
     initial_registration(&ConnectDeviceConfiguration { name: NAME.to_owned(), playback_ready: true }, DEVICE, SESSION, SERVER_TIMESTAMP_MILLISECONDS).unwrap()
@@ -42,12 +44,14 @@ fn actual_player_state_round_trips_with_real_track_identity_occurrences_revision
 
 #[test]
 fn paused_and_buffering_samples_never_claim_uninterrupted_playback() {
-    for playback in [ConnectPublicationPlayback::Playing, ConnectPublicationPlayback::Paused, ConnectPublicationPlayback::Buffering] {
+    for playback in [ConnectPublicationPlayback::Playing, ConnectPublicationPlayback::Paused, ConnectPublicationPlayback::Buffering, ConnectPublicationPlayback::PausedBuffering] {
         let mut sample = snapshot(); sample.playback = playback;
         let publication = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
         assert!(publication.device.player_state.is_playing);
-        assert_eq!(publication.device.player_state.is_paused, matches!(playback, ConnectPublicationPlayback::Paused));
-        assert_eq!(publication.device.player_state.is_buffering, !matches!(playback, ConnectPublicationPlayback::Playing));
+        assert_eq!(publication.device.player_state.is_paused, matches!(playback, ConnectPublicationPlayback::Paused | ConnectPublicationPlayback::PausedBuffering));
+        assert_eq!(publication.device.player_state.is_buffering, matches!(playback, ConnectPublicationPlayback::Buffering | ConnectPublicationPlayback::PausedBuffering));
+        assert_eq!(publication.device.player_state.playback_speed,
+            if matches!(playback, ConnectPublicationPlayback::Paused | ConnectPublicationPlayback::PausedBuffering) { PAUSED_PLAYBACK_SPEED } else { NORMAL_PLAYBACK_SPEED });
         assert_eq!(publication.device.player_state.position_as_of_timestamp, POSITION_MILLISECONDS as i64);
     }
 }
@@ -125,4 +129,16 @@ fn publication_clock_uses_only_elapsed_native_time_from_a_known_server_anchor() 
     assert_eq!(publication_server_timestamp(&sample, POSITION_MILLISECONDS).unwrap(), SERVER_TIMESTAMP_MILLISECONDS);
     assert!(matches!(publication_server_timestamp(&sample, NATIVE_TIMESTAMP_MILLISECONDS), Err(Failure::Canceled)));
     assert!(matches!(publication_server_timestamp(&sample, POSITION_MILLISECONDS + MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS + EXCEEDS_CLOCK_LIMIT), Err(Failure::Canceled)));
+}
+
+#[test]
+fn paused_ready_samples_preserve_paused_without_inventing_buffering() {
+    let mut paused = snapshot(); paused.playback = ConnectPublicationPlayback::Paused;
+    let published = build_publication(&registration(), &paused, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(published.device.player_state.is_paused);
+    assert!(!published.device.player_state.is_buffering);
+    let mut buffering = snapshot(); buffering.playback = ConnectPublicationPlayback::Buffering;
+    let published = build_publication(&registration(), &buffering, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(!published.device.player_state.is_paused);
+    assert!(published.device.player_state.is_buffering);
 }
