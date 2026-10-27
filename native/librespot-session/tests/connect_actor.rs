@@ -1,3 +1,6 @@
+#[path = "support/publication.rs"]
+mod publication;
+
 use std::sync::{Arc, Mutex};
 
 use librespot_protocol::{connect::Cluster, player::PlayerState};
@@ -34,12 +37,13 @@ const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
-struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>> }
+struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
     refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>,
     command_gate: Option<oneshot::Receiver<()>>, command_started: Option<oneshot::Sender<()>>,
+    publication_gate: Option<oneshot::Receiver<()>>, publication_started: Option<oneshot::Sender<()>>,
 }
 
 fn cluster() -> ConnectCluster { decode_cluster_snapshot(&Cluster::new().write_to_bytes().unwrap()).unwrap() }
@@ -53,6 +57,7 @@ impl ConnectMetadataOperations for FakeSession {
 impl ConnectSessionOperations for FakeSession {
     fn device_identifier(&self) -> &str { DEVICE }
     fn account_identifier(&self) -> String { ACCOUNT.to_owned() }
+    fn playback_session_identifier(&self) -> Option<&str> { Some(publication::SESSION) }
     async fn register(&mut self, connection_identifier: String) -> Result<ConnectCluster, Failure> {
         self.calls.lock().unwrap().connections.push(connection_identifier);
         if let Some(failure) = self.registration_failure.take() { Err(failure) } else { Ok(cluster()) }
@@ -62,6 +67,12 @@ impl ConnectSessionOperations for FakeSession {
         if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
         if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
         Ok(self.snapshot.lock().unwrap().clone())
+    }
+    async fn publish(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
+        self.calls.lock().unwrap().publication_sequences.push(snapshot.sequence);
+        if let Some(started) = self.publication_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.publication_gate.take() { gate.await.map_err(|_| Failure::UnknownOutcome)?; }
+        Ok(playable_cluster(DEVICE))
     }
     async fn command(&mut self, target: &str, body: Value) -> Result<ConnectCommandAcknowledgement, Failure> {
         self.calls.lock().unwrap().commands.push((target.to_owned(), body));
@@ -94,9 +105,15 @@ impl Harness {
 
     fn with_gates(registration_failure: Option<Failure>, refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>,
         command_gate: Option<oneshot::Receiver<()>>, command_started: Option<oneshot::Sender<()>>) -> Self {
+        Self::with_publication(registration_failure, refresh_gate, refresh_started, command_gate, command_started, None, None)
+    }
+
+    fn with_publication(registration_failure: Option<Failure>, refresh_gate: Option<oneshot::Receiver<()>>, refresh_started: Option<oneshot::Sender<()>>,
+        command_gate: Option<oneshot::Receiver<()>>, command_started: Option<oneshot::Sender<()>>,
+        publication_gate: Option<oneshot::Receiver<()>>, publication_started: Option<oneshot::Sender<()>>) -> Self {
         let calls = Arc::new(Mutex::new(Calls::default()));
         let snapshot = Arc::new(Mutex::new(cluster()));
-        let mut session = FakeSession { calls: Arc::clone(&calls), registration_failure, snapshot: Arc::clone(&snapshot), refresh_gate, refresh_started, command_gate, command_started };
+        let mut session = FakeSession { calls: Arc::clone(&calls), registration_failure, snapshot: Arc::clone(&snapshot), refresh_gate, refresh_started, command_gate, command_started, publication_gate, publication_started };
         let (incoming, mut inputs) = mpsc::channel(CAPACITY);
         let (actions, mut commands) = mpsc::channel(CAPACITY);
         let (events_sender, events) = mpsc::channel(CAPACITY);
@@ -452,4 +469,102 @@ async fn connection_shutdown_retires_http_accepted_commands_as_uncertain_without
         target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
     harness.events.recv().await.unwrap(); harness.stop().await;
     assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
+}
+
+async fn publish_sample(harness: &Harness, generation: u64, sequence: u64, publication_cancellation: CancellationToken) -> Result<ConnectCluster, Failure> {
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.sequence = sequence;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Publish { generation, snapshot, publication_cancellation, result }).await.unwrap();
+    receipt.await.unwrap()
+}
+
+async fn observe_publication_host(harness: &mut Harness, device_identifier: &str) {
+    harness.incoming.send(DealerInput::Cluster(playable_cluster(device_identifier))).await.unwrap();
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { .. }));
+}
+
+#[tokio::test]
+async fn publication_requires_existing_local_authority_and_never_takes_over_another_host() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, TARGET).await;
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_generations_and_canceled_publications_never_reach_the_session() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    assert!(matches!(publish_sample(&harness, STALE_GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    let canceled = CancellationToken::new(); canceled.cancel();
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, canceled).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn duplicate_or_older_publications_are_fenced_after_first_dispatch() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await.unwrap();
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::SECOND_SEQUENCE]); harness.stop().await;
+}
+
+#[tokio::test]
+async fn host_replacement_retires_further_local_publications() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await.unwrap();
+    observe_publication_host(&mut harness, OTHER_TARGET).await;
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]); harness.stop().await;
+}
+
+#[tokio::test]
+async fn in_flight_publication_cancellation_is_unknown_and_the_sequence_never_replays() {
+    let (release, gate) = oneshot::channel(); let (started, dispatched) = oneshot::channel();
+    let mut harness = Harness::with_publication(None, None, None, None, None, Some(gate), Some(started));
+    harness.register().await; observe_publication_host(&mut harness, DEVICE).await;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    let publication_cancellation = CancellationToken::new(); let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: publication_cancellation.clone(), result }).await.unwrap();
+    dispatched.await.unwrap(); publication_cancellation.cancel();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]);
+    drop(release); harness.stop().await;
+}
+
+#[tokio::test]
+async fn abandoned_queued_publications_never_dispatch() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    let (result, receipt) = oneshot::channel(); drop(receipt);
+    harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: CancellationToken::new(), result }).await.unwrap();
+    publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await.unwrap();
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::SECOND_SEQUENCE]); harness.stop().await;
+}
+
+#[tokio::test]
+async fn a_host_replacement_cannot_be_undone_by_a_delayed_local_host_update() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    publish_sample(&harness, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await.unwrap();
+    observe_publication_host(&mut harness, OTHER_TARGET).await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]); harness.stop().await;
+}
+
+#[tokio::test]
+async fn foreign_publication_sessions_never_dispatch_even_when_device_and_generation_match() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.session_identifier = OTHER_TARGET.to_owned();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
 }

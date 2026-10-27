@@ -7,10 +7,10 @@ use crate::model::Failure;
 pub const SAFE_REQUEST_TIMEOUT_SECONDS: u64 = 15;
 
 #[derive(Clone, Copy)]
-pub enum ConnectRequestPurpose { Observation, Metadata, Removal, Command }
+pub enum ConnectRequestPurpose { Observation, Metadata, Removal, Command, Publication }
 
 impl ConnectRequestPurpose {
-    pub fn is_mutation(self) -> bool { matches!(self, Self::Command) }
+    pub fn is_mutation(self) -> bool { matches!(self, Self::Command | Self::Publication) }
     fn permits_renewal_replay(self) -> bool { matches!(self, Self::Observation | Self::Metadata) }
 }
 

@@ -2,6 +2,7 @@ pub mod model;
 pub mod desktop_login5;
 pub mod connect_wire;
 pub mod connect_device;
+pub mod connect_publication;
 pub mod connect_session;
 pub mod connect_authentication;
 pub mod connect_transport;

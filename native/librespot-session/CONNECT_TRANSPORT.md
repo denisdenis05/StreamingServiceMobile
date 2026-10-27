@@ -230,3 +230,65 @@ and a paused-clock total deadline. The command journal also tests a still-pendin
 acknowledgement reused after completed receipts rotate its bounded recent window;
 this cannot overwrite the original pending command or confirm either request.
 These checks do not establish actual expiry behavior on a phone.
+
+## Local player publication foundation
+
+`connect_publication.rs` builds the pinned Connect PutStateRequest from an actual
+local-player snapshot. It preserves the supplied Spotify track, occurrence,
+playback, session and queue revision identities. Repeated tracks need distinct
+occurrences. The sequence fences this native owner only; it never becomes a
+Spotify queue revision. Current plus previous/next occurrences must be unique;
+previous and next lists together are limited to 80 tracks.
+
+The adapter must supply a verified Spotify-server clock anchor corresponding to
+its native monotonic sample. Publication time advances that server anchor by
+elapsed native time. Future native samples, samples older than 15 seconds and
+clock uncertainty above two seconds are rejected. These are conservative input
+policies, not measured synchronization guarantees. Player position remains at
+the supplied anchor; serialization never extrapolates paused or buffered audio.
+The pinned state.rs paused compatibility flags set playing, paused and buffering
+true and speed zero. Buffering without pause sets playing/buffering true.
+The active-since server timestamp is supplied by the adapter. Unknown accumulated
+audible duration remains unset. No device wall clock replaces the server mapping.
+
+Publication uses PLAYER_STATE_CHANGED, distinct from NEW_DEVICE observer
+registration. Once a publication is dispatched, observer refresh/registration on
+that native session returns Unsupported, including after uncertain publication.
+This prevents an inactive empty initial registration from overwriting player
+state. A future host observation/reconnect strategy must preserve actual state;
+reusing the observer PUT is forbidden. Publication is a mutation at the existing
+single-dispatch HTTP boundary. HTTP401 invalidates its cached token but never
+replays it. Network/body/deadline failures after dispatch and malformed success
+bodies remain unknown outcomes. Existing authentication and HTTP dispatch phases
+each retain their bounded deadlines.
+
+Actor publication requires the registered generation, exact device and AP
+registration session and an already observed active local device. There is no
+implicit transfer from another host. Initial app-host startup therefore needs a
+separate user-authorized activation/takeover operation coupled to actual player
+acceptance; the own-host requirement and disabled readiness guard intentionally
+prevent startup through this foundation alone. Host replacement retires publication for
+that actor generation, even if a delayed update subsequently names the local
+device. Closed receipts and cancellation before acquisition prevent dispatch;
+in-flight cancellation is unknown and consumes the sequence. Incoming-command
+provenance is copied only from an explicitly accepted action supplied by the
+future adapter, never inferred from merely receiving a Dealer request. Unsupported
+transfer, options, playlist and command-request capabilities remain false and
+controllable remains false in published descriptors.
+
+Dedicated tests: `tests/connect_publication.rs` covers protobuf encoding,
+identity/bounds, actual position and clock semantics, flags, accepted provenance,
+capabilities, sequence order, protected observer registration and mapped clocks.
+Publication cases in `tests/connect_actor.rs` cover authority, generation/session,
+canceled/closed work, duplicates, host replacement and in-flight uncertainty.
+`tests/connect_authentication.rs` includes Publication in rejected-mutation
+non-replay coverage. Shared synthetic fixtures contain no private data.
+
+This is a serializer/session/actor foundation. The bridge playback-ready guard
+stays disabled. No actual player adapter, incoming action execution, explicit
+host takeover or publication JNI API is supplied by this chapter. Metadata,
+read, command and publication HTTP work is still awaited inline in the actor;
+its bounded HTTP request can outlast an incoming command acknowledgement
+window. Responsive command dispatch and durable execution correlation across
+reconnect are required before enabling host readiness. Codec and actor tests do
+not prove Spotify acceptance, guest audio, app hosting or background playback.

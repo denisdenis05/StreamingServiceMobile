@@ -90,7 +90,8 @@ async fn repeated_unauthorized_reads_stop_after_one_renewal_and_discard_the_seco
 
 #[tokio::test]
 async fn rejected_mutations_and_removals_discard_the_token_without_automatically_repeating_the_operation() {
-    for purpose in [ConnectRequestPurpose::Command, ConnectRequestPurpose::Removal] {
+    assert!(ConnectRequestPurpose::Publication.is_mutation());
+    for purpose in [ConnectRequestPurpose::Command, ConnectRequestPurpose::Removal, ConnectRequestPurpose::Publication] {
         let mut dispatch = Dispatch::new(vec![Err(Failure::Unauthorized)]);
         assert_eq!(execute_authenticated_request(&mut dispatch, &request(purpose)).await, Err(Failure::Unauthorized));
         assert_eq!(dispatch.access_token_calls, SINGLE_CALL); assert_eq!(dispatch.discarded_tokens, SINGLE_CALL);

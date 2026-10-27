@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
+use crate::{connect_publication::{ConnectPublicationSnapshot, ConnectPublicationOrder}, connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -38,6 +38,7 @@ pub struct OutgoingFrame {
 }
 
 pub enum ConnectAction {
+    Publish { generation: u64, snapshot: ConnectPublicationSnapshot, publication_cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
     InspectFailure { generation: u64, result: ActionResult<ConnectFailureStage> },
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
     Metadata { generation: u64, identifiers: Vec<String>, result: ActionResult<Vec<ConnectTrackMetadata>> },
@@ -138,6 +139,7 @@ fn retire_action(action: ConnectAction) {
         ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Publish { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Command { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
     }
@@ -147,6 +149,10 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
     generation: u64, events: &mpsc::Sender<ConnectEvent>, actions: &mut mpsc::Receiver<ConnectAction>,
     cancellation: &CancellationToken) -> Result<(), Failure> {
     let mut registered = false;
+    let mut publication_order = ConnectPublicationOrder::default();
+    let mut current_host = None;
+    let mut publication_authority_retired = false;
+    let mut authority_timestamp = (i64::MIN, i64::MIN);
     let mut housekeeping = tokio::time::interval(Duration::from_millis(HOUSEKEEPING_INTERVAL_MILLISECONDS));
     let mut pending = HashMap::<String, PendingRequest>::new();
     let mut completed = VecDeque::<CompletedReply>::new();
@@ -160,11 +166,20 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                 match input {
                     DealerInput::Connection(identifier) => {
                         let cluster = session.register(identifier).await?;
+                        current_host = Some(cluster.active_device_identifier.clone());
+                        authority_timestamp = (cluster.server_at_milliseconds, cluster.changed_at_milliseconds);
                         registered = true;
                         emit(events, generation, ConnectEventData::Registered { account_identifier: session.account_identifier(),
                             device_identifier: session.device_identifier().to_owned(), verification_source: session.registration_verification(), cluster }, cancellation).await?;
                     },
                     DealerInput::Cluster(cluster) if registered => {
+                        let timestamp = (cluster.server_at_milliseconds, cluster.changed_at_milliseconds);
+                        if timestamp >= authority_timestamp {
+                            publication_authority_retired |= current_host.as_deref() == Some(session.device_identifier())
+                                && cluster.active_device_identifier != session.device_identifier();
+                            current_host = Some(cluster.active_device_identifier.clone());
+                            authority_timestamp = timestamp;
+                        }
                         outgoing_commands.observe(&cluster, native_monotonic_milliseconds());
                         emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
                     },
@@ -190,6 +205,27 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
             action = actions.recv() => {
                 let action = action.ok_or(Failure::Canceled)?;
                 match action {
+                    ConnectAction::Publish { generation: expected, snapshot, publication_cancellation, result } => {
+                        if result.is_closed() { continue; }
+                        if cancellation.is_cancelled() || publication_cancellation.is_cancelled() || expected != generation || !registered
+                            || snapshot.device_identifier != session.device_identifier()
+                            || session.playback_session_identifier() != Some(snapshot.session_identifier.as_str())
+                            || publication_authority_retired || current_host.as_deref() != Some(session.device_identifier()) {
+                            let _ = result.send(Err(Failure::Canceled)); continue;
+                        }
+                        if let Err(failure) = publication_order.acquire(snapshot.sequence) { let _ = result.send(Err(failure)); continue; }
+                        let published = tokio::select! { biased;
+                            _ = cancellation.cancelled() => Err(Failure::UnknownOutcome),
+                            _ = publication_cancellation.cancelled() => Err(Failure::UnknownOutcome),
+                            published = session.publish(snapshot) => published,
+                        };
+                        if let Ok(cluster) = &published {
+                            publication_authority_retired |= cluster.active_device_identifier != session.device_identifier();
+                            current_host = Some(cluster.active_device_identifier.clone());
+                            authority_timestamp = (cluster.server_at_milliseconds, cluster.changed_at_milliseconds);
+                        }
+                        let _ = result.send(published);
+                    },
                     ConnectAction::InspectFailure { generation: expected, result } => {
                         let inspection = if expected == generation { Ok(session.failure_stage()) } else { Err(Failure::Canceled) };
                         let _ = result.send(inspection);

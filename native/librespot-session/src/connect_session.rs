@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -75,6 +75,7 @@ pub struct NativeConnectSession {
     connection_identifier: Option<String>,
     registered: bool,
     registration_attempted: bool,
+    publication_state: ConnectPublicationState,
     pub failure_stage: ConnectFailureStage,
     verification: RegistrationVerification,
 }
@@ -84,8 +85,10 @@ pub trait ConnectSessionOperations: Send {
     fn account_identifier(&self) -> String;
     fn failure_stage(&self) -> ConnectFailureStage { ConnectFailureStage::DealerEvents }
     fn registration_verification(&self) -> RegistrationVerification { RegistrationVerification::Cluster }
+    fn playback_session_identifier(&self) -> Option<&str> { None }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
+    fn publish(&mut self, _snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send;
 }
 
@@ -137,7 +140,7 @@ impl NativeConnectSession {
         let session_configuration = stored_session_configuration(&stored, SessionConfig::default())?;
         let session = Session::new(session_configuration, None);
         let mut owned = Self { session, token: None, origin: String::new(), registration: PutStateRequest::new(),
-            connection_identifier: None, registered: false, registration_attempted: false, failure_stage: ConnectFailureStage::Restore,
+            connection_identifier: None, registered: false, registration_attempted: false, publication_state: ConnectPublicationState::default(), failure_stage: ConnectFailureStage::Restore,
             verification: RegistrationVerification::Cluster };
         tokio::time::timeout(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECONDS),
             owned.session.connect(stored.credentials, false)).await.map_err(|_| Failure::Deadline)?.map_err(sanitized_failure)?;
@@ -178,6 +181,7 @@ impl NativeConnectSession {
     }
 
     pub async fn register(&mut self, connection_identifier: String) -> Result<ConnectCluster, Failure> {
+        if !self.publication_state.permits_observer_registration() { return Err(Failure::Unsupported); }
         self.failure_stage = ConnectFailureStage::RegistrationEncoding;
         self.connection_identifier = Some(connection_identifier);
         self.registration.client_side_timestamp = epoch_milliseconds()?;
@@ -198,6 +202,17 @@ impl NativeConnectSession {
     pub async fn refresh(&mut self) -> Result<ConnectCluster, Failure> {
         let connection = self.connection_identifier.clone().ok_or(Failure::InvalidInput)?;
         self.register(connection).await
+    }
+
+    pub async fn publish(&mut self, snapshot: ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
+        if !self.registered { return Err(Failure::Canceled); }
+        let publication_timestamp_milliseconds = publication_server_timestamp(&snapshot, crate::connect_transport::native_monotonic_milliseconds())?;
+        let publication = build_publication(&self.registration, &snapshot, publication_timestamp_milliseconds)?;
+        let body = publication.write_to_bytes().map_err(|_| Failure::InvalidInput)?;
+        let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
+        self.publication_state.begin_dispatch(snapshot.sequence)?;
+        let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Publication).await?;
+        decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)
     }
 
     pub async fn command(&mut self, target_device_identifier: &str, body: serde_json::Value) -> Result<ConnectCommandAcknowledgement, Failure> {
@@ -224,10 +239,12 @@ impl ConnectSessionOperations for NativeConnectSession {
     fn account_identifier(&self) -> String { NativeConnectSession::account_identifier(self) }
     fn failure_stage(&self) -> ConnectFailureStage { self.failure_stage }
     fn registration_verification(&self) -> RegistrationVerification { self.verification }
+    fn playback_session_identifier(&self) -> Option<&str> { Some(&self.registration.device.player_state.session_id) }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send {
         NativeConnectSession::register(self, connection_identifier)
     }
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::refresh(self) }
+    fn publish(&mut self, snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::publish(self, snapshot) }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send {
         NativeConnectSession::command(self, target_device_identifier, body)
     }
