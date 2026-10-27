@@ -15,7 +15,7 @@ interface SpotifyConnectExecution {
 }
 
 data class SpotifyConnectBatch(val serialized: String, val finished: Boolean, val hasEvents: Boolean = true)
-class SpotifyConnectFailure(val code: String) : RuntimeException()
+open class SpotifyConnectFailure(val code: String) : RuntimeException()
 
 class SpotifyConnectOwner(
     private val execution: SpotifyConnectExecution,

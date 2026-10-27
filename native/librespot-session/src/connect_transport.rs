@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
+use crate::{connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -44,7 +44,7 @@ pub enum ConnectAction {
     Read { generation: u64, result: ActionResult<ConnectReading> },
     Command { generation: u64, target_device_identifier: String, body: Value, result: ActionResult<()> },
     CheckedCommand { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand,
-        command_cancellation: CancellationToken, result: ActionResult<()> },
+        command_cancellation: CancellationToken, result: ActionResult<ConnectCommandAcknowledgement> },
     Reply { generation: u64, key: String, accepted: bool, result: ActionResult<()> },
 }
 
@@ -134,11 +134,12 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
 
 fn retire_action(action: ConnectAction) {
     match action {
+        ConnectAction::CheckedCommand { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Command { result, .. } | ConnectAction::CheckedCommand { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Command { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
     }
 }
 
@@ -149,6 +150,7 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
     let mut housekeeping = tokio::time::interval(Duration::from_millis(HOUSEKEEPING_INTERVAL_MILLISECONDS));
     let mut pending = HashMap::<String, PendingRequest>::new();
     let mut completed = VecDeque::<CompletedReply>::new();
+    let mut outgoing_commands = ConnectCommandJournal::default();
     loop {
         if cancellation.is_cancelled() { return Err(Failure::Canceled); }
         tokio::select! {
@@ -162,7 +164,10 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                         emit(events, generation, ConnectEventData::Registered { account_identifier: session.account_identifier(),
                             device_identifier: session.device_identifier().to_owned(), verification_source: session.registration_verification(), cluster }, cancellation).await?;
                     },
-                    DealerInput::Cluster(cluster) if registered => emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?,
+                    DealerInput::Cluster(cluster) if registered => {
+                        outgoing_commands.observe(&cluster, native_monotonic_milliseconds());
+                        emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
+                    },
                     DealerInput::Membership(update) if registered => emit(events, generation, ConnectEventData::Membership { update }, cancellation).await?,
                     DealerInput::SessionMessage(message) if registered => emit(events, generation, ConnectEventData::SessionMessage { message }, cancellation).await?,
                     DealerInput::Command { key, request } => {
@@ -217,11 +222,13 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                     ConnectAction::Command { generation: expected, target_device_identifier, body, result } => {
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
-                        let receipt = session.command(&target_device_identifier, body).await;
+                        let receipt = session.command(&target_device_identifier, body).await.map(|_| ());
                         let _ = result.send(receipt);
                     },
                     ConnectAction::CheckedCommand { generation: expected, request_identifier, target_device_identifier, command, command_cancellation, result } => {
                         if result.is_closed() { continue; }
+                        outgoing_commands.expire();
+                        if !outgoing_commands.has_capacity() { let _ = result.send(Err(Failure::Backpressure)); continue; }
                         if cancellation.is_cancelled() || command_cancellation.is_cancelled() || expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
                         let prepare = async {
                             command.validate(&request_identifier, &target_device_identifier)?;
@@ -237,6 +244,7 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                             Ok(prepared) => prepared,
                             Err(failure) => { let _ = result.send(Err(failure)); continue; },
                         };
+                        let minimum_server_at_milliseconds = cluster.server_at_milliseconds;
                         emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
                         if result.is_closed() { continue; }
                         if cancellation.is_cancelled() || command_cancellation.is_cancelled() { let _ = result.send(Err(Failure::Canceled)); continue; }
@@ -244,7 +252,10 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                             _ = command_cancellation.cancelled() => Err(Failure::UnknownOutcome),
                             receipt = session.command(&target_device_identifier, body) => receipt,
                         };
-                        let _ = result.send(receipt);
+                        match receipt {
+                            Ok(acknowledgement) => outgoing_commands.accept(acknowledgement, target_device_identifier, minimum_server_at_milliseconds, command_cancellation, result),
+                            Err(failure) => { let _ = result.send(Err(failure)); },
+                        }
                     },
                     ConnectAction::Reply { generation: expected, key, accepted, result } => {
                         if expected != generation || !registered { let _ = result.send(Err(Failure::Canceled)); continue; }
@@ -258,6 +269,7 @@ pub async fn process_connected_events(session: &mut (impl ConnectSessionOperatio
                 }
             },
             _ = housekeeping.tick() => {
+                outgoing_commands.expire();
                 let expired = pending.iter().filter(|(_, request)| DeadlineInstant::now() >= request.deadline).map(|(key, _)| key.clone()).collect::<Vec<_>>();
                 for key in expired {
                     if let Some(previous) = pending.remove(&key) {

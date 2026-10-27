@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
 
 use crate::{connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
-    connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
+    connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
 const MAXIMUM_KEY_CHARACTERS: usize = 2048;
@@ -62,7 +62,11 @@ async fn metadata(handle: u64, generation: u64, identifiers: Vec<String>) -> Res
 }
 
 #[derive(Serialize)]
-struct ConnectReceipt { failure: Option<&'static str> }
+struct ConnectReceipt {
+    failure: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    acknowledgement: Option<ConnectCommandAcknowledgement>,
+}
 
 fn runtime() -> Result<&'static Runtime, Failure> {
     RUNTIME.get_or_init(|| tokio::runtime::Builder::new_multi_thread().worker_threads(RUNTIME_WORKERS)
@@ -104,7 +108,7 @@ fn handle(value: jlong) -> Result<u64, Failure> {
 }
 
 fn receipt(result: Result<(), Failure>) -> Result<ConnectReceipt, Failure> {
-    result?; Ok(ConnectReceipt { failure: None })
+    result?; Ok(ConnectReceipt { failure: None, acknowledgement: None })
 }
 
 async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt, Failure> {
@@ -131,17 +135,25 @@ async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt,
                 .map_err(|_| Failure::Backpressure)?;
             let result = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
                 .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
-            receipt(result)
+            result.map(|acknowledgement| ConnectReceipt { failure: None, acknowledgement: Some(acknowledgement) })
         },
     }
 }
 
+pub fn guarded_native_operation<Response>(panic_failure: Failure, operation: impl FnOnce() -> Result<Response, Failure>) -> Result<Response, Failure> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation)).unwrap_or(Err(panic_failure))
+}
+
 fn boundary<Response: Serialize>(environment: &mut JNIEnv, operation: impl FnOnce(&mut JNIEnv) -> Result<Response, Failure>) -> jstring {
+    boundary_with_panic_failure(environment, Failure::Network, operation)
+}
+
+fn boundary_with_panic_failure<Response: Serialize>(environment: &mut JNIEnv, panic_failure: Failure, operation: impl FnOnce(&mut JNIEnv) -> Result<Response, Failure>) -> jstring {
     let _ = crate::registry();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| operation(environment))).unwrap_or(Err(Failure::Network));
+    let result = guarded_native_operation(panic_failure, || operation(environment));
     let serialized = match result {
         Ok(response) => serde_json::to_string(&response),
-        Err(failure) => serde_json::to_string(&ConnectReceipt { failure: Some(failure.code()) }),
+        Err(failure) => serde_json::to_string(&ConnectReceipt { failure: Some(failure.code()), acknowledgement: None }),
     }.unwrap_or_else(|_| crate::FALLBACK_FAILURE_JSON.to_owned());
     crate::return_string(environment, serialized)
 }
@@ -167,7 +179,7 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
 #[no_mangle]
 pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectExecute(
     mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, serialized: JString) -> jstring {
-    boundary(&mut environment, |environment| {
+    boundary_with_panic_failure(&mut environment, Failure::UnknownOutcome, |environment| {
         let control = decode_control(&crate::read_string(environment, serialized)?)?;
         runtime()?.block_on(execute(handle(connection_handle)?, control))
     })

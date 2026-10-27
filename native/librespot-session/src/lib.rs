@@ -8,6 +8,8 @@ pub mod connect_registry;
 pub mod connect_bridge;
 pub mod connect_commands;
 pub mod connect_metadata;
+pub mod connect_receipts;
+pub mod connect_command_journal;
 pub mod operations;
 pub mod session;
 

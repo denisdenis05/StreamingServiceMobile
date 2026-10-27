@@ -3,12 +3,15 @@ use std::sync::{Arc, Mutex};
 use librespot_protocol::{connect::Cluster, player::PlayerState};
 use protobuf::{Message, MessageField};
 use serde_json::{json, Value};
-use streaming_spotify_session::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
+use streaming_spotify_session::{connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
     connect_transport::{process_connected_events, ConnectAction, ConnectEvent, ConnectEventData, OutgoingFrame},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, DealerInput}, model::Failure};
 use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
+const COMMAND_ACKNOWLEDGEMENT_RESPONSE: &[u8] = br#"{"ack_id":"synthetic-server-acknowledgement"}"#;
+const SERVER_ACKNOWLEDGEMENT: &str = "synthetic-server-acknowledgement";
+const OTHER_SERVER_ACKNOWLEDGEMENT: &str = "synthetic-unrelated-server-acknowledgement";
 const DEVICE: &str = "synthetic-device";
 const ACCOUNT: &str = "synthetic-account";
 const CONNECTION: &str = "synthetic-connection";
@@ -60,11 +63,11 @@ impl ConnectSessionOperations for FakeSession {
         if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
         Ok(self.snapshot.lock().unwrap().clone())
     }
-    async fn command(&mut self, target: &str, body: Value) -> Result<(), Failure> {
+    async fn command(&mut self, target: &str, body: Value) -> Result<ConnectCommandAcknowledgement, Failure> {
         self.calls.lock().unwrap().commands.push((target.to_owned(), body));
         if let Some(started) = self.command_started.take() { let _ = started.send(()); }
         if let Some(gate) = self.command_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
-        Ok(())
+        Ok(decode_command_acknowledgement(COMMAND_ACKNOWLEDGEMENT_RESPONSE))
     }
 }
 
@@ -151,8 +154,11 @@ async fn checked_commands_refresh_the_actual_host_before_sending_the_typed_paylo
     let (result, receipt) = oneshot::channel();
     harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
         target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
-    assert!(receipt.await.unwrap().is_ok());
     assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { .. }));
+    let mut observed = playable_cluster(TARGET); observed.acknowledgement_identifier = Some(SERVER_ACKNOWLEDGEMENT.to_owned());
+    harness.incoming.send(DealerInput::Cluster(observed)).await.unwrap();
+    let confirmation = receipt.await.unwrap().unwrap(); assert!(confirmation.delivery_observed);
+    assert_eq!(confirmation.acknowledgement_identifier.as_deref(), Some(SERVER_ACKNOWLEDGEMENT));
     {
         let calls = harness.calls.lock().unwrap(); assert_eq!(calls.refreshes, ONE_CALL); assert_eq!(calls.commands.len(), ONE_CALL);
         assert_eq!(calls.commands[FIRST_CALL].0, TARGET); assert_eq!(calls.commands[FIRST_CALL].1[COMMAND_FIELD][ENDPOINT_FIELD], PAUSE);
@@ -403,4 +409,47 @@ async fn protocol_failure_inspection_exposes_only_the_fixed_stage_for_the_matchi
     let (result, receipt) = oneshot::channel();
     harness.actions.send(ConnectAction::InspectFailure { generation: STALE_GENERATION, result }).await.unwrap();
     assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled))); harness.stop().await;
+}
+
+#[tokio::test]
+async fn http_accepted_commands_wait_for_the_matching_dealer_acknowledgement_on_the_same_host() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, mut receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.events.recv().await.unwrap();
+    let mut unrelated = playable_cluster(TARGET); unrelated.acknowledgement_identifier = Some(OTHER_SERVER_ACKNOWLEDGEMENT.to_owned());
+    harness.incoming.send(DealerInput::Cluster(unrelated)).await.unwrap(); harness.events.recv().await.unwrap();
+    assert!(matches!(receipt.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+    let mut matching = playable_cluster(TARGET); matching.acknowledgement_identifier = Some(SERVER_ACKNOWLEDGEMENT.to_owned());
+    harness.incoming.send(DealerInput::Cluster(matching)).await.unwrap();
+    assert!(receipt.await.unwrap().unwrap().delivery_observed); assert_eq!(harness.calls.lock().unwrap().commands.len(), ONE_CALL);
+    harness.stop().await;
+}
+
+const CANCELLATION_SWEEP_MILLISECONDS: u64 = 1000;
+
+#[tokio::test(start_paused = true)]
+async fn cancellation_while_waiting_for_dealer_confirmation_preserves_unknown_outcome_without_resending() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let command_cancellation = CancellationToken::new(); let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: command_cancellation.clone(), result }).await.unwrap();
+    harness.events.recv().await.unwrap(); command_cancellation.cancel();
+    tokio::time::advance(std::time::Duration::from_millis(CANCELLATION_SWEEP_MILLISECONDS)).await;
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
+    assert_eq!(harness.calls.lock().unwrap().commands.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn connection_shutdown_retires_http_accepted_commands_as_uncertain_without_losing_their_receipt() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
+        target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.events.recv().await.unwrap(); harness.stop().await;
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
 }

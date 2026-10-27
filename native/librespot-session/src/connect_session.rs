@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -86,7 +86,7 @@ pub trait ConnectSessionOperations: Send {
     fn registration_verification(&self) -> RegistrationVerification { RegistrationVerification::Cluster }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
-    fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<(), Failure>> + Send;
+    fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send;
 }
 
 impl Drop for NativeConnectSession {
@@ -225,13 +225,13 @@ impl NativeConnectSession {
         self.register(connection).await
     }
 
-    pub async fn command(&mut self, target_device_identifier: &str, body: serde_json::Value) -> Result<(), Failure> {
+    pub async fn command(&mut self, target_device_identifier: &str, body: serde_json::Value) -> Result<ConnectCommandAcknowledgement, Failure> {
         if !self.registered { return Err(Failure::InvalidInput); }
         let path = COMMAND_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?
             + COMMAND_TARGET_SEPARATOR + &identifier_segment(target_device_identifier)?;
         let body = serde_json::to_vec(&body).map_err(|_| Failure::InvalidInput)?;
-        self.request(Method::POST, path, body, JSON_MEDIA_TYPE, true).await?;
-        Ok(())
+        let response = self.request(Method::POST, path, body, JSON_MEDIA_TYPE, true).await?;
+        Ok(decode_command_acknowledgement(&response))
     }
 
     pub async fn close(&mut self) -> Result<(), Failure> {
@@ -253,7 +253,7 @@ impl ConnectSessionOperations for NativeConnectSession {
         NativeConnectSession::register(self, connection_identifier)
     }
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::refresh(self) }
-    fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<(), Failure>> + Send {
+    fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send {
         NativeConnectSession::command(self, target_device_identifier, body)
     }
 }

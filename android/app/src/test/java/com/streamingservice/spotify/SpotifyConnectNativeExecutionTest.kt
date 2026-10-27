@@ -12,6 +12,7 @@ class SpotifyConnectNativeExecutionTest {
         var opened = JSONObject().put(HANDLE_FIELD, HANDLE).toString()
         var polled = JSONObject().put(HANDLE_FIELD, HANDLE).put(FINISHED_FIELD, false).put(EVENTS_FIELD, JSONArray()).toString()
         var receipt = SUCCESS_RECEIPT
+        var executionFailure: Throwable? = null
         val commands = mutableListOf<Pair<Long, String>>()
         val begunCommands = mutableListOf<Pair<Long, String>>()
         val canceledCommands = mutableListOf<Pair<Long, String>>()
@@ -26,7 +27,7 @@ class SpotifyConnectNativeExecutionTest {
         override fun metadata(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
         override fun read(handle: Long, generation: Long): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); return reading }
         override fun poll(handle: Long): String { assertEquals(HANDLE, handle); return polled }
-        override fun execute(handle: Long, serialized: String): String { commands.add(handle to serialized); return receipt }
+        override fun execute(handle: Long, serialized: String): String { commands.add(handle to serialized); executionFailure?.let { failure -> throw failure }; return receipt }
         override fun cancel(handle: Long): String { canceled.add(handle); return receipt }
         override fun finish(handle: Long): String { finished.add(handle); return receipt }
     }
@@ -92,6 +93,8 @@ class SpotifyConnectNativeExecutionTest {
         val native = Native(); val execution = SpotifyConnectNativeExecution(native)
         execution.beginCommand(HANDLE, REQUEST_IDENTIFIER)
         val serialized = JSONObject().put(OPERATION_FIELD, COMMAND_OPERATION).put(REQUEST_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).toString()
+        native.receipt = JSONObject().put(FAILURE_FIELD, JSONObject.NULL).put(ACKNOWLEDGEMENT_FIELD,
+            JSONObject().put(ACKNOWLEDGEMENT_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).put(DELIVERY_OBSERVED_FIELD, true)).toString()
         execution.command(HANDLE, REQUEST_IDENTIFIER, serialized)
         execution.cancelCommand(HANDLE, REQUEST_IDENTIFIER); execution.finishCommand(HANDLE, REQUEST_IDENTIFIER)
         assertEquals(listOf(HANDLE to REQUEST_IDENTIFIER), native.begunCommands)
@@ -124,7 +127,35 @@ class SpotifyConnectNativeExecutionTest {
         native.reading = JSONObject().put(HANDLE_FIELD, OTHER_HANDLE).put(GENERATION_FIELD, GENERATION).toString()
         requireFailure(INVALID_RESPONSE_FAILURE) { execution.metadata(HANDLE, GENERATION, CREDENTIAL) }
     }
+    @Test
+    fun httpAcceptanceWithoutObservedDealerDeliveryCannotCompleteAnAndroidCommand() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        val control = JSONObject().put(OPERATION_FIELD, COMMAND_OPERATION).put(REQUEST_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).toString()
+        requireFailure(UNKNOWN_OUTCOME_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+        for (observed in listOf(false, TRUE_TEXT)) {
+            native.receipt = JSONObject().put(FAILURE_FIELD, JSONObject.NULL).put(ACKNOWLEDGEMENT_FIELD,
+                JSONObject().put(ACKNOWLEDGEMENT_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).put(DELIVERY_OBSERVED_FIELD, observed)).toString()
+            requireFailure(UNKNOWN_OUTCOME_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+        }
+        native.receipt = JSONObject().put(FAILURE_FIELD, FORBIDDEN_FAILURE).toString()
+        requireFailure(FORBIDDEN_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+    }
+    @Test
+    fun malformedReceiptsAndThrownNativeExecutionRemainUncertainWhileExplicitPreflightFailuresArePreserved() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        val control = JSONObject().put(OPERATION_FIELD, COMMAND_OPERATION).put(REQUEST_IDENTIFIER_FIELD, REQUEST_IDENTIFIER).toString()
+        native.receipt = PRIVATE_VALUE
+        requireFailure(UNKNOWN_OUTCOME_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+        native.executionFailure = IllegalStateException(PRIVATE_VALUE)
+        requireFailure(UNKNOWN_OUTCOME_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+        native.executionFailure = null; native.receipt = JSONObject().put(FAILURE_FIELD, INVALID_RESPONSE_FAILURE).toString()
+        requireFailure(INVALID_RESPONSE_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
+    }
     companion object {
+        private const val UNKNOWN_OUTCOME_FAILURE = "unknown-outcome"
+        private const val ACKNOWLEDGEMENT_FIELD = "acknowledgement"
+        private const val ACKNOWLEDGEMENT_IDENTIFIER_FIELD = "acknowledgementIdentifier"
+        private const val DELIVERY_OBSERVED_FIELD = "deliveryObserved"
         private const val COMMAND_OPERATION = "command"
         private const val REQUEST_IDENTIFIER_FIELD = "requestIdentifier"
         private const val REQUEST_IDENTIFIER = "synthetic-native-command"

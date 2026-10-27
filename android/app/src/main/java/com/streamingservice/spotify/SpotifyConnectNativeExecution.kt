@@ -28,6 +28,8 @@ private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun finish(handle: Long): String = SpotifyLibrespotNative.connectFinish(handle)
 }
 
+private class SpotifyConnectNativeFailureReceipt(code: String) : SpotifyConnectFailure(code)
+
 class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCalls = PlatformSpotifyConnectNativeCalls) : SpotifyConnectExecution {
     override fun start(serialized: String): Long = decode(native.start(serialized)) { response -> handle(response) }
 
@@ -66,7 +68,17 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         if (control.opt(OPERATION_FIELD) != COMMAND_OPERATION || control.opt(REQUEST_IDENTIFIER_FIELD) != requestIdentifier) {
             throw SpotifyConnectFailure(INVALID_INPUT_FAILURE)
         }
-        receipt(native.execute(handle, serialized))
+        val reply = try { native.execute(handle, serialized) } catch (_failure: Throwable) { throw SpotifyConnectFailure(UNKNOWN_OUTCOME_FAILURE) }
+        try {
+            decode(reply) { response ->
+                val acknowledgement = response.optJSONObject(ACKNOWLEDGEMENT_FIELD)
+                val acknowledgementIdentifier = acknowledgement?.opt(ACKNOWLEDGEMENT_IDENTIFIER_FIELD) as? String
+                if (!response.has(FAILURE_FIELD) || !response.isNull(FAILURE_FIELD)
+                    || acknowledgement?.opt(DELIVERY_OBSERVED_FIELD) != true || acknowledgementIdentifier.isNullOrBlank()
+                    || acknowledgementIdentifier.length > MAXIMUM_ACKNOWLEDGEMENT_CHARACTERS) throw SpotifyConnectFailure(UNKNOWN_OUTCOME_FAILURE)
+            }
+        } catch (failure: SpotifyConnectNativeFailureReceipt) { throw failure }
+        catch (_failure: Throwable) { throw SpotifyConnectFailure(UNKNOWN_OUTCOME_FAILURE) }
     }
 
     override fun cancel(handle: Long) { receipt(native.cancel(handle)) }
@@ -96,7 +108,8 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         val response = try { JSONObject(serialized) } catch (_failure: Throwable) { throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE) }
         if (response.has(FAILURE_FIELD) && !response.isNull(FAILURE_FIELD)) {
             val code = response.getString(FAILURE_FIELD)
-            throw SpotifyConnectFailure(if (SpotifyConnectFailureCode.entries.any { failure -> failure.wireValue == code }) code else NETWORK_FAILURE)
+            if (SpotifyConnectFailureCode.entries.any { failure -> failure.wireValue == code }) throw SpotifyConnectNativeFailureReceipt(code)
+            throw SpotifyConnectFailure(NETWORK_FAILURE)
         }
         return response
     }
@@ -113,6 +126,11 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         private const val OPERATION_FIELD = "operation"
         private const val GENERATION_FIELD = "generation"
         private const val INVALID_INPUT_FAILURE = "invalid-input"
+        private const val UNKNOWN_OUTCOME_FAILURE = "unknown-outcome"
+        private const val ACKNOWLEDGEMENT_FIELD = "acknowledgement"
+        private const val ACKNOWLEDGEMENT_IDENTIFIER_FIELD = "acknowledgementIdentifier"
+        private const val DELIVERY_OBSERVED_FIELD = "deliveryObserved"
+        private const val MAXIMUM_ACKNOWLEDGEMENT_CHARACTERS = 2048
         private const val COMMAND_OPERATION = "command"
         private const val REQUEST_IDENTIFIER_FIELD = "requestIdentifier"
         private const val REFRESH_OPERATION = "refresh"

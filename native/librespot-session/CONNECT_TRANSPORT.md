@@ -182,3 +182,25 @@ its dedicated actor case checks current/stale generations. Production commands
 still use their typed cancellation and uncertainty rules. Live pause/resume and
 one append of the playing available track succeeded. Spotify assigned a different
 queue occurrence identifier; logging request IDs are not delivery receipts.
+
+## Outgoing delivery receipts (current chapter)
+
+Checked commands retain the server HTTP ack_id and wait for its matching Dealer
+Cluster on the expected active host. HTTP acceptance alone is not delivery. The
+native journal bounds pending confirmations and recent server identifiers; it
+retains actual observed queue revision/native time without substituting a local
+counter. Missing or conflicting identifiers, cancellation, expiry and shutdown
+remain unknown outcomes and never resend a mutation. A stale cached host change
+older than the preflight server timestamp cannot retire a current confirmation.
+
+connect_receipts.rs tests distinguish empty/object/non-object/malformed bodies,
+known identifier aliases, conflicts, bad types/bounds and omission of private
+unknown fields. connect_command_journal.rs covers correlation, unrelated state,
+host replacement, cancellation, expiry, duplicate/missing IDs, capacity, shutdown
+and cached host changes. Actor tests prove delayed matching confirmation and
+post-HTTP cancellation/shutdown behavior. The bridge panic guard test preserves
+explicit preflight failures while classifying unexpected command panics unknown.
+Android execution tests reject unobserved/false/coerced acknowledgements and keep
+unexpected post-dispatch replies uncertain. Known native failure receipt codes
+remain intact. Live pause/resume and one duplicate-song append were confirmed by
+matching server acknowledgements; this does not prove guest permission or audio.

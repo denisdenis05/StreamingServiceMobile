@@ -113,3 +113,13 @@ fn typed_native_commands_require_the_exact_validated_request_target_and_payload(
     let mut unsafe_generation = valid.clone(); unsafe_generation[GENERATION_FIELD] = json!(UNSAFE_GENERATION);
     assert!(decode_control(&unsafe_generation.to_string()).is_err());
 }
+
+const PRIVATE_PANIC_PAYLOAD: &str = "synthetic-private-native-panic";
+
+#[test]
+fn unexpected_native_command_panics_remain_uncertain_without_changing_explicit_preflight_errors() {
+    let panic = streaming_spotify_session::connect_bridge::guarded_native_operation::<()>(Failure::UnknownOutcome, || std::panic::panic_any(PRIVATE_PANIC_PAYLOAD));
+    assert!(matches!(panic, Err(Failure::UnknownOutcome)));
+    let preflight = streaming_spotify_session::connect_bridge::guarded_native_operation::<()>(Failure::UnknownOutcome, || Err(Failure::InvalidInput));
+    assert!(matches!(preflight, Err(Failure::InvalidInput)));
+}

@@ -1,3 +1,59 @@
+# Dealer-confirmed outgoing command receipts — 2026-10-26
+
+Implemented chapter; APK replacement follows this checkpoint. Native command HTTP returns a
+45-byte JSON object with a server ack_id distinct from the logging request UUID.
+Added bounded identifier projection in connect_receipts.rs and a bounded pending
+journal. Checked commands now wait for a Dealer Cluster carrying that exact ack
+and expected active host. Only then does receipt deliveryObserved become true;
+observed native clock and actual queue revision are retained. Cancellation,
+shutdown, missing/duplicate ack, deadline and host replacement remain uncertain
+without retry. Cached host changes older than preflight cannot retire the pending
+confirmation. Raw diagnostic commands retain HTTP-only semantics.
+
+Kotlin requires an explicit observed acknowledgement for command success. Known
+native failure receipts preserve their codes; malformed or thrown post-dispatch
+replies become unknown-outcome. JNI command panics also default to uncertainty,
+while explicit errors are unchanged. This avoids advertising an HTTP-only edit
+as delivered. Unknown results do not reset SDK queue/playback replay fences.
+
+Live Unix-channel checks succeeded for pause, resume and append using the new
+journal: all returned deliveryObserved true only after matching Dealer events.
+The queue append also changed revision and produced one new matching available
+song occurrence from provider queue, with a server-assigned replacement UID.
+The earlier direct HTTP body inspection established ack_id presence and no
+matching logging-request ID. No raw IDs, song metadata or response bodies were
+printed. Those checks used the retained approved grant and official desktop peer.
+The old exec handles are no longer available in the resumed tool session; do not
+assert that their ownership remains live without a new authoritative check.
+A different account's Jam invitation is still needed for guest evidence.
+
+Frozen chapter checks: npm run test:spotify-native passed all 133 Rust cases and
+actual JNI loading smoke. Android :app:testReleaseUnitTest passed all 51 JVM
+cases. npm run test:spotify passed 332 Node and 91 Jest cases, including the
+complete delegated explicit-recovery additions. Logs are under build/spotify-jam.
+Focused journal eight, receipt codec five, actor 24 and bridge nine cases are
+included in the full native run. The example and full app TypeScript are checked
+separately before packaging. These checks do not prove device audio or guests.
+
+Current delivered APK is the observer/marker checkpoint from mobile 09e80c2 and
+library 29c93c7: 35327716 bytes; SHA256
+0638f1a1acc6bb74ed0217171c9d3f2a4ba63025b05ee2d624bd5343406137ad.
+Bundle 2141536 bytes, native 5339264 bytes; native SHA
+47e4c06591de991797599d47ffa514eaaa8d463a5a80e31b5b1545f534200e26.
+Signature, ZIP/16 KB ELF alignment and required markers passed. The artifact
+contains working same-account native controls/private metadata/queue reads but
+not the new observed-delivery receipt/Android guard. It was linked to the user.
+No physical APK, guest audio, app-led hosting or background correctness is proved.
+
+Explicit shared-state reconciliation is committed in library cee7db9 and mobile
+a87c8d3. It preserves passive refresh protection and old unknown receipts, verifies
+fresh membership before/after native shared state, and clears only captured
+mobile uncertainty. Continue live recovery, guest admission/permissions, actual
+local audio, app-led host publication and native foreground recovery. The next
+native chapter moves connection ownership beyond React lifetime with safe
+reattachment; this does not itself implement the background audio follower.
+The objective remains active; iOS is deferred.
+
 # Live controls, observer fix and local test channel — 2026-10-26
 
 The installed official Spotify client was not running. It was launched for the

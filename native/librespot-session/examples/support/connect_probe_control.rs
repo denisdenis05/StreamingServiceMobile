@@ -4,7 +4,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use streaming_spotify_session::{connect_commands::ConnectCommand, connect_metadata::encode_metadata_request,
-    connect_transport::{native_monotonic_milliseconds, ConnectAction}, model::Failure};
+    connect_receipts::ConnectCommandAcknowledgement, connect_transport::{native_monotonic_milliseconds, ConnectAction}, model::Failure};
 use tokio::{io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::{UnixListener, UnixStream}, sync::{mpsc, oneshot}, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
@@ -33,6 +33,9 @@ pub enum ProbeRequest {
 
 #[derive(Serialize)]
 struct Receipt { failure: Option<&'static str> }
+
+#[derive(Serialize)]
+struct CommandReceipt { failure: Option<&'static str>, acknowledgement: ConnectCommandAcknowledgement }
 
 struct SocketOwner { path: PathBuf, file_identity: u64 }
 impl Drop for SocketOwner {
@@ -93,8 +96,8 @@ async fn execute(request: ProbeRequest, actions: &mpsc::Sender<ConnectAction>, g
             let (result, response) = oneshot::channel();
             actions.try_send(ConnectAction::CheckedCommand { generation, request_identifier, target_device_identifier, command,
                 command_cancellation: cancellation.clone(), result }).map_err(|_| Failure::Backpressure)?;
-            response.await.map_err(|_| Failure::UnknownOutcome)??;
-            serde_json::to_value(Receipt { failure: None }).map_err(|_| Failure::InvalidResponse)
+            let acknowledgement = response.await.map_err(|_| Failure::UnknownOutcome)??;
+            serde_json::to_value(CommandReceipt { failure: None, acknowledgement }).map_err(|_| Failure::InvalidResponse)
         },
     }
 }
