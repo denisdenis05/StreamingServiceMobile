@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -172,34 +172,9 @@ impl NativeConnectSession {
         Ok(address)
     }
 
-    async fn request(&mut self, method: Method, path: String, body: Vec<u8>, media_type: &str, mutation: bool) -> Result<Vec<u8>, Failure> {
+    async fn request(&mut self, method: Method, path: String, body: Vec<u8>, media_type: &'static str, purpose: ConnectRequestPurpose) -> Result<Vec<u8>, Failure> {
         if body.len() > MAXIMUM_FRAME_BYTES { return Err(Failure::InvalidInput); }
-        let token = self.access_token().await?;
-        let mut request = Request::builder().method(method).uri(self.origin.clone() + &path)
-            .header(AUTHORIZATION_HEADER, BEARER_PREFIX.to_owned() + &token)
-            .header(ACCEPT_HEADER, media_type).header(CONTENT_TYPE_HEADER, media_type);
-        if let Some(connection) = self.connection_identifier.as_ref() { request = request.header(CONNECTION_HEADER, connection); }
-        let request = request.body(body.into()).map_err(|_| Failure::InvalidInput)?;
-        let dispatch = async {
-            let response = self.session.http_client().request_fut(request)
-                .map_err(|failure| private_http_failure(failure, mutation))?.await
-                .map_err(|failure| private_http_failure(failure.into(), mutation))?;
-            if !response.status().is_success() { return Err(private_http_status_failure(response.status().as_u16(), mutation)); }
-            let mut body = response.into_body();
-            let mut received = Vec::new();
-            while let Some(frame) = body.frame().await {
-                let frame = frame.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Network })?;
-                if let Ok(bytes) = frame.into_data() {
-                    if received.len().saturating_add(bytes.len()) > MAXIMUM_FRAME_BYTES {
-                        return Err(if mutation { Failure::UnknownOutcome } else { Failure::Backpressure });
-                    }
-                    received.extend_from_slice(&bytes);
-                }
-            }
-            Ok(received)
-        };
-        tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), dispatch)
-            .await.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Deadline })?
+        execute_authenticated_request(self, &ConnectHttpRequest { method, path, body, media_type, purpose }).await
     }
 
     pub async fn register(&mut self, connection_identifier: String) -> Result<ConnectCluster, Failure> {
@@ -210,7 +185,7 @@ impl NativeConnectSession {
         let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
         self.registration_attempted = true;
         self.failure_stage = ConnectFailureStage::RegistrationHttp;
-        let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, false).await?;
+        let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Observation).await?;
         self.failure_stage = ConnectFailureStage::RegistrationProtobuf;
         let cluster = decode_cluster_snapshot(&response)?;
         self.failure_stage = ConnectFailureStage::RegistrationDevice;
@@ -230,14 +205,14 @@ impl NativeConnectSession {
         let path = COMMAND_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?
             + COMMAND_TARGET_SEPARATOR + &identifier_segment(target_device_identifier)?;
         let body = serde_json::to_vec(&body).map_err(|_| Failure::InvalidInput)?;
-        let response = self.request(Method::POST, path, body, JSON_MEDIA_TYPE, true).await?;
+        let response = self.request(Method::POST, path, body, JSON_MEDIA_TYPE, ConnectRequestPurpose::Command).await?;
         Ok(decode_command_acknowledgement(&response))
     }
 
     pub async fn close(&mut self) -> Result<(), Failure> {
         if !self.registered && !self.registration_attempted { return Ok(()); }
         let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
-        match self.request(Method::DELETE, path, Vec::new(), PROTOBUF_MEDIA_TYPE, false).await {
+        match self.request(Method::DELETE, path, Vec::new(), PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Removal).await {
             Ok(_) | Err(Failure::NotFound) => { self.registered = false; self.registration_attempted = false; Ok(()) },
             Err(failure) => Err(failure),
         }
@@ -261,7 +236,42 @@ impl ConnectSessionOperations for NativeConnectSession {
 impl ConnectMetadataOperations for NativeConnectSession {
     async fn metadata(&mut self, identifiers: Vec<String>) -> Result<Vec<ConnectTrackMetadata>, Failure> {
         let body = encode_metadata_request(&identifiers)?;
-        let response = self.request(Method::POST, METADATA_PATH.to_owned(), body, PROTOBUF_MEDIA_TYPE, false).await?;
+        let response = self.request(Method::POST, METADATA_PATH.to_owned(), body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Metadata).await?;
         decode_metadata_response(&identifiers, &response)
+    }
+}
+
+impl ConnectAuthenticatedDispatch for NativeConnectSession {
+    fn supports_rejected_token_renewal(&self) -> bool { self.session.client_id() == desktop_login5::CLIENT_IDENTIFIER }
+    async fn access_token(&mut self) -> Result<String, Failure> { NativeConnectSession::access_token(self).await }
+    fn discard_access_token(&mut self) { self.token = None; }
+    async fn dispatch_once(&mut self, request: &ConnectHttpRequest, access_token: &str) -> Result<Vec<u8>, Failure> {
+        let mutation = request.purpose.is_mutation();
+        let request_body = request.body.clone();
+        let mut request = Request::builder().method(request.method.clone()).uri(self.origin.clone() + &request.path)
+            .header(AUTHORIZATION_HEADER, BEARER_PREFIX.to_owned() + access_token)
+            .header(ACCEPT_HEADER, request.media_type).header(CONTENT_TYPE_HEADER, request.media_type);
+        if let Some(connection) = self.connection_identifier.as_ref() { request = request.header(CONNECTION_HEADER, connection); }
+        let request = request.body(request_body.into()).map_err(|_| Failure::InvalidInput)?;
+        let dispatch = async {
+            let response = self.session.http_client().request_fut(request)
+                .map_err(|failure| private_http_failure(failure, mutation))?.await
+                .map_err(|failure| private_http_failure(failure.into(), mutation))?;
+            if !response.status().is_success() { return Err(private_http_status_failure(response.status().as_u16(), mutation)); }
+            let mut body = response.into_body();
+            let mut received = Vec::new();
+            while let Some(frame) = body.frame().await {
+                let frame = frame.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Network })?;
+                if let Ok(bytes) = frame.into_data() {
+                    if received.len().saturating_add(bytes.len()) > MAXIMUM_FRAME_BYTES {
+                        return Err(if mutation { Failure::UnknownOutcome } else { Failure::Backpressure });
+                    }
+                    received.extend_from_slice(&bytes);
+                }
+            }
+            Ok(received)
+        };
+        tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), dispatch)
+            .await.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Deadline })?
     }
 }

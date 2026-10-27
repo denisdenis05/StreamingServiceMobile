@@ -204,3 +204,29 @@ Android execution tests reject unobserved/false/coerced acknowledgements and kee
 unexpected post-dispatch replies uncertain. Known native failure receipt codes
 remain intact. Live pause/resume and one duplicate-song append were confirmed by
 matching server acknowledgements; this does not prove guest permission or audio.
+
+## Rejected safe-read token recovery
+
+ConnectRequestPurpose separates observation registration and metadata reads from
+queue/playback commands and cleanup removal. A rejected HTTP 401 invalidates the
+session's cached bearer. Primary paired Desktop Login5 reads can obtain a fresh
+token and repeat that identical read once within a combined 15-second budget.
+A second rejection invalidates the new bearer and stops. Authentication failure
+before dispatch, 403, transport errors, deadlines, cancellation and rate limits
+never trigger this replay. Commands and removal never replay automatically,
+including after 401. Existing per-dispatch mutation uncertainty is preserved.
+
+The pinned upstream non-Desktop Login5 manager has a separate internal token
+cache with no public invalidation method. Its sessions therefore do not opt into
+rejected-token replay; they retain upstream expiry behavior and surface 401 for
+explicit recovery. No alternate client identity or client-token exchange is
+introduced. The paired Desktop path uses the existing uncached dedicated
+session_token exchange and remains account/device/client-bound.
+
+connect_authentication.rs has nine deterministic cases for exact-body/token
+renewal, success, repeated rejection, unsupported provider, mutation/removal
+non-replay, permanent/transient errors, initial/renewal authentication failure
+and a paused-clock total deadline. The command journal also tests a still-pending
+acknowledgement reused after completed receipts rotate its bounded recent window;
+this cannot overwrite the original pending command or confirm either request.
+These checks do not establish actual expiry behavior on a phone.

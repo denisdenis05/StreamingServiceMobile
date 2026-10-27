@@ -21,6 +21,7 @@ const PREFLIGHT_SERVER_MILLISECONDS: i64 = 2000;
 const OLDER_SERVER_MILLISECONDS: i64 = 1999;
 const EMPTY_BODY: &[u8] = b"";
 const ACKNOWLEDGEMENT_PREFIX: &str = "synthetic-capacity-acknowledgement-";
+const RECENT_ACKNOWLEDGEMENT_WINDOW: usize = 32;
 
 type Receipt = oneshot::Receiver<Result<ConnectCommandAcknowledgement, Failure>>;
 fn acknowledgement(identifier: &str) -> ConnectCommandAcknowledgement {
@@ -108,4 +109,19 @@ async fn a_cached_host_change_older_than_preflight_cannot_retire_a_current_pendi
     assert!(matches!(receipt.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
     journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), OBSERVED_NATIVE_MILLISECONDS);
     assert!(receipt.await.unwrap().unwrap().delivery_observed);
+}
+
+#[tokio::test]
+async fn a_pending_acknowledgement_cannot_be_reused_after_completed_commands_rotate_the_recent_window() {
+    let mut journal = ConnectCommandJournal::default();
+    let original = accept(&mut journal, ACKNOWLEDGEMENT, CancellationToken::new());
+    for position in FIRST_POSITION..RECENT_ACKNOWLEDGEMENT_WINDOW {
+        let identifier = ACKNOWLEDGEMENT_PREFIX.to_owned() + &position.to_string();
+        let receipt = accept(&mut journal, &identifier, CancellationToken::new());
+        journal.observe(&cluster(HOST, &identifier), OBSERVED_NATIVE_MILLISECONDS);
+        assert!(receipt.await.unwrap().unwrap().delivery_observed);
+    }
+    let replacement = accept(&mut journal, ACKNOWLEDGEMENT, CancellationToken::new());
+    assert!(matches!(original.await.unwrap(), Err(Failure::UnknownOutcome)));
+    assert!(matches!(replacement.await.unwrap(), Err(Failure::UnknownOutcome)));
 }

@@ -32,7 +32,7 @@ impl ConnectCommandJournal {
 
     pub fn accept(&mut self, acknowledgement: ConnectCommandAcknowledgement, target: String, minimum_server_at_milliseconds: i64, cancellation: CancellationToken, completion: Completion) {
         let Some(identifier) = acknowledgement.acknowledgement_identifier.clone() else { let _ = completion.send(Err(Failure::UnknownOutcome)); return; };
-        if self.recent.contains(&identifier) {
+        if self.recent.contains(&identifier) || self.pending.contains_key(&identifier) {
             if let Some(previous) = self.pending.remove(&identifier) { let _ = previous.completion.send(Err(Failure::UnknownOutcome)); }
             let _ = completion.send(Err(Failure::UnknownOutcome)); return;
         }
