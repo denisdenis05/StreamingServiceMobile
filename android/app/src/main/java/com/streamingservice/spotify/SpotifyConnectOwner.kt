@@ -76,6 +76,11 @@ class SpotifyConnectOwner(
     }
 
     @Synchronized
+    fun requireAvailable(identifier: String) {
+        if (active?.let { connection -> connection.identifier == identifier && !connection.retiring && !disposed } != true) throw SpotifyConnectFailure(CANCELED_FAILURE)
+    }
+
+    @Synchronized
     fun prepareCommand(identifier: String, requestIdentifier: String): CommandReservation {
         val connection = active?.takeIf { connection -> connection.identifier == identifier && !connection.retiring && !disposed }
             ?: throw SpotifyConnectFailure(CANCELED_FAILURE)
