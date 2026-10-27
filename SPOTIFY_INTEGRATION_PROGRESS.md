@@ -1,3 +1,28 @@
+# Application runtime APK and fresh live grant — 2026-10-27
+
+Current APK checkpoint: Mobile4231657, library1e4f009, Playerb28f393;
+35,427,788 bytes, SHA256
+5756a4efcdca57b29165eb3422ae7e42dbdc7ad9578efaf60b5d11cbefd0b92b.
+Frozen combined checks: mobile345 Node+92 Jest/full TypeScript, native162/JNI,
+Android146 release JVM cases, forced Hermes/release assembly/signing/alignment.
+Source commits, sizes and validation logs are in build/spotify-jam.
+SPOTIFY_JAM_APK.md records the exact scope. No device/audio/background claim.
+
+Fresh user pairing approved and native session is live in exec63592. The official
+same-account desktop client was launched in exec67827 and resumed for tests.
+Fresh native read/metadata, library decoding and server-confirmed pause/resume
+passed; uncertainty109.274523 ms. Only safe metrics were persisted in
+live-renewal-integration.json. Forced401 and cross-account operation were not
+exercised. Keep the grant in memory; restart child through parent if needed.
+A different account's invitation remains pending for guest verification.
+
+Next work is in progress with delegated ownership: native follower coordinator
+using real player readiness/authority, a responsive Dealer actor while HTTP is
+pending, and root-owned native membership verification/background recording
+resolution. Keep UI background following disabled until native handoff and
+unseen-track resolution are actually composed. Explicit initial hosting
+activation/incoming player commands still need integration. iOS stays deferred.
+
 # Native authentication and build watcher follow-up — 2026-10-27
 
 Mobile 9e36048 adds one bounded rejected-bearer renewal for paired Desktop safe

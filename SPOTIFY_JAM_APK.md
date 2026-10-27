@@ -1,3 +1,31 @@
+# Application runtime and native integration checkpoint — 2026-10-27
+
+Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
+35,427,788 bytes; SHA-256
+5756a4efcdca57b29165eb3422ae7e42dbdc7ad9578efaf60b5d11cbefd0b92b.
+Source: Mobile 4231657, SpotifyJam 1e4f009, Player b28f393.
+
+Includes application-owned Connect sessions with validated React reattachment,
+explicit orphan logout and credential-erasure ordering, bounded rejected-token
+read renewal, Dealer-confirmed outgoing commands and explicit shared-state
+recovery. Native player service/lease and source-clock components are compiled;
+they are awaiting the native follower/resolver integration. Native publication
+code is tested source groundwork with no app entry point or initial activation.
+App-led hosting and continuous background synchronization remain disabled.
+
+Combined frozen checks passed: 345 Node,92 Jest,162 Rust plus JNI loading,
+full mobile TypeScript and146 Android release JVM cases. Fresh Hermes generation,
+release assembly, debug signing and16 KB ZIP/native ELF alignment passed.
+Bundle2,149,032 bytes; native5,399,072 bytes. Exact source hashes, artifact checksum
+and logs are in build/spotify-jam. Library612 tests remain from its last code
+checkpoint; its later queue update changes documentation only.
+
+Fresh live paired native read/metadata and acknowledged pause/resume succeeded
+against the same-account desktop peer; read uncertainty109.274523 ms. This APK
+has not been installed by the agent. Guest permission/admission, local audio
+alignment, physical React/account lifecycle and background operation remain
+unverified. Subsequent follower/dispatcher source work is outside this artifact.
+
 # Dealer receipts and explicit recovery build — 2026-10-27
 
 Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
