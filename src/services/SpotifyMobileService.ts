@@ -81,6 +81,7 @@ export const spotifyMobile = new SpotifyMobileController({
       completeRecording();
     };
   },
+  shutdownNative: () => spotifyConnect.shutdown(),
   connectNative: (provider, accountIdentifier, cancellation) => {
     if (provider.getNativeSessionCredential) void spotifyConnect.attach(provider, accountIdentifier, cancellation).catch(() => undefined);
   },
@@ -197,7 +198,7 @@ export const spotifyPlaybackCommands = new SpotifyPlaybackCommandStore({
 const stopPlaybackOnBackground = AppState.addEventListener(PlaybackApplicationState.changeEvent,
   state => { if (state !== PlaybackApplicationState.active) void spotifyPlaybackFollower.stop().catch(() => undefined); });
 module.hot?.dispose(() => {
-  void spotifyConnect.detach().catch(() => undefined);
+  void spotifyConnect.dispose().catch(() => undefined);
   authorizationStartup.dispose();
   spotifyPlaybackCommands.dispose();
   stopPlaybackOnBackground.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);

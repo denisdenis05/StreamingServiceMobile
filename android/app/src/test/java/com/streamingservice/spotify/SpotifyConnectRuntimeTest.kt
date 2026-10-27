@@ -270,6 +270,40 @@ class SpotifyConnectRuntimeTest {
         assertEquals(TWO_COUNT, fixture.execution.starts)
     }
 
+    @Test
+    fun currentReactAttachmentCanExplicitlyShutdownRetainedOwnerBeforeItAttaches() {
+        val fixture = Fixture(); fixture.start(); fixture.runtime.detach(fixture.attachment); val replacement = fixture.replacement()
+        var completed = false; fixture.runtime.shutdown(replacement) { completed = true }
+        assertEquals(SINGLE_COUNT, fixture.execution.cancellations); assertFalse(completed)
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertTrue(completed); assertEquals(SINGLE_COUNT, fixture.polling.stops)
+    }
+    @Test
+    fun detachedReactAttachmentCannotShutdownNewAttachmentsConnection() {
+        val fixture = Fixture(); fixture.start(); val replacement = fixture.replacement(); fixture.runtime.start(replacement, OTHER_IDENTIFIER, CREDENTIAL)
+        requireFailure(CANCELED_FAILURE) { fixture.runtime.shutdown(fixture.attachment) {} }
+        assertEquals(EMPTY_COUNT, fixture.execution.cancellations)
+    }
+    @Test
+    fun currentAttachmentShutdownCancelsPendingReplacementBeforeItsNativeStart() {
+        val fixture = Fixture(); fixture.start(); val replacement = fixture.replacement()
+        fixture.protocol.requestedIdentity = IDENTITY.copy(accountIdentifier = OTHER_IDENTITY)
+        var started = false; var completed = false; val failures = mutableListOf<Throwable>()
+        fixture.runtime.startOrReplace(replacement, OTHER_IDENTIFIER, CREDENTIAL, { started = true }, { failure -> failures.add(failure) })
+        fixture.runtime.shutdown(replacement) { completed = true }; fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertFalse(started); assertTrue(completed); assertEquals(SINGLE_COUNT, fixture.execution.starts)
+        assertEquals(CANCELED_FAILURE, (failures.single() as SpotifyConnectFailure).code)
+    }
+
+    @Test
+    fun oldShutdownCompletionCannotClearBindingRestartedByAnEarlierCloseCompletion() {
+        val fixture = Fixture(); fixture.start()
+        fixture.runtime.close(fixture.attachment, IDENTIFIER) { fixture.runtime.start(fixture.attachment, OTHER_IDENTIFIER, CREDENTIAL) }
+        fixture.runtime.shutdown(fixture.attachment) {}
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertEquals(PAYLOAD, fixture.runtime.read(fixture.attachment, OTHER_IDENTIFIER, GENERATION))
+    }
+
     private enum class ReadOperation { Read, Metadata, Refresh }
     companion object {
         private const val ACCOUNT_IDENTIFIER = "synthetic-account"

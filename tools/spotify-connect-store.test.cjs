@@ -31,12 +31,12 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
-  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], metadata: [], commands: [], canceledCommands: [], membership: Fixture.zero };
-  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, command: null, reading: null, metadata: null, nowMonotonicMilliseconds: ReadFixture.sent };
+  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], metadata: [], commands: [], canceledCommands: [], shutdowns: Fixture.zero, membership: Fixture.zero };
+  const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, shutdown: null, command: null, reading: null, metadata: null, nowMonotonicMilliseconds: ReadFixture.sent };
   const provider = { getNativeSessionCredential: async () => state.credential };
   const started = deferred();
   let sequence = Fixture.zero;
-  const native = { async metadata(identifier, generation, serialized) {
+  const native = { async shutdown() { calls.shutdowns += Fixture.one; if (state.shutdown) await state.shutdown.promise; }, async metadata(identifier, generation, serialized) {
       const requested = JSON.parse(serialized); calls.metadata.push({ identifier, generation, requested });
       return JSON.stringify(state.metadata ? await state.metadata.promise : metadataResponse());
     }, async read(identifier, generation) {
@@ -370,4 +370,41 @@ test(ObserverAcknowledgementFixture.name, async () => {
   current.send({ ...registration(), verificationSource: ObserverAcknowledgementFixture.source, cluster: { devices: [] } });
   assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready);
   assert.equal(current.store.getSnapshot().deviceIdentifier, Fixture.device); await current.store.detach();
+});
+
+const ShutdownFixture = Object.freeze({ names: {
+  orphan: 'Explicit native logout closes retained application connection without a local binding',
+  barrier: 'New attachment waits for explicit application shutdown even without a prior binding',
+  stale: 'Disposed old store cannot shutdown or attach into a newer store lifetime',
+  failure: 'Native application shutdown failure remains actionable and sanitized',
+  reentrant: 'A detached observer cannot start replacement before application shutdown drains',
+  disposal: 'Ordinary store disposal never invokes application shutdown' } });
+test(ShutdownFixture.names.orphan, async () => { const current = fixture(); await current.store.shutdown();
+  assert.equal(current.calls.shutdowns, Fixture.one); assert.deepEqual(current.calls.starts, []);
+  assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Detached);
+});
+test(ShutdownFixture.names.barrier, async () => { const current = fixture(); current.state.shutdown = deferred();
+  const shutdown = current.store.shutdown(); const attaching = current.attach(); await flush();
+  assert.equal(current.calls.shutdowns, Fixture.one); assert.deepEqual(current.calls.starts, []);
+  current.state.shutdown.resolve(); await shutdown; await attaching; assert.equal(current.calls.starts.length, Fixture.one);
+  await current.store.detach();
+});
+test(ShutdownFixture.names.stale, async () => { const current = fixture(); await current.store.dispose();
+  await assert.rejects(current.store.shutdown(), { code: library.IntegrationFailureCode.Canceled });
+  await assert.rejects(current.attach(), { code: library.IntegrationFailureCode.Canceled }); assert.equal(current.calls.shutdowns, Fixture.zero);
+});
+test(ShutdownFixture.names.failure, async () => { const current = fixture(); current.state.shutdown = deferred();
+  const shutdown = current.store.shutdown(); const rejected = assert.rejects(shutdown, { code: library.IntegrationFailureCode.Network });
+  current.state.shutdown.reject(new Error(Fixture.privateFailure)); await rejected;
+});
+test(ShutdownFixture.names.reentrant, async () => { const current = fixture(); await current.attach(); current.state.shutdown = deferred();
+  let replacement = null; const stop = current.store.subscribe(() => {
+    if (current.store.getSnapshot().status === SpotifyConnectStatus.Detached && replacement === null) replacement = current.attach();
+  });
+  const shutdown = current.store.shutdown(); await flush(); assert.equal(current.calls.starts.length, Fixture.one);
+  current.state.shutdown.resolve(); await shutdown; await replacement;
+  assert.equal(current.calls.starts.length, Fixture.one + Fixture.one); stop(); await current.store.detach();
+});
+test(ShutdownFixture.names.disposal, async () => { const current = fixture(); await current.attach(); await current.store.dispose();
+  assert.equal(current.calls.shutdowns, Fixture.zero); assert.equal(current.calls.closes.length, Fixture.one);
 });

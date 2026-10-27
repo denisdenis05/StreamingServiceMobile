@@ -15,6 +15,7 @@ export interface SpotifyConnectSnapshot {
 export interface SpotifyConnectNative {
   start(identifier: string, serialized: string): Promise<number>;
   close(identifier: string): Promise<void>;
+  shutdown?(): Promise<void>;
   refresh(identifier: string, generation: number): Promise<void>;
   read(identifier: string, generation: number): Promise<string>;
   metadata(identifier: string, generation: number, serialized: string): Promise<string>;
@@ -76,6 +77,7 @@ function failureCode(failure: unknown): IntegrationFailureCode {
 
 export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyConnectObservationPort, SpotifyConnectMetadataPort {
   private snapshot = EmptySnapshot;
+  private disposed = false;
   private readonly listeners = new Set<() => void>();
   private binding: Binding | null = null;
   private cleanup: Promise<void> = Promise.resolve();
@@ -87,7 +89,7 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
   readonly subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
 
   async attach(provider: SpotifyLoginProvider, accountIdentifier: string, cancellation: AbortSignal): Promise<void> {
-    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    if (this.disposed || cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
     let requestIdentifier: string;
     let selectedAccountIdentifier: string;
     try {
@@ -265,6 +267,33 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
     this.cleanup = binding ? this.retire(binding) : this.drainRetired();
     const cleanup = this.cleanup;
     if (this.binding === null) this.publish(EmptySnapshot);
+    return cleanup;
+  }
+
+  shutdown(): Promise<void> {
+    if (this.disposed) return Promise.reject(new IntegrationFailure(IntegrationFailureCode.Canceled));
+    let native: SpotifyConnectNative | null;
+    try { native = this.binding?.native ?? this.dependencies.native(); }
+    catch (failure) { return Promise.reject(new IntegrationFailure(failureCode(failure))); }
+    const previous = this.cleanup;
+    let finishShutdown: () => void = () => undefined;
+    let failShutdown: (failure: unknown) => void = () => undefined;
+    const shutdown = new Promise<void>((resolve, reject) => { finishShutdown = resolve; failShutdown = reject; });
+    this.cleanup = Promise.all([previous.catch(() => undefined), shutdown]).then(() => undefined,
+      failure => { throw new IntegrationFailure(failureCode(failure)); });
+    const cleanup = this.detach();
+    try { void Promise.resolve(native?.shutdown?.()).then(finishShutdown, failShutdown); }
+    catch (failure) { failShutdown(failure); }
+    const completion = Promise.all([cleanup, shutdown]).then(() => undefined,
+      failure => { throw new IntegrationFailure(failureCode(failure)); });
+    if (this.cleanup === cleanup) this.cleanup = completion;
+    return completion;
+  }
+
+  dispose(): Promise<void> {
+    this.disposed = true;
+    const cleanup = this.detach();
+    this.listeners.clear();
     return cleanup;
   }
 

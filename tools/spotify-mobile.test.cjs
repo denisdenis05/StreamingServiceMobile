@@ -868,3 +868,56 @@ test(DeviceLoginFixture.names.expired, async () => { const current = fixture(); 
   assertion.equal(current.state.openedVerification.length, Fixture.noCalls);
   assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Unauthorized);
   current.controller.disconnect(); pending.resolve(await login.provider.getCredentials(new AbortController().signal)); await signingIn; current.controller.dispose(); });
+
+const NativeLogoutFixture = Object.freeze({ flushTurns: 16, names: {
+  cold: 'Cold explicit logout drains retained native account before forgetting saved credentials',
+  provider: 'Connected provider logout cannot erase its credential before native application shutdown drains',
+  account: 'Application logout before Spotify restore drains the retained native account before grant erasure',
+  disposal: 'Disposed controller cannot shutdown a newer native lifetime',
+  restore: 'Restore and ordinary disposal preserve the application native connection',
+  failure: 'Failed native logout preserves saved grants and reports its safe failure',
+  rapid: 'Rapid logout and login wait for native drain and old grant erasure before creating login' } });
+async function drainNativeLogout() { for (let turn = Fixture.noCalls; turn < NativeLogoutFixture.flushTurns; turn += Fixture.sequenceIncrement) await Promise.resolve(); }
+test(NativeLogoutFixture.names.cold, async () => { const shutdown = deferred(); let shutdowns = Fixture.noCalls;
+  const current = fixture({ shutdownNative: () => { shutdowns += Fixture.sequenceIncrement; return shutdown.promise; } });
+  current.controller.disconnect(); assertion.equal(shutdowns, Fixture.singleCall); assertion.deepEqual(current.state.forgottenAccounts, []);
+  assertion.equal(current.controller.getSnapshot().operation, SpotifyMobileOperation.Disconnecting);
+  shutdown.resolve(); await drainNativeLogout(); assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]);
+  assertion.equal(current.controller.getSnapshot().operation, SpotifyMobileOperation.Idle); current.controller.dispose();
+});
+test(NativeLogoutFixture.names.disposal, async () => { let shutdowns = Fixture.noCalls;
+  const current = fixture({ shutdownNative: async () => { shutdowns += Fixture.sequenceIncrement; } });
+  current.controller.dispose(); current.controller.disconnect(); assertion.equal(shutdowns, Fixture.noCalls);
+});
+test(NativeLogoutFixture.names.restore, async () => { let shutdowns = Fixture.noCalls;
+  const current = fixture({ shutdownNative: async () => { shutdowns += Fixture.sequenceIncrement; } });
+  const login = librespotLogin(); current.state.restores = async () => login.provider;
+  await current.controller.restore(); current.controller.dispose(); assertion.equal(shutdowns, Fixture.noCalls);
+});
+test(NativeLogoutFixture.names.failure, async () => { const current = fixture({ shutdownNative: async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.Network); } });
+  current.controller.disconnect(); await drainNativeLogout(); assertion.deepEqual(current.state.forgottenAccounts, []);
+  assertion.equal(current.controller.getSnapshot().failure, library.IntegrationFailureCode.Network); current.controller.dispose();
+});
+test(NativeLogoutFixture.names.rapid, async () => { const shutdown = deferred(); const forgetting = deferred(); let created = Fixture.noCalls;
+  const current = fixture({ shutdownNative: () => shutdown.promise });
+  current.state.forgetFailure = forgetting.promise; const login = librespotLogin();
+  current.state.librespotLogin = () => { created += Fixture.sequenceIncrement; return login.provider; };
+  current.controller.disconnect(); const signingIn = current.controller.loginWithLibrespot(librespotInput());
+  await drainNativeLogout(); assertion.equal(created, Fixture.noCalls); shutdown.resolve(); await drainNativeLogout();
+  assertion.equal(created, Fixture.noCalls); assertion.ok(current.state.forgottenAccounts.length > Fixture.noCalls);
+  forgetting.resolve(); await signingIn; assertion.equal(created, Fixture.singleCall);
+  assertion.equal(current.controller.getSnapshot().connected, true); current.controller.dispose();
+});
+
+test(NativeLogoutFixture.names.account, async () => { const shutdown = deferred(); let shutdowns = Fixture.noCalls;
+  const current = fixture({ shutdownNative: () => { shutdowns += Fixture.sequenceIncrement; return shutdown.promise; } });
+  current.changeAccount({ accountIdentifier: null, isLoggedIn: false });
+  assertion.equal(shutdowns, Fixture.singleCall); assertion.deepEqual(current.state.forgottenAccounts, []);
+  shutdown.resolve(); await drainNativeLogout(); assertion.deepEqual(current.state.forgottenAccounts, [Fixture.applicationAccount]); current.controller.dispose();
+});
+
+test(NativeLogoutFixture.names.provider, async () => { const shutdown = deferred(); const login = librespotLogin();
+  const current = fixture({ shutdownNative: () => shutdown.promise }); current.state.restores = async () => login.provider;
+  await current.controller.restore(); current.controller.disconnect(); assertion.equal(login.calls.logout, Fixture.noCalls);
+  shutdown.resolve(); await drainNativeLogout(); assertion.equal(login.calls.logout, Fixture.singleCall); current.controller.dispose();
+});

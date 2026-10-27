@@ -91,6 +91,11 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
     }
 
     @ReactMethod
+    fun shutdown(promise: Promise) {
+        dispatch(promise, lifecycle) { runtime.shutdown(attachment) { promise.resolve(null) } }
+    }
+
+    @ReactMethod
     fun addListener(eventName: String) {}
 
     @ReactMethod

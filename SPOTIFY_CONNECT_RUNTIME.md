@@ -83,3 +83,58 @@ packaging; it verifies the final Kotlin implementation. Fresh release bundle,
 APK packaging, actual React recreation, account switching, screen lock and local
 audio playback still require separate checks. No physical-device lifecycle or
 background audio result is claimed by these JVM tests.
+
+# Explicit orphan logout — 2026-10-27
+
+The native bridge now exposes `shutdown()` for the current React attachment.
+It closes the retained application connection even when the new JavaScript
+store has not attached. A revoked React attachment cannot invoke this shutdown.
+Pending account replacement is canceled, native final drain remains mandatory,
+and old close/shutdown completions cannot clear a newer native lifetime.
+
+`SpotifyConnectStore.shutdown()` establishes its cleanup barrier before
+publishing Detached, then invokes native shutdown. A new or reentrant attachment
+waits for that barrier. Cleanup failures reject with sanitized integration codes.
+The native method is optional in the TypeScript interface for existing adapters;
+the packaged Android module supplies it. Unsupported platforms retain their
+existing credential-only cleanup behavior.
+
+The controller's explicit logout path, including application logout before
+Spotify restoration, starts native shutdown before provider logout or saved
+grant erasure. Those removals wait for native cleanup. A new login/restore also
+waits for the complete native retirement and credential cleanup, so rapid logout
+and login cannot persist a new grant ahead of old cleanup. Shutdown failure
+preserves the saved grant and reports its failure. Replacement application
+account observer ordering and failure isolation retain their existing tests.
+
+Service composition wires the explicit shutdown hook. Ordinary detach, restore,
+resume and controller/store disposal do not invoke application shutdown. HMR
+retires the old store with `dispose()`; disposed controllers and stores cannot
+invoke shutdown into a newer lifetime. Store disposal clears its subscribers.
+The existing background AppState follower stop remains in place.
+
+Dedicated new cases cover cold orphan shutdown, revoked React shutdown, pending
+replacement cancellation, stale cleanup callbacks, shutdown failure, old store
+and controller disposal, reentrant attachment, provider erasure order, cold
+application logout, and rapid logout/login. They are in the same runtime/store/
+controller/platform test files mapped above.
+
+Validation:
+
+```text
+cd StreamingServiceMobile
+npx tsc --project tsconfig.spotify.json
+node --test tools/spotify-connect-store.test.cjs tools/spotify-mobile.test.cjs
+npx jest --runInBand --watchman=false --runTestsByPath tools/spotify-connect-platform.test.ts
+cd android
+./gradlew :app:testDebugUnitTest --tests '*SpotifyConnect*' -x :app:buildSpotifyLibrespot --console=plain
+```
+
+Strict TypeScript compilation, 158 deterministic store/controller cases, four
+platform cases and 84 Android Connect JVM cases passed. The final JVM total is
+28 runtime, 18 runtime protocol, 16 owner, 12 native execution and 10 observation
+decoder cases; the observation decoder belongs to the concurrent native follower
+chapter.
+`git diff --check` passed. Fresh release packaging and physical React recreation/
+logout/background audio checks remain separate; no device playback or Android
+process survival result is inferred from this lifecycle work.

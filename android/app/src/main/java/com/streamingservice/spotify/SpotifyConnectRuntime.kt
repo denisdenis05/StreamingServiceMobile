@@ -67,16 +67,18 @@ class SpotifyConnectRuntime(
             return
         }
         val pending = PendingStart(selected)
+        val retiringLifetime = connectionLifetime
         pendingStart = pending
         selected.identifier = identifier
         try {
             owner.close(NATIVE_OWNER_IDENTIFIER) {
                 pendingStart = null
-                identity = null
-                bootstrap = null
-                handle = null
-                connectionLifetime = null
                 try {
+                    if (connectionLifetime !== retiringLifetime) throw SpotifyConnectFailure(CANCELED_FAILURE)
+                    identity = null
+                    bootstrap = null
+                    handle = null
+                    connectionLifetime = null
                     if (pending.canceled) throw SpotifyConnectFailure(CANCELED_FAILURE)
                     requireBinding(selected, identifier)
                     started(start(selected, identifier, serialized))
@@ -161,8 +163,20 @@ class SpotifyConnectRuntime(
         requireAttachment(selected)
         if (selected.identifier != identifier) { completed(); return }
         pendingStart?.takeIf { pending -> pending.attachment === selected }?.canceled = true
+        val retiringLifetime = connectionLifetime
         owner.close(NATIVE_OWNER_IDENTIFIER) {
-            if (attachment === selected && selected.identifier == identifier) selected.identifier = null
+            if (attachment === selected && connectionLifetime === retiringLifetime && selected.identifier == identifier) selected.identifier = null
+            completed()
+        }
+    }
+
+    @Synchronized
+    fun shutdown(selected: Attachment, completed: () -> Unit) {
+        requireAttachment(selected)
+        pendingStart?.canceled = true
+        val retiringLifetime = connectionLifetime
+        owner.close(NATIVE_OWNER_IDENTIFIER) {
+            if (attachment === selected && connectionLifetime === retiringLifetime) selected.identifier = null
             completed()
         }
     }
