@@ -125,3 +125,82 @@ async fn a_pending_acknowledgement_cannot_be_reused_after_completed_commands_rot
     assert!(matches!(original.await.unwrap(), Err(Failure::UnknownOutcome)));
     assert!(matches!(replacement.await.unwrap(), Err(Failure::UnknownOutcome)));
 }
+
+const NATIVE_CLOCK_TICK_MILLISECONDS: u64 = 1;
+const OVERFLOW_OBSERVATION_COUNT: usize = 1;
+const BEFORE_DISPATCH_NATIVE_MILLISECONDS: u64 = OBSERVED_NATIVE_MILLISECONDS - NATIVE_CLOCK_TICK_MILLISECONDS;
+
+fn dispatched(journal: &mut ConnectCommandJournal, cancellation: CancellationToken) -> Receipt {
+    let (completion, receipt) = oneshot::channel();
+    journal.accept_dispatched(acknowledgement(ACKNOWLEDGEMENT), cancellation, completion); receipt
+}
+
+#[tokio::test]
+async fn an_exact_early_dealer_acknowledgement_waits_for_the_http_receipt_before_confirming_delivery() {
+    let mut journal = ConnectCommandJournal::default();
+    journal.begin_dispatch(HOST.to_owned(), INITIAL_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+    journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), OBSERVED_NATIVE_MILLISECONDS);
+    let receipt = dispatched(&mut journal, CancellationToken::new()).await.unwrap().unwrap();
+    assert!(receipt.delivery_observed); assert_eq!(receipt.observed_queue_revision.as_deref(), Some(REVISION));
+}
+
+#[tokio::test]
+async fn pre_dispatch_acknowledgements_cannot_be_reused_as_new_delivery_proof() {
+    let mut journal = ConnectCommandJournal::default();
+    journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), BEFORE_DISPATCH_NATIVE_MILLISECONDS);
+    journal.begin_dispatch(HOST.to_owned(), INITIAL_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+    journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), OBSERVED_NATIVE_MILLISECONDS);
+    assert!(matches!(dispatched(&mut journal, CancellationToken::new()).await.unwrap(), Err(Failure::UnknownOutcome)));
+}
+
+#[tokio::test]
+async fn early_clusters_from_before_the_dispatch_clock_or_preflight_server_anchor_do_not_confirm_delivery() {
+    for before_native in [false, true] {
+        let mut journal = ConnectCommandJournal::default();
+        journal.begin_dispatch(HOST.to_owned(), PREFLIGHT_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+        let mut early = cluster(HOST, ACKNOWLEDGEMENT);
+        early.server_at_milliseconds = if before_native { PREFLIGHT_SERVER_MILLISECONDS } else { OLDER_SERVER_MILLISECONDS };
+        journal.observe(&early, if before_native { BEFORE_DISPATCH_NATIVE_MILLISECONDS } else { OBSERVED_NATIVE_MILLISECONDS });
+        let mut receipt = dispatched(&mut journal, CancellationToken::new());
+        assert!(matches!(receipt.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+        journal.observe(&early, OBSERVED_NATIVE_MILLISECONDS);
+        assert!(receipt.await.unwrap().unwrap().delivery_observed);
+    }
+}
+
+#[tokio::test]
+async fn early_host_replacement_and_conflicting_revision_proofs_preserve_uncertainty() {
+    for changed_host in [false, true] {
+        let mut journal = ConnectCommandJournal::default();
+        journal.begin_dispatch(HOST.to_owned(), INITIAL_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+        journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), OBSERVED_NATIVE_MILLISECONDS);
+        let mut changed = cluster(if changed_host { OTHER_HOST } else { HOST }, ACKNOWLEDGEMENT);
+        if !changed_host { changed.playback.as_mut().unwrap().queue_revision = OTHER_ACKNOWLEDGEMENT.to_owned(); }
+        journal.observe(&changed, OBSERVED_NATIVE_MILLISECONDS);
+        assert!(matches!(dispatched(&mut journal, CancellationToken::new()).await.unwrap(), Err(Failure::UnknownOutcome)));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn confirmation_deadline_includes_the_http_wait_instead_of_starting_when_its_receipt_arrives() {
+    let mut journal = ConnectCommandJournal::default();
+    journal.begin_dispatch(HOST.to_owned(), INITIAL_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+    journal.observe(&cluster(HOST, ACKNOWLEDGEMENT), OBSERVED_NATIVE_MILLISECONDS);
+    tokio::time::advance(std::time::Duration::from_secs(COMMAND_CONFIRMATION_TIMEOUT_SECONDS)).await;
+    assert!(matches!(dispatched(&mut journal, CancellationToken::new()).await.unwrap(), Err(Failure::UnknownOutcome)));
+}
+
+#[tokio::test]
+async fn bounded_early_observation_history_and_cancellation_never_fabricate_delivery() {
+    for overflow in [false, true] {
+        let mut journal = ConnectCommandJournal::default();
+        journal.begin_dispatch(HOST.to_owned(), INITIAL_SERVER_MILLISECONDS, OBSERVED_NATIVE_MILLISECONDS).unwrap();
+        let cancellation = CancellationToken::new();
+        if overflow {
+            for position in FIRST_POSITION..RECENT_ACKNOWLEDGEMENT_WINDOW + OVERFLOW_OBSERVATION_COUNT {
+                journal.observe(&cluster(HOST, &(ACKNOWLEDGEMENT_PREFIX.to_owned() + &position.to_string())), OBSERVED_NATIVE_MILLISECONDS);
+            }
+        } else { cancellation.cancel(); }
+        assert!(matches!(dispatched(&mut journal, cancellation).await.unwrap(), Err(Failure::UnknownOutcome)));
+    }
+}

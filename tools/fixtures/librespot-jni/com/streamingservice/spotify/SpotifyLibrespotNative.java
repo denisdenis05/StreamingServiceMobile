@@ -30,6 +30,7 @@ public final class SpotifyLibrespotNative {
     public native String connectStart(String serialized);
     public native String connectMetadata(long connectionHandle, long generation, String serialized);
     public native String connectRead(long connectionHandle, long generation);
+    public native String connectMembership(long connectionHandle, long generation);
     public native String connectPoll(long connectionHandle);
     public native String connectExecute(long connectionHandle, String serialized);
     public native String connectBeginCommand(long connectionHandle, String requestIdentifier);
@@ -77,6 +78,8 @@ public final class SpotifyLibrespotNative {
         requireEqual(INVALID_INPUT_RESULT, implementation.connectBeginCommand(INVALID_CONNECTION_HANDLE, FIRST_REQUEST));
         requireEqual(CANCELED_RESULT, implementation.connectRead(ABSENT_CONNECTION_HANDLE, ABSENT_CONNECTION_HANDLE));
         requireEqual(INVALID_INPUT_RESULT, implementation.connectRead(ABSENT_CONNECTION_HANDLE, INVALID_CONNECTION_HANDLE));
+        requireEqual(CANCELED_RESULT, implementation.connectMembership(ABSENT_CONNECTION_HANDLE, ABSENT_CONNECTION_HANDLE));
+        requireEqual(INVALID_INPUT_RESULT, implementation.connectMembership(ABSENT_CONNECTION_HANDLE, INVALID_CONNECTION_HANDLE));
         requireEqual(INVALID_INPUT_RESULT, implementation.connectMetadata(ABSENT_CONNECTION_HANDLE, ABSENT_CONNECTION_HANDLE, INVALID_RECORD));
         requireEqual(CANCELED_RESULT, implementation.connectMetadata(ABSENT_CONNECTION_HANDLE, ABSENT_CONNECTION_HANDLE, METADATA_IDENTIFIERS));
         System.out.println(SUCCESS_MESSAGE);

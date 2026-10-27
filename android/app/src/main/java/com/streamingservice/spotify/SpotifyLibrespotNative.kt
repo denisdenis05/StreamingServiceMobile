@@ -13,6 +13,7 @@ internal object SpotifyLibrespotNative : SpotifyLibrespotExecution {
     external fun connectStart(serialized: String): String
     external fun connectMetadata(connectionHandle: Long, generation: Long, serialized: String): String
     external fun connectRead(connectionHandle: Long, generation: Long): String
+    external fun connectMembership(connectionHandle: Long, generation: Long): String
     external fun connectPoll(connectionHandle: Long): String
     external fun connectExecute(connectionHandle: Long, serialized: String): String
     external fun connectBeginCommand(connectionHandle: Long, requestIdentifier: String): String

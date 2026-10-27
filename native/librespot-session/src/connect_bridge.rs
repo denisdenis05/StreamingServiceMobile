@@ -4,7 +4,7 @@ use jni::{objects::{JObject, JString}, sys::{jlong, jstring}, JNIEnv};
 use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
 
-use crate::{connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
+use crate::{connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
     connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
@@ -38,6 +38,19 @@ struct ConnectStarted { handle: u64 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ConnectReadReceipt { handle: u64, generation: u64, sampled_native_monotonic_milliseconds: u64, reading: ConnectReading }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectMembershipReceipt { handle: u64, generation: u64, reading: ConnectMembershipReading }
+
+async fn membership(handle: u64, generation: u64) -> Result<ConnectMembershipReceipt, Failure> {
+    if generation < MINIMUM_HANDLE as u64 || generation > MAXIMUM_SAFE_JAVASCRIPT_INTEGER { return Err(Failure::InvalidInput); }
+    let (result, response) = oneshot::channel();
+    connections().actions(handle)?.try_send(ConnectAction::Membership { generation, result }).map_err(|_| Failure::Backpressure)?;
+    let reading = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+        .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
+    Ok(ConnectMembershipReceipt { handle, generation, reading })
+}
 
 async fn read(handle: u64, generation: u64) -> Result<ConnectReadReceipt, Failure> {
     if generation < MINIMUM_HANDLE as u64 || generation > MAXIMUM_SAFE_JAVASCRIPT_INTEGER { return Err(Failure::InvalidInput); }
@@ -219,6 +232,12 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
 pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectRead(
     mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong) -> jstring {
     boundary(&mut environment, |_| runtime()?.block_on(read(handle(connection_handle)?, handle(generation)?)))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectMembership(
+    mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong) -> jstring {
+    boundary(&mut environment, |_| runtime()?.block_on(membership(handle(connection_handle)?, handle(generation)?)))
 }
 
 #[no_mangle]

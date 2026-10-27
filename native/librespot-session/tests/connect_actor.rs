@@ -37,7 +37,7 @@ const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
-struct Calls { connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
+struct Calls { membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
@@ -50,7 +50,10 @@ fn cluster() -> ConnectCluster { decode_cluster_snapshot(&Cluster::new().write_t
 
 impl ConnectMetadataOperations for FakeSession {
     async fn metadata(&mut self, identifiers: Vec<String>) -> Result<Vec<ConnectTrackMetadata>, Failure> {
-        self.calls.lock().unwrap().metadata_requests.push(identifiers); Err(Failure::Unsupported)
+        self.calls.lock().unwrap().metadata_requests.push(identifiers);
+        if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
+        Err(Failure::Unsupported)
     }
 }
 
@@ -58,6 +61,10 @@ impl ConnectSessionOperations for FakeSession {
     fn device_identifier(&self) -> &str { DEVICE }
     fn account_identifier(&self) -> String { ACCOUNT.to_owned() }
     fn playback_session_identifier(&self) -> Option<&str> { Some(publication::SESSION) }
+    async fn current_membership(&mut self) -> Result<Option<streaming_spotify_session::connect_membership::ConnectJamMembership>, Failure> {
+        self.calls.lock().unwrap().membership_requests += ONE_CALL;
+        Ok(None)
+    }
     async fn register(&mut self, connection_identifier: String) -> Result<ConnectCluster, Failure> {
         self.calls.lock().unwrap().connections.push(connection_identifier);
         if let Some(failure) = self.registration_failure.take() { Err(failure) } else { Ok(cluster()) }
@@ -567,4 +574,129 @@ async fn foreign_publication_sessions_never_dispatch_even_when_device_and_genera
     harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: CancellationToken::new(), result }).await.unwrap();
     assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
     assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
+}
+
+const RESPONSIVENESS_TIMEOUT_MILLISECONDS: u64 = 100;
+
+#[tokio::test(start_paused = true)]
+async fn dealer_commands_and_their_replies_progress_while_a_passive_http_read_is_stalled() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, mut reading) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    harness.inbound(PAUSE).await;
+    let event = tokio::time::timeout(std::time::Duration::from_millis(RESPONSIVENESS_TIMEOUT_MILLISECONDS), harness.events.recv()).await.unwrap().unwrap();
+    assert!(matches!(event.data, ConnectEventData::Command { .. }));
+    tokio::time::timeout(std::time::Duration::from_millis(RESPONSIVENESS_TIMEOUT_MILLISECONDS), harness.acknowledge(true)).await.unwrap().unwrap();
+    assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], true);
+    assert!(matches!(reading.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+    release.send(()).unwrap(); reading.await.unwrap().unwrap(); harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_busy_http_worker_rejects_new_reads_metadata_and_mutations_before_dispatch() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    let (result, metadata) = oneshot::channel();
+    harness.actions.send(ConnectAction::Metadata { generation: GENERATION, identifiers: vec![METADATA_TRACK_IDENTIFIER.to_owned()], result }).await.unwrap();
+    assert!(matches!(metadata.await.unwrap(), Err(Failure::Backpressure)));
+    let (result, command) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(), target_device_identifier: TARGET.to_owned(),
+        command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(command.await.unwrap(), Err(Failure::Backpressure)));
+    let (result, stale) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: STALE_GENERATION, result }).await.unwrap();
+    assert!(matches!(stale.await.unwrap(), Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().metadata_requests.is_empty()); assert!(harness.calls.lock().unwrap().commands.is_empty());
+    release.send(()).unwrap(); reading.await.unwrap().unwrap(); harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn pending_incoming_commands_expire_while_http_waits_instead_of_accepting_a_late_player_action() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    harness.inbound(PAUSE).await; harness.events.recv().await.unwrap();
+    tokio::time::advance(std::time::Duration::from_secs(EXPIRATION_SECONDS)).await;
+    assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], false);
+    assert!(matches!(harness.acknowledge(true).await, Err(Failure::InvalidInput)));
+    release.send(()).unwrap(); reading.await.unwrap().unwrap(); harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_early_dealer_ack_is_processed_during_the_mutation_but_success_waits_for_its_matching_http_receipt() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_gates(None, None, None, Some(gate), Some(started)); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let (result, mut command) = oneshot::channel();
+    harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(), target_device_identifier: TARGET.to_owned(),
+        command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.events.recv().await.unwrap(); observing.await.unwrap();
+    let mut matching = playable_cluster(TARGET); matching.acknowledgement_identifier = Some(SERVER_ACKNOWLEDGEMENT.to_owned());
+    harness.incoming.send(DealerInput::Cluster(matching)).await.unwrap();
+    let event = tokio::time::timeout(std::time::Duration::from_millis(RESPONSIVENESS_TIMEOUT_MILLISECONDS), harness.events.recv()).await.unwrap().unwrap();
+    assert!(matches!(event.data, ConnectEventData::Cluster { .. }));
+    assert!(matches!(command.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
+    harness.inbound(PAUSE).await; harness.events.recv().await.unwrap(); harness.acknowledge(false).await.unwrap();
+    release.send(()).unwrap(); assert!(command.await.unwrap().unwrap().delivery_observed);
+    assert_eq!(harness.calls.lock().unwrap().commands.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn connection_shutdown_cancels_a_stalled_http_worker_and_completes_passive_receipts() {
+    let (_release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    harness.cancellation.cancel();
+    assert!(matches!(reading.await.unwrap(), Err(Failure::Canceled)));
+    harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn private_metadata_waiting_does_not_block_dealer_commands_or_their_explicit_replies() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, metadata) = oneshot::channel();
+    harness.actions.send(ConnectAction::Metadata { generation: GENERATION, identifiers: vec![METADATA_TRACK_IDENTIFIER.to_owned()], result }).await.unwrap(); observing.await.unwrap();
+    harness.inbound(PAUSE).await;
+    let event = tokio::time::timeout(std::time::Duration::from_millis(RESPONSIVENESS_TIMEOUT_MILLISECONDS), harness.events.recv()).await.unwrap().unwrap();
+    assert!(matches!(event.data, ConnectEventData::Command { .. }));
+    harness.acknowledge(true).await.unwrap();
+    assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], true);
+    release.send(()).unwrap(); assert!(matches!(metadata.await.unwrap(), Err(Failure::Unsupported))); harness.stop().await;
+}
+
+#[tokio::test]
+async fn native_membership_reads_return_the_authenticated_account_even_when_no_jam_exists() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, membership) = oneshot::channel();
+    harness.actions.send(ConnectAction::Membership { generation: GENERATION, result }).await.unwrap();
+    let reading = membership.await.unwrap().unwrap();
+    assert_eq!(reading.account_identifier, ACCOUNT); assert!(reading.membership.is_none());
+    let (result, stale) = oneshot::channel();
+    harness.actions.send(ConnectAction::Membership { generation: STALE_GENERATION, result }).await.unwrap();
+    assert!(matches!(stale.await.unwrap(), Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().membership_requests, ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn stalled_local_state_publication_keeps_incoming_controls_and_host_retirement_responsive() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_publication(None, None, None, None, None, Some(gate), Some(started)); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    let (result, published) = oneshot::channel();
+    harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: CancellationToken::new(), result }).await.unwrap();
+    observing.await.unwrap(); harness.inbound(PAUSE).await;
+    let event = tokio::time::timeout(std::time::Duration::from_millis(RESPONSIVENESS_TIMEOUT_MILLISECONDS), harness.events.recv()).await.unwrap().unwrap();
+    assert!(matches!(event.data, ConnectEventData::Command { .. }));
+    harness.acknowledge(true).await.unwrap(); assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], true);
+    observe_publication_host(&mut harness, OTHER_TARGET).await;
+    release.send(()).unwrap(); published.await.unwrap().unwrap();
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]); harness.stop().await;
 }

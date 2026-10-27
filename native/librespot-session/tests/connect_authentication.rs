@@ -68,7 +68,7 @@ async fn successful_reads_use_the_current_token_without_renewal_or_duplicate_dis
 
 #[tokio::test]
 async fn unauthorized_observation_and_metadata_reads_renew_once_and_preserve_the_exact_request() {
-    for purpose in [ConnectRequestPurpose::Observation, ConnectRequestPurpose::Metadata] {
+    for purpose in [ConnectRequestPurpose::Observation, ConnectRequestPurpose::Metadata, ConnectRequestPurpose::Membership] {
         let mut dispatch = Dispatch::new(vec![Err(Failure::Unauthorized), success()]);
         assert_eq!(execute_authenticated_request(&mut dispatch, &request(purpose)).await, success());
         assert_eq!(dispatch.access_token_calls, TWO_CALLS); assert_eq!(dispatch.discarded_tokens, SINGLE_CALL);

@@ -297,3 +297,13 @@ its bounded HTTP request can outlast an incoming command acknowledgement
 window. Responsive command dispatch and durable execution correlation across
 reconnect are required before enabling host readiness. Codec and actor tests do
 not prove Spotify acceptance, guest audio, app hosting or background playback.
+
+## Responsive worker and current membership checkpoint
+
+SPOTIFY_NATIVE_DISPATCHER.md in the mobile repository records the joined one-slot
+HTTP worker, responsive Dealer actor, bounded early acknowledgement correlation
+and actual account-bound current-membership reader. HTTP work no longer blocks
+incoming command replies/expiry. Concurrent HTTP operations receive predispatch
+Backpressure; mutation retries are still forbidden. Playback-ready registration
+and initial host activation remain guarded. Full native184/JNI and example8
+checks pass; no device/background/guest completion is claimed.

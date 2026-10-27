@@ -27,6 +27,7 @@ const LINE_SEPARATOR: &[u8] = b"\n";
 #[serde(tag = "operation", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum ProbeRequest {
     Read {},
+    Membership {},
     Metadata { identifiers: Vec<String> },
     Command { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand },
 }
@@ -50,7 +51,7 @@ pub fn decode_request(bytes: &[u8]) -> Result<ProbeRequest, Failure> {
     if bytes.len() > MAXIMUM_INPUT_BYTES { return Err(Failure::InvalidInput); }
     let request: ProbeRequest = serde_json::from_slice(bytes).map_err(|_| Failure::InvalidInput)?;
     match &request {
-        ProbeRequest::Read {} => (),
+        ProbeRequest::Read {} | ProbeRequest::Membership {} => (),
         ProbeRequest::Metadata { identifiers } => { encode_metadata_request(identifiers)?; },
         ProbeRequest::Command { generation, request_identifier, target_device_identifier, command } => {
             if *generation < MINIMUM_GENERATION || *generation > MAXIMUM_GENERATION { return Err(Failure::InvalidInput); }
@@ -84,6 +85,13 @@ async fn execute(request: ProbeRequest, actions: &mpsc::Sender<ConnectAction>, g
             let reading = response.await.map_err(|_| Failure::Canceled)??;
             Ok(serde_json::json!({ (HANDLE_FIELD): PROBE_HANDLE, (GENERATION_FIELD): generation,
                 (SAMPLED_NATIVE_FIELD): native_monotonic_milliseconds(), (READING_FIELD): reading }))
+        },
+        ProbeRequest::Membership {} => {
+            let generation = generation.load(Ordering::Acquire);
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Membership { generation, result }).map_err(|_| Failure::Backpressure)?;
+            let reading = response.await.map_err(|_| Failure::Canceled)??;
+            Ok(serde_json::json!({ (HANDLE_FIELD): PROBE_HANDLE, (GENERATION_FIELD): generation, (READING_FIELD): reading }))
         },
         ProbeRequest::Metadata { identifiers } => {
             let generation = generation.load(Ordering::Acquire);
@@ -155,6 +163,7 @@ mod tests {
     const ACCESS_PERMISSIONS_MASK: u32 = 0o777;
     use streaming_spotify_session::{connect_transport::ConnectReading, connect_wire::normalize_cluster};
     const READ_REQUEST: &[u8] = br#"{"operation":"read"}"#;
+    const MEMBERSHIP_REQUEST: &[u8] = br#"{"operation":"membership"}"#;
     const COMMAND_REQUEST: &[u8] = br#"{"operation":"command","generation":1,"requestIdentifier":"socket-command","targetDeviceIdentifier":"socket-host","command":{"kind":"pause"}}"#;
     const UNKNOWN_REQUEST: &[u8] = br#"{"operation":"read","storedCredential":"synthetic-private-value"}"#;
     const MALFORMED_METADATA_REQUEST: &[u8] = br#"{"operation":"metadata","identifiers":["invalid"]}"#;
@@ -173,9 +182,37 @@ mod tests {
     fn path(suffix: &str) -> PathBuf { std::env::temp_dir().join(PATH_PREFIX.to_owned() + &std::process::id().to_string() + suffix) }
     fn generation() -> Arc<AtomicU64> { Arc::new(AtomicU64::new(MINIMUM_GENERATION)) }
 
+    const TEST_ACCOUNT: &str = "synthetic-probe-account";
+    const ACCOUNT_FIELD: &str = "accountIdentifier";
+    const MEMBERSHIP_FIELD: &str = "membership";
+
+    #[tokio::test]
+    async fn membership_channel_preserves_the_authenticated_account_and_absence_without_returning_credentials() {
+        let (actions, mut requested) = mpsc::channel(TEST_CHANNEL_CAPACITY);
+        let generation = generation();
+        let cancellation = CancellationToken::new();
+        let reading = execute(ProbeRequest::Membership {}, &actions, &generation, &cancellation);
+        let provider = async {
+            match requested.recv().await.unwrap() {
+                ConnectAction::Membership { generation, result } => {
+                    assert_eq!(generation, MINIMUM_GENERATION);
+                    let _ = result.send(Ok(streaming_spotify_session::connect_membership::ConnectMembershipReading {
+                        account_identifier: TEST_ACCOUNT.to_owned(), membership: None }));
+                },
+                _ => panic!("{}", UNEXPECTED_ACTION),
+            }
+        };
+        let (reading, _) = tokio::join!(reading, provider);
+        let reading = reading.unwrap();
+        assert_eq!(reading[HANDLE_FIELD], PROBE_HANDLE);
+        assert_eq!(reading[READING_FIELD][ACCOUNT_FIELD], TEST_ACCOUNT);
+        assert!(reading[READING_FIELD][MEMBERSHIP_FIELD].is_null());
+    }
+
     #[test]
     fn requests_accept_only_bounded_typed_reads_metadata_and_checked_commands_without_credentials() {
         assert!(matches!(decode_request(READ_REQUEST), Ok(ProbeRequest::Read {})));
+        assert!(matches!(decode_request(MEMBERSHIP_REQUEST), Ok(ProbeRequest::Membership {})));
         assert!(matches!(decode_request(COMMAND_REQUEST), Ok(ProbeRequest::Command { .. })));
         for bytes in [UNKNOWN_REQUEST, MALFORMED_METADATA_REQUEST, PRIVATE_VALUE] { assert!(decode_request(bytes).is_err()); }
         assert!(decode_request(&vec![EMPTY_BYTE; MAXIMUM_INPUT_BYTES + INPUT_BOUNDARY_INCREMENT]).is_err());

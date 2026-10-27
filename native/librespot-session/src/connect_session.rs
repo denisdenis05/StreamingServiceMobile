@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -88,6 +88,7 @@ pub trait ConnectSessionOperations: Send {
     fn playback_session_identifier(&self) -> Option<&str> { None }
     fn register(&mut self, connection_identifier: String) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send;
+    fn current_membership(&mut self) -> impl Future<Output = Result<Option<ConnectJamMembership>, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn publish(&mut self, _snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send;
 }
@@ -204,6 +205,15 @@ impl NativeConnectSession {
         self.register(connection).await
     }
 
+    pub async fn current_membership(&mut self) -> Result<Option<ConnectJamMembership>, Failure> {
+        if !self.registered { return Err(Failure::InvalidInput); }
+        match self.request(Method::GET, CURRENT_MEMBERSHIP_PATH.to_owned(), Vec::new(), JSON_MEDIA_TYPE, ConnectRequestPurpose::Membership).await {
+            Ok(response) => decode_current_membership(&response).map(Some),
+            Err(Failure::NotFound) => Ok(None),
+            Err(failure) => Err(failure),
+        }
+    }
+
     pub async fn publish(&mut self, snapshot: ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
         if !self.registered { return Err(Failure::Canceled); }
         let publication_timestamp_milliseconds = publication_server_timestamp(&snapshot, crate::connect_transport::native_monotonic_milliseconds())?;
@@ -244,6 +254,7 @@ impl ConnectSessionOperations for NativeConnectSession {
         NativeConnectSession::register(self, connection_identifier)
     }
     fn refresh(&mut self) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::refresh(self) }
+    fn current_membership(&mut self) -> impl Future<Output = Result<Option<ConnectJamMembership>, Failure>> + Send { NativeConnectSession::current_membership(self) }
     fn publish(&mut self, snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::publish(self, snapshot) }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send {
         NativeConnectSession::command(self, target_device_identifier, body)

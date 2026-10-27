@@ -21,14 +21,69 @@ struct PendingCommand {
     deadline: Instant,
 }
 
+
+#[derive(Clone, PartialEq, Eq)]
+struct EarlyCommandObservation {
+    acknowledgement_identifier: String,
+    target_device_identifier: String,
+    server_at_milliseconds: i64,
+    observed_native_monotonic_milliseconds: u64,
+    queue_revision: Option<String>,
+}
+
+struct CommandDispatch {
+    target_device_identifier: String,
+    minimum_server_at_milliseconds: i64,
+    started_native_monotonic_milliseconds: u64,
+    deadline: Instant,
+    observations: Vec<EarlyCommandObservation>,
+    previously_observed_identifiers: Vec<String>,
+    uncertain: bool,
+}
+
 #[derive(Default)]
 pub struct ConnectCommandJournal {
     pending: HashMap<String, PendingCommand>,
     recent: VecDeque<String>,
+    recently_observed: VecDeque<String>,
+    dispatch: Option<CommandDispatch>,
 }
 
 impl ConnectCommandJournal {
     pub fn has_capacity(&self) -> bool { self.pending.len() < MAXIMUM_PENDING_COMMANDS }
+
+    pub fn begin_dispatch(&mut self, target_device_identifier: String, minimum_server_at_milliseconds: i64,
+        started_native_monotonic_milliseconds: u64) -> Result<(), Failure> {
+        self.expire();
+        if self.dispatch.is_some() || !self.has_capacity() { return Err(Failure::Backpressure); }
+        self.dispatch = Some(CommandDispatch { target_device_identifier, minimum_server_at_milliseconds, started_native_monotonic_milliseconds,
+            deadline: Instant::now() + Duration::from_secs(COMMAND_CONFIRMATION_TIMEOUT_SECONDS), observations: Vec::new(),
+            previously_observed_identifiers: self.recently_observed.iter().cloned().collect(), uncertain: false });
+        Ok(())
+    }
+
+    pub fn abort_dispatch(&mut self) { self.dispatch = None; }
+
+    pub fn accept_dispatched(&mut self, acknowledgement: ConnectCommandAcknowledgement, cancellation: CancellationToken, completion: Completion) {
+        let Some(dispatch) = self.dispatch.take() else { let _ = completion.send(Err(Failure::UnknownOutcome)); return; };
+        if dispatch.uncertain || Instant::now() >= dispatch.deadline
+            || acknowledgement.acknowledgement_identifier.as_ref().is_some_and(|identifier| dispatch.previously_observed_identifiers.contains(identifier)) {
+            let _ = completion.send(Err(Failure::UnknownOutcome)); return;
+        }
+        let identifier = acknowledgement.acknowledgement_identifier.clone();
+        self.accept(acknowledgement, dispatch.target_device_identifier, dispatch.minimum_server_at_milliseconds, cancellation, completion);
+        if let Some(identifier) = identifier {
+            if let Some(command) = self.pending.get_mut(&identifier) { command.deadline = dispatch.deadline; }
+            if let Some(observation) = dispatch.observations.iter().find(|observation| observation.acknowledgement_identifier == identifier) {
+                if let Some(mut command) = self.pending.remove(&identifier) {
+                    command.acknowledgement.delivery_observed = true;
+                    command.acknowledgement.observed_native_monotonic_milliseconds = Some(observation.observed_native_monotonic_milliseconds);
+                    command.acknowledgement.observed_queue_revision = observation.queue_revision.clone();
+                    let _ = command.completion.send(Ok(command.acknowledgement));
+                }
+            }
+        }
+    }
 
     pub fn accept(&mut self, acknowledgement: ConnectCommandAcknowledgement, target: String, minimum_server_at_milliseconds: i64, cancellation: CancellationToken, completion: Completion) {
         let Some(identifier) = acknowledgement.acknowledgement_identifier.clone() else { let _ = completion.send(Err(Failure::UnknownOutcome)); return; };
@@ -45,6 +100,25 @@ impl ConnectCommandJournal {
 
     pub fn observe(&mut self, cluster: &ConnectCluster, observed_native_monotonic_milliseconds: u64) {
         self.expire();
+        if let Some(dispatch) = &mut self.dispatch {
+            if observed_native_monotonic_milliseconds >= dispatch.started_native_monotonic_milliseconds
+                && cluster.server_at_milliseconds >= dispatch.minimum_server_at_milliseconds {
+                dispatch.uncertain |= cluster.active_device_identifier != dispatch.target_device_identifier || Instant::now() >= dispatch.deadline;
+                if let Some(identifier) = &cluster.acknowledgement_identifier {
+                    let observation = EarlyCommandObservation { acknowledgement_identifier: identifier.clone(), target_device_identifier: cluster.active_device_identifier.clone(),
+                        server_at_milliseconds: cluster.server_at_milliseconds, observed_native_monotonic_milliseconds,
+                        queue_revision: cluster.playback.as_ref().map(|playback| playback.queue_revision.clone()).filter(|revision| !revision.is_empty()) };
+                    if let Some(previous) = dispatch.observations.iter().find(|previous| previous.acknowledgement_identifier == *identifier) {
+                        dispatch.uncertain |= previous.target_device_identifier != observation.target_device_identifier || previous.queue_revision != observation.queue_revision;
+                    } else if dispatch.observations.len() >= MAXIMUM_RECENT_ACKNOWLEDGEMENTS { dispatch.uncertain = true; }
+                    else { dispatch.observations.push(observation); }
+                }
+            }
+        }
+        if let Some(identifier) = &cluster.acknowledgement_identifier {
+            if !self.recently_observed.contains(identifier) { self.recently_observed.push_back(identifier.clone()); }
+            while self.recently_observed.len() > MAXIMUM_RECENT_ACKNOWLEDGEMENTS { self.recently_observed.pop_front(); }
+        }
         let changed = self.pending.iter().filter(|(identifier, command)| cluster.acknowledgement_identifier.as_ref() == Some(*identifier)
             || cluster.server_at_milliseconds >= command.minimum_server_at_milliseconds && cluster.active_device_identifier != command.target).map(|(identifier, _)| identifier.clone()).collect::<Vec<_>>();
         for identifier in changed {
