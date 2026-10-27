@@ -218,6 +218,11 @@ class SpotifyNativeFollowerCoordinator(
                 current.resolutionOperation = null
                 if (current.target?.occurrenceIdentifier != target.occurrenceIdentifier) { drive(current); return@enqueue }
                 if (failure != null) {
+                    val failureReason = reason(failure)
+                    if (failureReason == SpotifyNativeFollowerFailureReason.AuthorizationRequired || failureReason == SpotifyNativeFollowerFailureReason.Superseded) {
+                        terminate(current, failureReason)
+                        return@enqueue
+                    }
                     current.resolutionFailure = SpotifyNativeFollowerFailureReason.RecordingUnavailable
                     current.resolutionFailedSequence = current.sequence
                     drive(current)

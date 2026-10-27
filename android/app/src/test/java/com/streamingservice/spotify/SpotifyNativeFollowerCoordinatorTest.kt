@@ -313,6 +313,20 @@ class SpotifyNativeFollowerCoordinatorTest {
         assertEquals(OtherJamSession, fixture.coordinator.snapshot().identity?.jamSessionIdentifier)
         assertTrue(fixture.output.playing)
     }
+    @Test fun backgroundResolverAuthorizationOrScopeFailureEndsTheCurrentHandoffWithoutRepeatedMatching() {
+        for (failureCode in listOf(SpotifyConnectFailureCode.Unauthorized, SpotifyConnectFailureCode.Superseded)) {
+            val fixture = Fixture(); fixture.resolver.automatic = false; fixture.start()
+            fixture.resolver.requests.last().result.completeExceptionally(SpotifyConnectFailure(failureCode.wireValue))
+            fixture.mainQueue.drain()
+            assertEquals(SpotifyNativeFollowerStatus.Failed, fixture.coordinator.snapshot().status)
+            assertEquals(if (failureCode == SpotifyConnectFailureCode.Unauthorized) SpotifyNativeFollowerFailureReason.AuthorizationRequired
+                else SpotifyNativeFollowerFailureReason.Superseded, fixture.coordinator.snapshot().failure)
+            assertFalse(fixture.actual.hasExternalAuthority)
+            val requests = fixture.resolver.requests.size
+            fixture.tick(WatchdogGapMilliseconds)
+            assertEquals(requests, fixture.resolver.requests.size)
+        }
+    }
     @Test fun ambiguousAndUnavailableMatchingDoNotPrepareAudio() {
         val fixture = Fixture(); fixture.resolver.selected = SpotifyFollowerRecordingResolution.Ambiguous; fixture.start()
         assertEquals(SpotifyNativeFollowerFailureReason.AmbiguousRecording, fixture.coordinator.snapshot().failure)
