@@ -60,6 +60,8 @@ pub struct ConnectPublicationSnapshot {
     pub active_since_server_timestamp_milliseconds: u64,
     pub playback: ConnectPublicationPlayback,
     pub accepted_command: Option<ConnectPublicationCommand>,
+    #[serde(default)]
+    pub command_handling_ready: bool,
 }
 
 fn identifier(identifier: &str) -> Result<(), Failure> {
@@ -101,8 +103,8 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
     capabilities.supports_transfer_command = false;
     capabilities.supports_set_options_command = false;
     capabilities.supports_playlist_v2 = false;
-    capabilities.supports_command_request = false;
-    capabilities.is_controllable = false;
+    capabilities.supports_command_request = snapshot.command_handling_ready;
+    capabilities.is_controllable = snapshot.command_handling_ready;
     publication.put_state_reason = EnumOrUnknown::new(PutStateReason::PLAYER_STATE_CHANGED);
     publication.client_side_timestamp = publication_server_timestamp_milliseconds;
     publication.is_active = true;
@@ -141,6 +143,7 @@ pub fn build_deactivation(registration: &PutStateRequest, snapshot: &ConnectPubl
     let capabilities = device.capabilities.mut_or_insert_default();
     capabilities.can_be_player = false;
     capabilities.is_controllable = false;
+    capabilities.supports_command_request = false;
     capabilities.hidden = true;
     Ok(publication)
 }

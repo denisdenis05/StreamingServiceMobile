@@ -299,7 +299,7 @@ class SpotifyHostPlayerPort(
         private const val DefaultMaximumJournalEntries = 128
         private const val DefaultMaximumPendingCommands = 16
         private const val MaximumQueueTracks = SpotifyHostingPolicy.MaximumQueueTracks
-        private const val MaximumCommandLifetimeMilliseconds = 10000L
+        private const val MaximumCommandLifetimeMilliseconds = SpotifyHostingPolicy.MaximumIncomingCommandLifetimeMilliseconds
         private const val MinimumElapsedMilliseconds = 0L
         private const val EmptyCount = 0
         private const val PositionIncrement = 1

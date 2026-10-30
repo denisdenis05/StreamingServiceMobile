@@ -24,5 +24,5 @@ pub fn snapshot() -> ConnectPublicationSnapshot {
         position_milliseconds: POSITION_MILLISECONDS, duration_milliseconds: DURATION_MILLISECONDS,
         sampled_server_timestamp_milliseconds: SERVER_TIMESTAMP_MILLISECONDS, sampled_native_monotonic_milliseconds: NATIVE_TIMESTAMP_MILLISECONDS,
         clock_uncertainty_milliseconds: CLOCK_UNCERTAINTY_MILLISECONDS, active_since_server_timestamp_milliseconds: ACTIVE_SINCE_MILLISECONDS,
-        playback: ConnectPublicationPlayback::Playing, accepted_command: None }
+        playback: ConnectPublicationPlayback::Playing, accepted_command: None, command_handling_ready: false }
 }

@@ -19,6 +19,7 @@ class SpotifyHostNativeTransportTest {
     private class Fixture {
         val queue = Queue()
         var current = true
+        var commandHandlingReady = true
         var elapsedMilliseconds = InitialElapsedMilliseconds
         var roundTripMilliseconds = ReadRoundTripMilliseconds
         var owned = true
@@ -61,7 +62,7 @@ class SpotifyHostNativeTransportTest {
                 return receipt.toString()
             }
         }
-        val transport = SpotifyHostNativeTransport(native, queue, { elapsedMilliseconds }, { current })
+        val transport = SpotifyHostNativeTransport(native, queue, { elapsedMilliseconds }, { current }, { commandHandlingReady })
         fun <Response> complete(operation: SpotifyPlayerOperation<Response>): Response { queue.drain(); return operation.result.get() }
     }
     @Test fun registrationUsesActualNativeDeviceSessionAndNextPublicationSequence() {
@@ -147,6 +148,20 @@ class SpotifyHostNativeTransportTest {
         val fixture = Fixture(); fixture.receiptOverride = JSONObject().put(FailureField, JSONObject.NULL).toString()
         val result = fixture.transport.registration(fixture.identity); fixture.queue.drain(); failure(result.result, InvalidResponse)
     }
+    @Test fun missingOrRetiredIncomingHandlerCannotAdvertiseControlCapability() {
+        val missing = Fixture(); missing.commandHandlingReady = false
+        val refused = missing.transport.publish(missing.identity, JSONObject()); failure(refused.result, Unsupported)
+        assertTrue(missing.controls.isEmpty())
+        val retired = Fixture(); val queued = retired.transport.publish(retired.identity, JSONObject())
+        retired.commandHandlingReady = false; retired.queue.drain(); failure(queued.result, Canceled)
+        assertTrue(retired.controls.isEmpty())
+    }
+    @Test fun actualHandlerReadinessIsCopiedIntoTheNativePublicationWithoutMutatingItsInput() {
+        val fixture = Fixture(); val snapshot = JSONObject()
+        fixture.complete(fixture.transport.publish(fixture.identity, snapshot))
+        assertTrue(fixture.controls.single().getJSONObject(SnapshotField).getBoolean(CommandReadyField))
+        assertFalse(snapshot.has(CommandReadyField))
+    }
     @Test fun incomingRepliesCarryTheirActualKeyAndAcceptance() {
         val fixture = Fixture(); fixture.complete(fixture.transport.reply(fixture.identity, CommandKey, false))
         assertEquals(CommandKey, fixture.controls.single().getString(KeyField)); assertFalse(fixture.controls.single().getBoolean(AcceptedField))
@@ -156,6 +171,9 @@ class SpotifyHostNativeTransportTest {
         catch (failure: ExecutionException) { assertEquals(code, (failure.cause as SpotifyConnectFailure).code) }
     }
     companion object {
+        private const val Unsupported = "unsupported"
+        private const val SnapshotField = "snapshot"
+        private const val CommandReadyField = "commandHandlingReady"
         private const val EmptyHost = ""
         private const val Occurrence = "synthetic-occurrence"
         private const val Recording = "synthetic-recording"

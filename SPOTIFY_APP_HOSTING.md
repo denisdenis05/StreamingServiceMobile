@@ -57,3 +57,16 @@ registration, clock/membership, cancellation, uncertainty and readiness cases.
 
 This adapter is still a source component. The retained app host runtime, native
 incoming dispatcher, periodic publication and app controls remain to be wired.
+
+## Incoming command boundary
+
+Native command events include the original native monotonic receipt and deadline.
+The polling executor captures local elapsed time before and after the native call.
+SpotifyHostCommandEventDecoder uses the earlier bound and native precision margin
+so delayed event delivery cannot extend the original permission. Replayed bootstrap
+events have no poll bracket and cannot authorize actions. Dedicated mapping,
+expiry, scope, unsupported payload and malformed chronology tests live in
+SpotifyHostCommandEventDecoderTest and SpotifyConnectNativeExecutionTest; the
+producer lifetime and duplicate case lives in the native connect_actor suite.
+Remote command capabilities require an actual attached handler; composition must
+provide this evidence before activation, including a final dispatch-time check.

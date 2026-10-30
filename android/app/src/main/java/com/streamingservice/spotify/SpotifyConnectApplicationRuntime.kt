@@ -1,6 +1,7 @@
 package com.streamingservice.spotify
 
 import android.util.Base64
+import android.os.SystemClock
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.Executor
 import java.util.concurrent.ScheduledFuture
@@ -11,7 +12,7 @@ import java.util.concurrent.TimeUnit
 object SpotifyConnectApplicationRuntime {
     val workers: Executor = executor(WORKER_COUNT)
     val lifecycle: Executor = executor(LIFECYCLE_WORKER_COUNT)
-    val runtime = SpotifyConnectRuntime(SpotifyConnectNativeExecution(), SpotifyConnectJsonRuntimeProtocol { serialized ->
+    val runtime = SpotifyConnectRuntime(SpotifyConnectNativeExecution(pollClock = SpotifyNativeFollowerClock { SystemClock.elapsedRealtime() }), SpotifyConnectJsonRuntimeProtocol { serialized ->
         val decoded = Base64.decode(serialized, Base64.NO_WRAP)
         decoded.isNotEmpty() && Base64.encodeToString(decoded, Base64.NO_WRAP) == serialized
     }, Polling(), SpotifyJamPlaybackApplicationRuntime::retireFollowing)

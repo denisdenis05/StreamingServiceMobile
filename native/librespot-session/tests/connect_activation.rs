@@ -30,9 +30,9 @@ fn cluster() -> ConnectCluster {
     ConnectCluster { changed_at_milliseconds: OLD_SERVER_TIMESTAMP_MILLISECONDS, server_at_milliseconds: OBSERVATION_SERVER_TIMESTAMP_MILLISECONDS,
         active_device_identifier: PREVIOUS_HOST.to_owned(), playback: None, devices: Vec::new(), acknowledgement_identifier: None, update_reason: None, devices_changed: Vec::new() }
 }
-fn readiness() -> ConnectActivationPlayerReadiness { ConnectActivationPlayerReadiness { playback_output_ready: true, external_authority_absent: true } }
+fn readiness() -> ConnectActivationPlayerReadiness { ConnectActivationPlayerReadiness { playback_output_ready: true, external_authority_absent: true, command_handling_ready: true } }
 fn snapshot() -> streaming_spotify_session::connect_publication::ConnectPublicationSnapshot {
-    let mut snapshot = publication::snapshot(); snapshot.sampled_native_monotonic_milliseconds = PLAYER_SAMPLE_MILLISECONDS; snapshot.sequence = publication::SECOND_SEQUENCE; snapshot
+    let mut snapshot = publication::snapshot(); snapshot.sampled_native_monotonic_milliseconds = PLAYER_SAMPLE_MILLISECONDS; snapshot.sequence = publication::SECOND_SEQUENCE; snapshot.command_handling_ready = true; snapshot
 }
 
 #[test]
@@ -53,8 +53,8 @@ fn changed_previous_host_and_stale_generations_cannot_activate() {
 
 #[test]
 fn output_readiness_and_absent_follower_authority_are_required() {
-    for readiness in [ConnectActivationPlayerReadiness { playback_output_ready: false, external_authority_absent: true },
-        ConnectActivationPlayerReadiness { playback_output_ready: true, external_authority_absent: false }] {
+    for readiness in [ConnectActivationPlayerReadiness { playback_output_ready: false, external_authority_absent: true, command_handling_ready: true },
+        ConnectActivationPlayerReadiness { playback_output_ready: true, external_authority_absent: false, command_handling_ready: true }] {
         assert!(matches!(build_explicit_activation(&registration(), &snapshot(), &activation(), &readiness, &cluster(), GENERATION, CURRENT_MILLISECONDS), Err(Failure::Unsupported)));
     }
 }
@@ -86,4 +86,12 @@ fn only_a_known_deactivation_boundary_allows_a_new_explicit_activation_dispatch(
     assert_eq!(guard.acquire(false), Err(Failure::UnknownOutcome));
     guard.complete_deactivation(); guard.acquire(false).unwrap();
     assert_eq!(guard.acquire(false), Err(Failure::UnknownOutcome));
+}
+
+#[test]
+fn missing_incoming_handler_readiness_cannot_activate_an_audible_device() {
+    let mut missing_handler = readiness(); missing_handler.command_handling_ready = false;
+    assert!(matches!(build_explicit_activation(&registration(), &snapshot(), &activation(), &missing_handler, &cluster(), GENERATION, CURRENT_MILLISECONDS), Err(Failure::Unsupported)));
+    let mut unready_snapshot = snapshot(); unready_snapshot.command_handling_ready = false;
+    assert!(matches!(build_explicit_activation(&registration(), &unready_snapshot, &activation(), &readiness(), &cluster(), GENERATION, CURRENT_MILLISECONDS), Err(Failure::Unsupported)));
 }

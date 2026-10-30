@@ -24,6 +24,7 @@ pub struct ConnectExplicitActivation {
 pub struct ConnectActivationPlayerReadiness {
     pub playback_output_ready: bool,
     pub external_authority_absent: bool,
+    pub command_handling_ready: bool,
 }
 
 pub fn build_explicit_activation(registration: &PutStateRequest, snapshot: &ConnectPublicationSnapshot,
@@ -34,7 +35,7 @@ pub fn build_explicit_activation(registration: &PutStateRequest, snapshot: &Conn
         || activation.expected_previous_host_device_identifier.chars().count() > MAXIMUM_PREVIOUS_HOST_CHARACTERS
         || activation.expected_previous_host_device_identifier.contains(char::is_control)
         || activation.generation == INITIAL_GENERATION { return Err(Failure::InvalidInput); }
-    if !readiness.playback_output_ready || !readiness.external_authority_absent { return Err(Failure::Unsupported); }
+    if !readiness.playback_output_ready || !readiness.external_authority_absent || !readiness.command_handling_ready || !snapshot.command_handling_ready { return Err(Failure::Unsupported); }
     if activation.generation != current_generation
         || cluster.active_device_identifier != activation.expected_previous_host_device_identifier
         || activation.requested_native_monotonic_milliseconds > activation.observation_started_native_monotonic_milliseconds

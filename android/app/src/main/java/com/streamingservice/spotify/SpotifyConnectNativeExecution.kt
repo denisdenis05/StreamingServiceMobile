@@ -32,17 +32,20 @@ private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
 
 private class SpotifyConnectNativeFailureReceipt(code: String) : SpotifyConnectFailure(code)
 
-class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCalls = PlatformSpotifyConnectNativeCalls) : SpotifyConnectExecution {
+class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCalls = PlatformSpotifyConnectNativeCalls,
+    private val pollClock: SpotifyNativeFollowerClock? = null) : SpotifyConnectExecution {
     override fun start(serialized: String): Long = decode(native.start(serialized)) { response -> handle(response) }
 
     override fun poll(handle: Long): SpotifyConnectBatch {
+        val startedElapsedMilliseconds = pollClock?.nowElapsedRealtimeMilliseconds()
         val serialized = native.poll(handle)
+        val completedElapsedMilliseconds = pollClock?.nowElapsedRealtimeMilliseconds()
         return decode(serialized) { response ->
             if (handle(response) != handle) throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)
             val finished = response.get(FINISHED_FIELD) as? Boolean ?: throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)
             val eventCount = response.getJSONArray(EVENTS_FIELD).length()
             if (eventCount > MAXIMUM_BATCH_EVENTS) throw SpotifyConnectFailure(INVALID_RESPONSE_FAILURE)
-            SpotifyConnectBatch(serialized, finished, eventCount > EMPTY_EVENT_COUNT)
+            SpotifyConnectBatch(serialized, finished, eventCount > EMPTY_EVENT_COUNT, startedElapsedMilliseconds, completedElapsedMilliseconds)
         }
     }
 

@@ -36,6 +36,8 @@ const REQUEST: &str = "synthetic-checked-command";
 const EARLY_ACTIVATION_MESSAGE: &str = "Activation completed before the blocked publication was released";
 const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
+const COMMAND_LIFETIME_MILLISECONDS: u64 = 10000;
+const EXPECTED_TIMED_COMMAND: &str = "Expected a timed command event";
 
 #[derive(Default)]
 struct Calls { deactivation_sequences: Vec<u64>, deactivation_failure: Option<Failure>, search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
@@ -330,6 +332,25 @@ async fn inbound_commands_require_explicit_acknowledgement_and_completed_duplica
     harness.inbound(PAUSE).await;
     assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], true);
     harness.inbound(RESUME).await;
+    assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], false);
+    assert!(harness.events.try_recv().is_err());
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn incoming_command_deadline_is_native_and_duplicates_cannot_extend_it() {
+    let mut harness = Harness::start(None); harness.register().await;
+    harness.inbound(PAUSE).await;
+    let event = harness.events.recv().await.unwrap();
+    match event.data {
+        ConnectEventData::Command { received_native_monotonic_milliseconds, deadline_native_monotonic_milliseconds, .. } => {
+            assert_eq!(deadline_native_monotonic_milliseconds - received_native_monotonic_milliseconds, COMMAND_LIFETIME_MILLISECONDS);
+            assert!(received_native_monotonic_milliseconds <= event.observed_monotonic_milliseconds);
+        },
+        _ => panic!("{EXPECTED_TIMED_COMMAND}"),
+    }
+    harness.inbound(PAUSE).await;
+    assert!(harness.acknowledge(false).await.is_ok());
     assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], false);
     assert!(harness.events.try_recv().is_err());
     harness.stop().await;
@@ -745,7 +766,7 @@ async fn activate_sample(actions: &mpsc::Sender<ConnectAction>, reading: &stream
     let (result, receipt) = oneshot::channel();
     actions.send(ConnectAction::HostIdentity { generation: GENERATION, result }).await.unwrap();
     let next_sequence = receipt.await.unwrap()?.next_publication_sequence;
-    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.sequence = next_sequence;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.sequence = next_sequence; snapshot.command_handling_ready = true;
     snapshot.sampled_native_monotonic_milliseconds = native_now;
     snapshot.sampled_server_timestamp_milliseconds = reading.cluster.server_at_milliseconds as u64
         + native_now - reading.request_completed_native_monotonic_milliseconds;
@@ -754,7 +775,7 @@ async fn activate_sample(actions: &mpsc::Sender<ConnectAction>, reading: &stream
         observation_started_native_monotonic_milliseconds: reading.request_started_native_monotonic_milliseconds,
         observation_completed_native_monotonic_milliseconds: reading.request_completed_native_monotonic_milliseconds,
         requested_native_monotonic_milliseconds: reading.request_started_native_monotonic_milliseconds };
-    let readiness = ConnectActivationPlayerReadiness { playback_output_ready, external_authority_absent: true };
+    let readiness = ConnectActivationPlayerReadiness { playback_output_ready, external_authority_absent: true, command_handling_ready: true };
     let (result, receipt) = oneshot::channel();
     actions.send(ConnectAction::Activate { generation, snapshot, activation, readiness,
         activation_cancellation: CancellationToken::new(), result }).await.unwrap();

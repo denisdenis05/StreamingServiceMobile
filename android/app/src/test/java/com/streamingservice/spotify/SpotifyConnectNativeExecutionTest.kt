@@ -8,6 +8,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpotifyConnectNativeExecutionTest {
+    @Test fun pollingRetainsItsActualLocalClockBracket() {
+        val native = Native()
+        val samples = ArrayDeque(listOf(PollStartedElapsedMilliseconds, PollCompletedElapsedMilliseconds))
+        val execution = SpotifyConnectNativeExecution(native, SpotifyNativeFollowerClock { samples.removeFirst() })
+        val batch = execution.poll(HANDLE)
+        assertEquals(PollStartedElapsedMilliseconds, batch.requestStartedElapsedMilliseconds)
+        assertEquals(PollCompletedElapsedMilliseconds, batch.requestCompletedElapsedMilliseconds)
+        assertTrue(samples.isEmpty())
+    }
     @Test fun searchRequiresTheExactHandleAndGenerationAndPreservesSafeFailures() {
         val native = Native(); val execution = SpotifyConnectNativeExecution(native)
         assertEquals(native.reading, execution.search(HANDLE, GENERATION, CREDENTIAL))
@@ -160,6 +169,8 @@ class SpotifyConnectNativeExecutionTest {
         requireFailure(INVALID_RESPONSE_FAILURE) { execution.command(HANDLE, REQUEST_IDENTIFIER, control) }
     }
     companion object {
+        private const val PollStartedElapsedMilliseconds = 5000L
+        private const val PollCompletedElapsedMilliseconds = 5020L
         private const val UNKNOWN_OUTCOME_FAILURE = "unknown-outcome"
         private const val ACKNOWLEDGEMENT_FIELD = "acknowledgement"
         private const val ACKNOWLEDGEMENT_IDENTIFIER_FIELD = "acknowledgementIdentifier"

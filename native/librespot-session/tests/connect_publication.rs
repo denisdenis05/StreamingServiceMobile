@@ -180,3 +180,15 @@ fn publication_sequence_exhaustion_never_fabricates_another_safe_sequence() {
     assert_eq!(order.acquire(UNSAFE_SEQUENCE), Err(Failure::Canceled));
     order.acquire(MAXIMUM_SEQUENCE).unwrap(); assert_eq!(order.next_sequence(), Err(Failure::InvalidInput));
 }
+
+#[test]
+fn incoming_controls_are_advertised_only_with_explicit_handler_readiness_and_demotion_clears_them() {
+    let mut sample = snapshot(); sample.command_handling_ready = true;
+    let published = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(published.device.device_info.capabilities.is_controllable);
+    assert!(published.device.device_info.capabilities.supports_command_request);
+    assert!(!published.device.device_info.capabilities.supports_transfer_command);
+    let inactive = streaming_spotify_session::connect_publication::build_deactivation(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(!inactive.device.device_info.capabilities.is_controllable);
+    assert!(!inactive.device.device_info.capabilities.supports_command_request);
+}

@@ -16,6 +16,7 @@ const PING_INTERVAL_SECONDS: u64 = 30;
 const PONG_TIMEOUT_SECONDS: u64 = 5;
 const EVENT_BACKPRESSURE_MILLISECONDS: u64 = 500;
 const COMMAND_ACKNOWLEDGEMENT_SECONDS: u64 = 10;
+const MILLISECONDS_PER_SECOND: u64 = 1000;
 const HOUSEKEEPING_INTERVAL_MILLISECONDS: u64 = 500;
 const RECONNECT_DELAY_SECONDS: u64 = 5;
 const CLEANUP_TIMEOUT_SECONDS: u64 = 5;
@@ -79,7 +80,7 @@ pub enum ConnectEventData {
     Cluster { cluster: ConnectCluster },
     Membership { update: Value },
     SessionMessage { message: Value },
-    Command { key: String, request: Value },
+    Command { key: String, request: Value, received_native_monotonic_milliseconds: u64, deadline_native_monotonic_milliseconds: u64 },
     Reconnecting { failure: &'static str, stage: ConnectFailureStage },
     Stopped { cleanup_failure: Option<&'static str> },
 }
@@ -310,8 +311,11 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         if let Some(previous) = completed.iter().find(|previous| previous.key == key) { reply(socket, &key, previous.accepted && previous.request == request).await?; continue; }
                         if let Some(previous) = pending.get(&key) { if previous.request != request { reply(socket, &key, false).await?; } continue; }
                         if !registered || pending.len() >= MAXIMUM_PENDING_REQUESTS { reply(socket, &key, false).await?; continue; }
+                        let received_native_monotonic_milliseconds = native_monotonic_milliseconds();
+                        let Some(deadline_native_monotonic_milliseconds) = received_native_monotonic_milliseconds.checked_add(COMMAND_ACKNOWLEDGEMENT_SECONDS * MILLISECONDS_PER_SECOND)
+                            .filter(|deadline| *deadline <= MAXIMUM_SAFE_JAVASCRIPT_INTEGER) else { reply(socket, &key, false).await?; continue; };
                         pending.insert(key.clone(), PendingRequest { request: request.clone(), deadline: DeadlineInstant::now() + Duration::from_secs(COMMAND_ACKNOWLEDGEMENT_SECONDS) });
-                        emit(events, generation, ConnectEventData::Command { key, request }, cancellation).await?;
+                        emit(events, generation, ConnectEventData::Command { key, request, received_native_monotonic_milliseconds, deadline_native_monotonic_milliseconds }, cancellation).await?;
                     },
                     DealerInput::RejectedCommand { key } => reply(socket, &key, false).await?,
                     _ => (),
@@ -385,6 +389,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         let Some(reading) = latest_reading.as_ref() else { let _ = result.send(Err(Failure::Canceled)); continue; };
                         if snapshot.device_identifier != identity.device_identifier || identity.playback_session_identifier.as_deref() != Some(snapshot.session_identifier.as_str())
                             || activation.generation != generation || !readiness.playback_output_ready || !readiness.external_authority_absent
+                            || !readiness.command_handling_ready || !snapshot.command_handling_ready
                             || activation.observation_started_native_monotonic_milliseconds != reading.request_started_native_monotonic_milliseconds
                             || activation.observation_completed_native_monotonic_milliseconds != reading.request_completed_native_monotonic_milliseconds
                             || activation.expected_previous_host_device_identifier != reading.cluster.active_device_identifier

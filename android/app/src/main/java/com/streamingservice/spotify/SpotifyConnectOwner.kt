@@ -15,7 +15,8 @@ interface SpotifyConnectExecution {
     fun finish(handle: Long)
 }
 
-data class SpotifyConnectBatch(val serialized: String, val finished: Boolean, val hasEvents: Boolean = true)
+data class SpotifyConnectBatch(val serialized: String, val finished: Boolean, val hasEvents: Boolean = true,
+    val requestStartedElapsedMilliseconds: Long? = null, val requestCompletedElapsedMilliseconds: Long? = null)
 open class SpotifyConnectFailure(val code: String) : RuntimeException()
 
 class SpotifyConnectOwner(

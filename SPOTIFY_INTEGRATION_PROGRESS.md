@@ -1,3 +1,30 @@
+# Host command readiness and native deadlines — 2026-10-30
+
+Remote command capabilities now require evidence of an attached command handler.
+Activation refuses missing readiness, publication carries the actual handler state,
+and demotion removes command acceptance. Incoming events carry their original
+native receipt/deadline. The Android polling boundary captures its actual elapsed
+clock bracket; decoding maps deadlines conservatively from the poll start.
+Queued or delayed delivery cannot grant a fresh ten-second permission window.
+Unsupported or already expired commands retain only enough information to refuse.
+
+Verification: fresh-process Android Kotlin compilation passed. Focused host,
+player-service and native-execution JVM tests passed 109 cases. Complete native
+Cargo tests passed 223 cases. Dedicated tests cover readiness retirement before
+dispatch, publication capabilities, exact producer lifetime, duplicate suppression,
+poll clock capture, delayed delivery, malformed timing and scope replacement.
+Commands: `./android/gradlew -p android :app:testDebugUnitTest --tests
+'*SpotifyHost*Test' --tests '*SpotifyConnectNativeExecutionTest' --tests
+'*SpotifyPlayerServicePortTest' -x :app:buildSpotifyLibrespot --no-daemon
+--console=plain`; `cargo test --manifest-path native/librespot-session/Cargo.toml
+--locked --quiet`. The earlier Gradle spawn-helper failure was resolved by a fresh
+JVM; no dependency configuration changed. No live session, device or APK result.
+
+Continue the retained host dispatcher/runtime, periodic publication, cleanup and
+explicit app hosting controls. The capability gate stays closed until that actual
+composition exists. The previously approved probe is absent; its leftover socket
+is not evidence of a live registered session. Preserve other running sessions.
+
 # Kotlin native host transport — 2026-10-30
 
 Added bounded native host identity/preflight/control composition. Fresh owned
