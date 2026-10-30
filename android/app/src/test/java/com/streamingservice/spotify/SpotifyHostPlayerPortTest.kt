@@ -60,6 +60,7 @@ class SpotifyHostPlayerPortTest {
     private class Fixture(maximumJournalEntries: Int = JournalCapacity) {
         val main = MainQueue(); val output = Output(); val resolver = Resolver(); val scheduler = Scheduler()
         var sequence = EmptyCount; var current = true; var elapsed = ReceivedMilliseconds
+        var mapSnapshot: (JSONObject) -> JSONObject = { value -> value }
         var onExecute: () -> Unit = {}; var receiptOverride: String? = null
         val actual = StreamingPlaybackCoordinator(output, MediaServer(), { RandomValue }, { elapsed }, { IdentifierPrefix + ++sequence })
         val executions = mutableListOf<JSONObject>()
@@ -67,7 +68,7 @@ class SpotifyHostPlayerPortTest {
             override fun configure(baseAddress: String, accessToken: String) = actual.configure(baseAddress, accessToken)
             override fun clearSession() = actual.clearSession()
             override fun playbackOutputReady(): Boolean = actual.playbackOutputReady()
-            override fun snapshot(): JSONObject = actual.snapshot()
+            override fun snapshot(): JSONObject = mapSnapshot(actual.snapshot())
             override fun execute(payload: String): String { executions.add(JSONObject(payload)); onExecute(); return receiptOverride ?: actual.execute(payload) }
         }
         val identity: SpotifyHostIdentity
@@ -186,6 +187,46 @@ class SpotifyHostPlayerPortTest {
         fixture.output.playbackStatus = AudioOutputStatus.Ready
         val ready = fixture.sample(); assertTrue(ready.paused); assertFalse(ready.buffering); assertTrue(ready.ready)
     }
+    @Test fun queueSamplingReadsRealOccurrenceOrderAndRecordingIdentityWithoutMutatingPlayback() {
+        val fixture = Fixture(); fixture.play(); val before = fixture.sample()
+        val result = fixture.port.sampleQueue(fixture.identity); fixture.main.drain()
+        val queue = result.get()
+        assertEquals(before.cursor, queue.snapshot.cursor)
+        assertEquals(listOf(FirstOccurrence, SecondOccurrence), queue.entries.map { entry -> entry.occurrenceIdentifier })
+        assertEquals(listOf(RecordingIdentifier, RecordingIdentifier), queue.entries.map { entry -> entry.recordingIdentifier })
+        assertEquals(before.cursor, fixture.sample().cursor)
+    }
+    @Test fun queueSamplingRejectsAControlChangeDuringTheNativePageRead() {
+        val fixture = Fixture(); fixture.play(); fixture.onExecute = { fixture.actual.pause() }
+        val result = fixture.port.sampleQueue(fixture.identity); fixture.main.drain()
+        assertFailure(result, SpotifyPlayerFailureReason.Conflict)
+    }
+    @Test fun queueSamplingRejectsMalformedPagesAndQueuesBeyondThePublicationBound() {
+        val malformed = Fixture(); malformed.play(); malformed.receiptOverride = MalformedReceipt
+        val invalid = malformed.port.sampleQueue(malformed.identity); malformed.main.drain()
+        assertFailure(invalid, SpotifyPlayerFailureReason.InvalidResponse)
+        val excessive = Fixture(); excessive.mapSnapshot = { value -> value.put(ProtocolFields.QueueLength, ExcessiveQueueEntries) }
+        val bounded = excessive.port.sampleQueue(excessive.identity); excessive.main.drain()
+        assertFailure(bounded, SpotifyPlayerFailureReason.Unavailable)
+    }
+    @Test fun acceptedMediaCommandsRetainTheActualResolvedRecordingAndAssignedOccurrence() {
+        val fixture = Fixture(); val operation = fixture.execute(SpotifyHostCommand.Play(listOf(SpotifyHostTrack(TrackIdentifier, null)), true))
+        fixture.main.drain(); val accepted = operation.result.get()
+        assertEquals(RecordingIdentifier, accepted.resolvedTracks.single().recordingIdentifier)
+        assertEquals(fixture.actual.snapshot().getJSONObject(ProtocolFields.CurrentEntry).getString(ProtocolFields.EntryIdentifier),
+            accepted.resolvedTracks.single().track.occurrenceIdentifier)
+    }
+    @Test fun serviceOwnedHostAdapterCannotOutliveItsAuthenticatedBinding() {
+        val fixture = Fixture()
+        val service = SpotifyPlayerServicePort(fixture.adapter, fixture.main, { IdentifierPrefix + ++fixture.sequence })
+        val configured = service.configureAuthentication(fixture.identity.playerIdentity, AppAccount, BaseAddress, AccessToken, false)
+        fixture.main.drain(); configured.result.get()
+        val host = service.hosting(fixture.resolver, fixture.scheduler, { fixture.elapsed }, { true })
+        val sample = host.sample(fixture.identity); fixture.main.drain(); sample.get()
+        service.close(); fixture.main.drain()
+        val retired = host.sample(fixture.identity); fixture.main.drain()
+        assertFailure(retired, SpotifyPlayerFailureReason.Superseded)
+    }
     private fun assertFailure(result: CompletableFuture<*>, reason: SpotifyPlayerFailureReason) {
         try { result.get(); throw AssertionError(ExpectedFailure) }
         catch (failure: ExecutionException) { assertEquals(reason, (failure.cause as SpotifyPlayerFailure).reason) }
@@ -202,6 +243,7 @@ class SpotifyHostPlayerPortTest {
         private const val TwoExecutions = 2
         private const val TwoEntries = 2
         private const val ThreeEntries = 3
+        private const val ExcessiveQueueEntries = 81
         private const val JournalCapacity = 128
         private const val RandomValue = 0.5
         private const val IdentifierPrefix = "synthetic-host-native-entry-"

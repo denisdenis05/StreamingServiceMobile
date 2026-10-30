@@ -1,3 +1,26 @@
+# Real host queue and publication projection — 2026-10-30
+
+Added bounded actual-player queue sampling, complete cursor validation, resolved
+recording/occurrence retention and an authenticated service-owned host adapter.
+The host publication projector uses actual queue order, confirmed mappings and
+measured elapsed/native/server anchors. It rejects stale/wrong-generation samples,
+unknown/ambiguous mappings and unsupported options; paused-ready remains distinct
+from buffering. Native command provenance now preserves message/sender fields
+when the optional session command identifier is absent.
+
+Verification: Android `./android/gradlew -p android :app:testDebugUnitTest --tests
+'*SpotifyHost*Test' --tests '*SpotifyPlayerServicePortTest'
+-x :app:buildSpotifyLibrespot --console=plain` passed 70 JVM cases. Complete
+`cargo test --manifest-path native/librespot-session/Cargo.toml --locked --quiet`
+passed 210 cases. `git diff --check` passed. Dedicated mapping and pending
+composition: SPOTIFY_APP_HOSTING.md. No APK rebuilt or host/device test performed.
+
+The approved probe execution 98826 is no longer present after the interrupted
+turn; its socket file remains and must not be mistaken for a live owner. Earlier
+registered/metadata and two search-backpressure results remain the live evidence.
+No Spotify process was stopped by implementation commands. Continue host runtime,
+incoming command dispatch, periodic publication, demotion and app controls.
+
 # Current-session native catalog check — 2026-10-30
 
 The user approved the fresh pairing. The existing native probe is now registered

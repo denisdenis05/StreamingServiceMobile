@@ -59,7 +59,7 @@ fn paused_and_buffering_samples_never_claim_uninterrupted_playback() {
 #[test]
 fn publication_preserves_only_accepted_incoming_command_provenance_and_clears_old_provenance() {
     let mut sample = snapshot(); sample.accepted_command = Some(ConnectPublicationCommand { message_identifier: COMMAND_MESSAGE_IDENTIFIER,
-        sender_device_identifier: COMMAND_SENDER.to_owned(), session_command_identifier: COMMAND_SESSION.to_owned() });
+        sender_device_identifier: COMMAND_SENDER.to_owned(), session_command_identifier: Some(COMMAND_SESSION.to_owned()) });
     let acknowledged = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
     assert_eq!(acknowledged.last_command_message_id, COMMAND_MESSAGE_IDENTIFIER);
     assert_eq!(acknowledged.last_command_sent_by_device_id, COMMAND_SENDER);
@@ -141,4 +141,14 @@ fn paused_ready_samples_preserve_paused_without_inventing_buffering() {
     let published = build_publication(&registration(), &buffering, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
     assert!(!published.device.player_state.is_paused);
     assert!(published.device.player_state.is_buffering);
+}
+
+#[test]
+fn accepted_command_without_an_optional_session_identifier_keeps_real_message_provenance() {
+    let mut sample = snapshot(); sample.accepted_command = Some(ConnectPublicationCommand { message_identifier: COMMAND_MESSAGE_IDENTIFIER,
+        sender_device_identifier: COMMAND_SENDER.to_owned(), session_command_identifier: None });
+    let published = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert_eq!(published.last_command_message_id, COMMAND_MESSAGE_IDENTIFIER);
+    assert_eq!(published.last_command_sent_by_device_id, COMMAND_SENDER);
+    assert!(published.device.player_state.session_command_id.is_empty());
 }

@@ -84,8 +84,8 @@ class SpotifyHostCommandDecoder {
 
     companion object {
         private const val MaximumCommandCharacters = 131072
-        private const val MaximumIdentifierCharacters = 512
-        private const val MaximumQueueTracks = 80
+        private const val MaximumIdentifierCharacters = SpotifyHostingPolicy.MaximumIdentifierCharacters
+        private const val MaximumQueueTracks = SpotifyHostingPolicy.MaximumQueueTracks
         private const val MinimumTrackCount = 1
         private const val SinglePage = 1
         private const val FirstIndex = 0

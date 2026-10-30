@@ -70,6 +70,11 @@ class SpotifyPlayerServicePort(
 
     init { require(maximumPendingOperations > EmptyCount) }
 
+    fun hosting(resolver: SpotifyHostRecordingResolver, scheduler: SpotifyNativeFollowerScheduler,
+        elapsedMilliseconds: () -> Long, isCurrent: (SpotifyHostIdentity) -> Boolean): SpotifyHostPlayerPort =
+        SpotifyHostPlayerPort(coordinator, mainExecutor, resolver, scheduler, elapsedMilliseconds, identifierSource,
+            { identity -> synchronized(monitor) { !closed && accountIdentifier == identity.streamingServiceAccountIdentifier } && isCurrent(identity) })
+
     fun identity(): SpotifyPlayerOperation<SpotifyPlayerIdentity> = submit { identity(coordinator.snapshot()) }
 
     fun configureAuthentication(

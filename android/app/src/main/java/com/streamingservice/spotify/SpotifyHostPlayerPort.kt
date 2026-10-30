@@ -38,7 +38,11 @@ data class SpotifyHostPlayerSnapshot(
     val paused: Boolean,
     val buffering: Boolean
 )
-data class SpotifyHostPlayerAccepted(val request: SpotifyHostCommandRequest, val snapshot: SpotifyHostPlayerSnapshot, val acceptedTracks: List<SpotifyHostTrack>)
+data class SpotifyHostQueueEntry(val occurrenceIdentifier: String, val recordingIdentifier: String)
+data class SpotifyHostPlayerQueue(val snapshot: SpotifyHostPlayerSnapshot, val entries: List<SpotifyHostQueueEntry>,
+    val shuffled: Boolean, val repeatMode: String, val playbackRate: Double)
+data class SpotifyHostResolvedTrack(val track: SpotifyHostTrack, val recordingIdentifier: String)
+data class SpotifyHostPlayerAccepted(val request: SpotifyHostCommandRequest, val snapshot: SpotifyHostPlayerSnapshot, val acceptedTracks: List<SpotifyHostTrack>, val resolvedTracks: List<SpotifyHostResolvedTrack>)
 
 class SpotifyHostPlayerPort(
     private val coordinator: SpotifyPlayerCoordinator,
@@ -61,6 +65,48 @@ class SpotifyHostPlayerPort(
         val completion = CompletableFuture<SpotifyHostPlayerSnapshot>()
         dispatch({ completion.completeExceptionally(it) }) {
             try { completion.complete(snapshot(identity)) } catch (failure: Throwable) { completion.completeExceptionally(safeFailure(failure, false)) }
+        }
+        return completion
+    }
+
+    fun sampleQueue(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerQueue> {
+        val completion = CompletableFuture<SpotifyHostPlayerQueue>()
+        dispatch({ completion.completeExceptionally(it) }) {
+            try {
+                val sampled = snapshot(identity)
+                val value = coordinator.snapshot()
+                requireIdentity(value, identity)
+                if (cursor(value) != sampled.cursor) fail(SpotifyPlayerFailureReason.Conflict)
+                val length = integer(value, ProtocolFields.QueueLength)
+                if (length > MaximumQueueTracks) fail(SpotifyPlayerFailureReason.Unavailable)
+                val identifier = identifiers.nextIdentifier()
+                if (!validIdentifier(identifier)) fail(SpotifyPlayerFailureReason.InvalidInput)
+                val command = JSONObject().put(ProtocolFields.Operation, PlayerOperation.Page.protocolValue)
+                    .put(ProtocolFields.RequestIdentifier, identifier).put(ProtocolFields.EngineEpoch, identity.playerIdentity.engineEpoch)
+                    .put(ProtocolFields.AuthenticationEpoch, identity.playerIdentity.authenticationEpoch)
+                    .put(ProtocolFields.ExpectedQueueRevision, sampled.cursor.queueRevision).put(ProtocolFields.Offset, EmptyCount)
+                    .put(ProtocolFields.Limit, MaximumQueueTracks)
+                val response = JSONObject(coordinator.execute(command.toString()))
+                if (response.get(ProtocolFields.Status) != PlayerProtocol.SuccessPageStatus) fail(SpotifyPlayerFailureReason.Conflict)
+                val page = response.getJSONObject(ProtocolFields.Page)
+                val entries = page.getJSONArray(ProtocolFields.Entries)
+                if (cursor(page) != sampled.cursor) fail(SpotifyPlayerFailureReason.Conflict)
+                if (integer(page, ProtocolFields.Offset) != EmptyCount.toLong()
+                    || integer(page, ProtocolFields.TotalEntries) != length || entries.length().toLong() != length) fail(SpotifyPlayerFailureReason.InvalidResponse)
+                val copied = (EmptyCount until entries.length()).map { position ->
+                    val entry = entries.getJSONObject(position)
+                    val occurrence = entry.getString(ProtocolFields.EntryIdentifier)
+                    val recording = entry.getString(ProtocolFields.RecordingIdentifier)
+                    if (!validIdentifier(occurrence) || !validIdentifier(recording)) fail(SpotifyPlayerFailureReason.InvalidResponse)
+                    SpotifyHostQueueEntry(occurrence, recording)
+                }
+                if (copied.map { entry -> entry.occurrenceIdentifier }.toSet().size != copied.size) fail(SpotifyPlayerFailureReason.InvalidResponse)
+                if (snapshot(identity).cursor != sampled.cursor) fail(SpotifyPlayerFailureReason.Conflict)
+                val playbackRate = value.getDouble(ProtocolFields.PlaybackRate)
+                if (!playbackRate.isFinite()) fail(SpotifyPlayerFailureReason.InvalidResponse)
+                completion.complete(SpotifyHostPlayerQueue(sampled, copied, boolean(value, ProtocolFields.Shuffled),
+                    value.getString(ProtocolFields.RepeatMode), playbackRate))
+            } catch (failure: Throwable) { completion.completeExceptionally(safeFailure(failure, false)) }
         }
         return completion
     }
@@ -178,7 +224,7 @@ class SpotifyHostPlayerPort(
         val receiptCursor = receipt.getJSONObject(ProtocolFields.Cursor)
         if (receiptCursor.get(ProtocolFields.EngineEpoch) != job.identity.playerIdentity.engineEpoch || receiptCursor.get(ProtocolFields.AuthenticationEpoch) != job.identity.playerIdentity.authenticationEpoch) fail(SpotifyPlayerFailureReason.UnknownOutcome)
         when (receipt.get(ProtocolFields.Status)) {
-            PlayerProtocol.AppliedStatus -> finish(job, SpotifyHostPlayerAccepted(job.request, snapshot(job.identity), recordings.map { recording -> recording.first }), null)
+            PlayerProtocol.AppliedStatus -> finish(job, SpotifyHostPlayerAccepted(job.request, snapshot(job.identity), recordings.map { recording -> recording.first }, recordings.map { recording -> SpotifyHostResolvedTrack(recording.first, recording.second.recordingIdentifier) }), null)
             PlayerProtocol.ConflictStatus -> finish(job, null, SpotifyPlayerFailure(SpotifyPlayerFailureReason.Conflict))
             PlayerProtocol.SupersededStatus -> finish(job, null, SpotifyPlayerFailure(SpotifyPlayerFailureReason.Superseded))
             else -> fail(SpotifyPlayerFailureReason.UnknownOutcome)
@@ -244,14 +290,14 @@ class SpotifyHostPlayerPort(
         var timer: SpotifyNativeFollowerCancellation? = null
     }
     companion object {
-        private const val MaximumIdentifierCharacters = 512
+        private const val MaximumIdentifierCharacters = SpotifyHostingPolicy.MaximumIdentifierCharacters
         private const val MaximumRecordingTextCharacters = 2048
         private const val FirstNativeIdentifier = 1L
         private const val MinimumMessageIdentifier = 0L
         private const val MaximumMessageIdentifier = 4294967295L
         private const val DefaultMaximumJournalEntries = 128
         private const val DefaultMaximumPendingCommands = 16
-        private const val MaximumQueueTracks = 80
+        private const val MaximumQueueTracks = SpotifyHostingPolicy.MaximumQueueTracks
         private const val MaximumCommandLifetimeMilliseconds = 10000L
         private const val MinimumElapsedMilliseconds = 0L
         private const val EmptyCount = 0

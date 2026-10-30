@@ -36,7 +36,7 @@ pub enum ConnectPublicationPlayback { Playing, Paused, Buffering, PausedBufferin
 pub struct ConnectPublicationCommand {
     pub message_identifier: u32,
     pub sender_device_identifier: String,
-    pub session_command_identifier: String,
+    pub session_command_identifier: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -121,10 +121,10 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
         ..Default::default() };
     if let Some(command) = &snapshot.accepted_command {
         identifier(&command.sender_device_identifier)?;
-        identifier(&command.session_command_identifier)?;
+        if let Some(identifier_value) = &command.session_command_identifier { identifier(identifier_value)?; }
         publication.last_command_message_id = command.message_identifier;
         publication.last_command_sent_by_device_id = command.sender_device_identifier.clone();
-        player.session_command_id = command.session_command_identifier.clone();
+        player.session_command_id = command.session_command_identifier.clone().unwrap_or_default();
     }
     publication.device.mut_or_insert_default().player_state = MessageField::some(player);
     Ok(publication)
