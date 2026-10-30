@@ -1,3 +1,44 @@
+# Current session checkpoint — 2026-10-31
+
+Read this checkpoint before the historical follower notes below. Mobile source
+HEAD is `d25864d`; library documentation HEAD is `d6eb464`. The native host source
+chapters are committed separately in the mobile repository: `5fc44f2` readiness
+and deadlines, `928360d` actual command receipts, `1a537e6` coordination,
+`dc13688` native session/configuration and `d25864d` queue-independent withdrawal.
+
+Latest source verification: full native Cargo suite 230 tests; all Android app JVM
+suites 385 tests across 28 files; mobile Spotify suites 433 Node and 99 Jest tests;
+full `npx tsc --noEmit` passed. Exact commands and feature-to-test mapping are in
+SPOTIFY_INTEGRATION_PROGRESS.md and SPOTIFY_APP_HOSTING.md. Native packaging,
+actual React integration, phone lifecycle and audible timing are separate gates.
+No fresh APK was built during these unfinished integration chapters.
+
+The user approved the last pairing. State and metadata reads passed; two native
+catalog searches returned backpressure. No HTTP status or root cause was proven.
+The probe process is now absent, with a stale socket left on disk. Preserve all
+running Spotify/native processes, and never print raw account/song data or tokens.
+Do not mistake the socket for a live registration or repeat a stale pairing code.
+
+Continue implementation with application-owned host runtime and module/task
+routing, then explicit JS hosting controls and background reverse matching for
+new local queue additions. The actual host dispatcher/coordinator/session are
+source tested but are not yet composed into a working app hosting action. Keep
+activation gated on an attached command handler. Retained runtime design must
+preserve failed cleanup barriers across replacement and keep old scope ownership
+only for cleanup; avoid holding owner locks while invoking coordinator/session
+callbacks. Hosting must retire on connection/generation loss and cannot reactivate
+implicitly. Native following already has verified same-Jam reconnect source logic.
+
+Queue-independent withdrawal now hides the actual native device without a mapped
+queue or current Jam membership. It still requires the actual owned native
+connection/generation; unknown outcomes remain failed and never replay. Application
+composition must handle actual connection retirement before releasing a binding
+whose cleanup failed. Background auth renewal already exists for following;
+hosting must route its scoped auth/recording jobs through the same real headless
+entry points. Guest admission and permission guards must remain honest until
+second-account evidence exists. Build/package the APK after source integration,
+then report source checks separately from real device verification.
+
 # App controls for the native follower
 
 The existing Listen alongside Spotify action now chooses one playback owner.
