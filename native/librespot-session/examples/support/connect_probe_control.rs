@@ -3,7 +3,7 @@ use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use streaming_spotify_session::{connect_commands::ConnectCommand, connect_metadata::encode_metadata_request,
+use streaming_spotify_session::{connect_search::ConnectSearchInput, connect_commands::ConnectCommand, connect_metadata::encode_metadata_request,
     connect_receipts::ConnectCommandAcknowledgement, connect_transport::{native_monotonic_milliseconds, ConnectAction}, model::Failure};
 use tokio::{io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::{UnixListener, UnixStream}, sync::{mpsc, oneshot}, task::JoinSet};
 use tokio_util::sync::CancellationToken;
@@ -28,6 +28,7 @@ const LINE_SEPARATOR: &[u8] = b"\n";
 pub enum ProbeRequest {
     Read {},
     Membership {},
+    Search { input: ConnectSearchInput },
     Metadata { identifiers: Vec<String> },
     Command { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand },
 }
@@ -53,6 +54,7 @@ pub fn decode_request(bytes: &[u8]) -> Result<ProbeRequest, Failure> {
     match &request {
         ProbeRequest::Read {} | ProbeRequest::Membership {} => (),
         ProbeRequest::Metadata { identifiers } => { encode_metadata_request(identifiers)?; },
+        ProbeRequest::Search { input } => { input.validate()?; },
         ProbeRequest::Command { generation, request_identifier, target_device_identifier, command } => {
             if *generation < MINIMUM_GENERATION || *generation > MAXIMUM_GENERATION { return Err(Failure::InvalidInput); }
             command.validate(request_identifier, target_device_identifier)?;
@@ -92,6 +94,13 @@ async fn execute(request: ProbeRequest, actions: &mpsc::Sender<ConnectAction>, g
             actions.try_send(ConnectAction::Membership { generation, result }).map_err(|_| Failure::Backpressure)?;
             let reading = response.await.map_err(|_| Failure::Canceled)??;
             Ok(serde_json::json!({ (HANDLE_FIELD): PROBE_HANDLE, (GENERATION_FIELD): generation, (READING_FIELD): reading }))
+        },
+        ProbeRequest::Search { input } => {
+            let generation = generation.load(Ordering::Acquire);
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Search { generation, input, search_cancellation: cancellation.clone(), result }).map_err(|_| Failure::Backpressure)?;
+            let tracks = response.await.map_err(|_| Failure::Canceled)??;
+            Ok(serde_json::json!({ (HANDLE_FIELD): PROBE_HANDLE, (GENERATION_FIELD): generation, (TRACKS_FIELD): tracks }))
         },
         ProbeRequest::Metadata { identifiers } => {
             let generation = generation.load(Ordering::Acquire);

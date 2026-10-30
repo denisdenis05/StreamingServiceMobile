@@ -61,6 +61,7 @@ class SpotifyPlayerServicePort(
     private var draining = false
     private var generation = InitialGeneration
     private var closed = false
+    private var closeCompletion: CompletableFuture<Unit>? = null
     @Volatile private var activeLease: SpotifyPlayerLease? = null
     @Volatile private var retiringLease: SpotifyPlayerLease? = null
     private var runningWork: Work<*>? = null
@@ -202,7 +203,8 @@ class SpotifyPlayerServicePort(
     fun close(): SpotifyPlayerOperation<Unit> {
         val completion = CompletableFuture<Unit>()
         synchronized(monitor) {
-            if (closed) return SpotifyPlayerOperation(CompletableFuture.completedFuture(Unit)) {}
+            closeCompletion?.let { previous -> return SpotifyPlayerOperation(previous) {} }
+            closeCompletion = completion
             closed = true
             retirePendingLocked()
             enqueueLocked(Work(generation, completion) { activeLease?.let { lease -> releaseExact(lease) }; Unit })

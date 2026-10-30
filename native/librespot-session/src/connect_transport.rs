@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_membership::ConnectMembershipReading, connect_http_worker::{run_http_worker, CheckedHttpCommand, CompletedHttpWork, HttpCompletion, HttpWork, PendingHttpResponse, HTTP_CHANNEL_CAPACITY}, connect_publication::{ConnectPublicationSnapshot, ConnectPublicationOrder}, connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
+use crate::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_http_worker::{run_http_worker, CheckedHttpCommand, CompletedHttpWork, HttpCompletion, HttpWork, PendingHttpResponse, HTTP_CHANNEL_CAPACITY}, connect_publication::{ConnectPublicationSnapshot, ConnectPublicationOrder}, connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -41,6 +41,7 @@ pub enum ConnectAction {
     Publish { generation: u64, snapshot: ConnectPublicationSnapshot, publication_cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
     InspectFailure { generation: u64, result: ActionResult<ConnectFailureStage> },
     Refresh { generation: u64, result: ActionResult<ConnectCluster> },
+    Search { generation: u64, input: ConnectSearchInput, search_cancellation: CancellationToken, result: ActionResult<Vec<ConnectSearchTrack>> },
     Metadata { generation: u64, identifiers: Vec<String>, result: ActionResult<Vec<ConnectTrackMetadata>> },
     Read { generation: u64, result: ActionResult<ConnectReading> },
     Membership { generation: u64, result: ActionResult<ConnectMembershipReading> },
@@ -138,6 +139,7 @@ fn retire_action(action: ConnectAction) {
     match action {
         ConnectAction::CheckedCommand { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Search { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Membership { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
@@ -219,6 +221,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         emit(events, generation, ConnectEventData::Registered { account_identifier: identity.account_identifier.clone(),
                             device_identifier: identity.device_identifier.clone(), verification_source: completion.verification, cluster }, cancellation).await?;
                     },
+                    HttpCompletion::Search { result, response } => response.complete(result),
                     HttpCompletion::Metadata { result, response } => response.complete(result),
                     HttpCompletion::Membership { result, response } => response.complete(result),
                     HttpCompletion::Read { result, response } => {
@@ -298,6 +301,12 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
                         submit_http_work(&work, HttpWork::Membership { response: PendingHttpResponse::new(result) })?; busy = true;
                     },
+                    ConnectAction::Search { generation: expected, input, search_cancellation, result } => {
+                        if result.is_closed() { continue; }
+                        if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled() || search_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if let Err(failure) = input.validate() { let _ = result.send(Err(failure)); continue; }
+                        submit_http_work(&work, HttpWork::Search { input, cancellation: search_cancellation, response: PendingHttpResponse::new(result) })?; busy = true;
+                    },
                     ConnectAction::Metadata { generation: expected, identifiers, result } => {
                         if result.is_closed() { continue; }
                         if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
@@ -353,7 +362,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
     }
 }
 
-pub async fn process_connected_events(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations), incoming: &mut mpsc::Receiver<DealerInput>, socket: &mpsc::Sender<OutgoingFrame>,
+pub async fn process_connected_events(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations + ConnectSearchOperations), incoming: &mut mpsc::Receiver<DealerInput>, socket: &mpsc::Sender<OutgoingFrame>,
     generation: u64, events: &mpsc::Sender<ConnectEvent>, actions: &mut mpsc::Receiver<ConnectAction>, cancellation: &CancellationToken) -> Result<(), Failure> {
     let identity = ConnectActorIdentity { device_identifier: session.device_identifier().to_owned(), account_identifier: session.account_identifier(),
         playback_session_identifier: session.playback_session_identifier().map(str::to_owned) };

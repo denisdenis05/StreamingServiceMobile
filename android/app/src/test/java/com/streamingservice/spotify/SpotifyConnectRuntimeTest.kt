@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CompletableFuture
 
 class SpotifyConnectRuntimeTest {
     private class Execution : SpotifyConnectExecution {
@@ -46,11 +47,12 @@ class SpotifyConnectRuntimeTest {
             return if (batch.finished) null else batch
         }
     }
-    private class Fixture {
+    private class Fixture(val following: CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)) {
+        var followingRetirements = EMPTY_COUNT
         val execution = Execution()
         val protocol = Protocol()
         val polling = Polling()
-        val runtime = SpotifyConnectRuntime(execution, protocol, polling)
+        val runtime = SpotifyConnectRuntime(execution, protocol, polling) { followingRetirements += SINGLE_COUNT; following }
         val events = mutableListOf<SpotifyConnectRuntimeEvent>()
         val attachment = runtime.attach { event -> events.add(event) }
         fun start(): Long = runtime.start(attachment, IDENTIFIER, CREDENTIAL)
@@ -62,6 +64,61 @@ class SpotifyConnectRuntimeTest {
         catch (failure: SpotifyConnectFailure) { assertEquals(code, failure.code) }
     }
 
+    @Test
+    fun explicitShutdownWaitsForNativeAndFollowerCleanupAndDetachDoesNotRetireFollowing() {
+        val following = CompletableFuture<Unit>(); val fixture = Fixture(following); fixture.start()
+        fixture.runtime.detach(fixture.attachment)
+        assertEquals(EMPTY_COUNT, fixture.followingRetirements)
+        val replacement = fixture.replacement(); fixture.runtime.start(replacement, OTHER_IDENTIFIER, CREDENTIAL)
+        var completed = false
+        fixture.runtime.shutdown(replacement) { completed = true }
+        assertFalse(fixture.runtime.ownsNativeConnection(IDENTITY.accountIdentifier, HANDLE))
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertFalse(completed)
+        following.complete(Unit)
+        assertTrue(completed)
+    }
+    @Test
+    fun replacementAccountWaitsForFollowerCleanupAfterNativeDrain() {
+        val following = CompletableFuture<Unit>(); val fixture = Fixture(following); fixture.start()
+        fixture.protocol.requestedIdentity = IDENTITY.copy(accountIdentifier = OTHER_IDENTITY)
+        var replacementHandle: Long? = null
+        fixture.runtime.startOrReplace(fixture.attachment, IDENTIFIER, CREDENTIAL, { handle -> replacementHandle = handle }, { failure -> throw failure })
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertEquals(SINGLE_COUNT, fixture.execution.starts)
+        following.complete(Unit)
+        assertEquals(HANDLE, replacementHandle)
+        assertEquals(TWO_COUNT, fixture.execution.starts)
+    }
+    @Test
+    fun failedFollowerCleanupRejectsShutdownAfterNativeDrain() {
+        val following = CompletableFuture<Unit>(); val fixture = Fixture(following); fixture.start()
+        var completed = false; var failed = false
+        fixture.runtime.shutdown(fixture.attachment, { completed = true }, { failed = true })
+        following.completeExceptionally(SpotifyConnectFailure(NETWORK_FAILURE))
+        assertFalse(failed)
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertTrue(failed); assertFalse(completed)
+    }
+    @Test
+    fun failedFollowerRetirementCannotBeBypassedByAnotherNativeStartAfterAccessPointDrain() {
+        val following = CompletableFuture<Unit>(); val fixture = Fixture(following); fixture.start()
+        fixture.runtime.shutdown(fixture.attachment, {}, {})
+        fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        requireFailure(BACKPRESSURE_FAILURE) { fixture.runtime.start(fixture.attachment, IDENTIFIER, CREDENTIAL) }
+        following.completeExceptionally(SpotifyConnectFailure(NETWORK_FAILURE))
+        requireFailure(NETWORK_FAILURE) { fixture.runtime.start(fixture.attachment, IDENTIFIER, CREDENTIAL) }
+        assertEquals(SINGLE_COUNT, fixture.execution.starts)
+    }
+    @Test
+    fun nativeApplicationObservationSurvivesReactDetachAndCanDetachIndependently() {
+        val fixture = Fixture(); fixture.start(); var observed = EMPTY_COUNT
+        val observation = fixture.runtime.observeNativeConnection { observed += SINGLE_COUNT }
+        fixture.runtime.detach(fixture.attachment); fixture.polling.pump()
+        assertEquals(SINGLE_COUNT, observed)
+        observation.cancel(); fixture.polling.pump()
+        assertEquals(SINGLE_COUNT, observed)
+    }
     @Test
     fun detachedReactAttachmentRetainsNativeConnectionAndPolling() {
         val fixture = Fixture(); fixture.start(); fixture.runtime.detach(fixture.attachment); fixture.polling.pump()

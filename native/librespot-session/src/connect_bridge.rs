@@ -3,8 +3,9 @@ use std::{sync::OnceLock, time::Duration};
 use jni::{objects::{JObject, JString}, sys::{jlong, jstring}, JNIEnv};
 use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
+use tokio_util::sync::CancellationToken;
 
-use crate::{connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
+use crate::{connect_search::{ConnectSearchInput, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
     connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
@@ -72,6 +73,25 @@ async fn metadata(handle: u64, generation: u64, identifiers: Vec<String>) -> Res
     let tracks = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
         .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
     Ok(ConnectMetadataReceipt { handle, generation, tracks })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ConnectSearchReceipt { handle: u64, generation: u64, tracks: Vec<ConnectSearchTrack> }
+
+struct SearchCancellation(CancellationToken);
+impl Drop for SearchCancellation { fn drop(&mut self) { self.0.cancel(); } }
+
+async fn search(handle: u64, generation: u64, input: ConnectSearchInput) -> Result<ConnectSearchReceipt, Failure> {
+    input.validate()?;
+    if generation < MINIMUM_HANDLE as u64 || generation > MAXIMUM_SAFE_JAVASCRIPT_INTEGER { return Err(Failure::InvalidInput); }
+    let cancellation = SearchCancellation(CancellationToken::new());
+    let (result, response) = oneshot::channel();
+    connections().actions(handle)?.try_send(ConnectAction::Search { generation, input, search_cancellation: cancellation.0.clone(), result })
+        .map_err(|_| Failure::Backpressure)?;
+    let tracks = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+        .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
+    Ok(ConnectSearchReceipt { handle, generation, tracks })
 }
 
 #[derive(Serialize)]
@@ -248,5 +268,16 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
         if serialized.len() > MAXIMUM_INPUT_BYTES { return Err(Failure::InvalidInput); }
         let identifiers = serde_json::from_str(&serialized).map_err(|_| Failure::InvalidInput)?;
         runtime()?.block_on(metadata(handle(connection_handle)?, handle(generation)?, identifiers))
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_connectSearch(
+    mut environment: JNIEnv, _receiver: JObject, connection_handle: jlong, generation: jlong, serialized: JString) -> jstring {
+    boundary(&mut environment, |environment| {
+        let serialized = crate::read_string(environment, serialized)?;
+        if serialized.len() > MAXIMUM_INPUT_BYTES { return Err(Failure::InvalidInput); }
+        let input = serde_json::from_str(&serialized).map_err(|_| Failure::InvalidInput)?;
+        runtime()?.block_on(search(handle(connection_handle)?, handle(generation)?, input))
     })
 }

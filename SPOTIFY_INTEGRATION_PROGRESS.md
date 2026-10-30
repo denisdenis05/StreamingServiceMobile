@@ -1069,6 +1069,42 @@ queue propagation. OAuth credentials are not assumed to authorize private Jam.
 
 # Spotify library integration
 
+## Native catalog search and background resolver integration — 2026-10-30
+
+Implemented a bounded authenticated public Spotify track-search request in the
+native Connect session. Inputs are quoted and escaped, use the account country,
+and cannot redirect the fixed request to another host or path. Response decoding
+preserves Spotify's returned track identity, relinking identity, artist credits,
+duration, recording code and explicit playability without substituting another
+track. Rejected safe reads may renew the native token once; mutations remain
+single-dispatch. The probe protocol now exposes this typed search operation.
+
+Integrated the background recording task with the native broker through the
+React Native headless-task registry. The task claims exact pending work, restores
+the app account, queries the authenticated recording catalog, synchronizes the
+player token and returns only a bounded match result. Native request/account/Jam/
+host/generation fences remain authoritative. The app's foreground-stop behavior
+is still enabled; a headless task being registered does not prove continuous
+background following or remove lifecycle safety stops.
+
+The old live native probe is not registered: no probe process or control socket
+was present, and `adb devices -l` reported no attached device. The current-session
+catalog search therefore could not be exercised without a live approved session.
+No credentials or account/song details were read or emitted. Desktop Spotify
+processes were left untouched. Cross-account permission, guest shared queue,
+actual synchronized audio, automatic reconnect recovery and app-led host
+activation/publication remain unverified.
+
+Source validation on 2026-10-30: native Rust `connect_search`, `connect_activation`,
+`connect_actor` and `connect_authentication` suites passed (67 cases); focused
+Android JVM coverage passed (108 cases); `npm run test:spotify` passed 364 Node
+and 92 Jest cases; strict TypeScript checking and the Android Metro bundle passed.
+All 19 dedicated background resolver cases passed. One overlapping-retirement
+race was fixed by sharing the current cleanup barrier and its regression test
+passes. These are source tests, not native phone verification. No APK was built
+because the requested live-session search validation and full end-to-end source
+acceptance remain open.
+
 ## Mobile personal-test chapter — 2026-10-22
 
 The user authorized a mobile implementation and installable APK. The Profile page

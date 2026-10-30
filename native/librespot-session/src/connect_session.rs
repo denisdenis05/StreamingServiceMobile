@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack, search_request, search_address, decode_search_response}, connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -269,6 +269,15 @@ impl ConnectMetadataOperations for NativeConnectSession {
     }
 }
 
+impl ConnectSearchOperations for NativeConnectSession {
+    async fn search(&mut self, input: ConnectSearchInput) -> Result<Vec<ConnectSearchTrack>, Failure> {
+        let input = input.for_account_country(&self.session.country())?;
+        let request = search_request(&input)?;
+        let response = execute_authenticated_request(self, &request).await?;
+        decode_search_response(&input, &response)
+    }
+}
+
 impl ConnectAuthenticatedDispatch for NativeConnectSession {
     fn supports_rejected_token_renewal(&self) -> bool { self.session.client_id() == desktop_login5::CLIENT_IDENTIFIER }
     async fn access_token(&mut self) -> Result<String, Failure> { NativeConnectSession::access_token(self).await }
@@ -276,10 +285,14 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
     async fn dispatch_once(&mut self, request: &ConnectHttpRequest, access_token: &str) -> Result<Vec<u8>, Failure> {
         let mutation = request.purpose.is_mutation();
         let request_body = request.body.clone();
-        let mut request = Request::builder().method(request.method.clone()).uri(self.origin.clone() + &request.path)
+        let catalog_search = matches!(request.purpose, ConnectRequestPurpose::CatalogSearch);
+        let address = if catalog_search { search_address(request)?.to_string() } else { self.origin.clone() + &request.path };
+        let mut request = Request::builder().method(request.method.clone()).uri(address)
             .header(AUTHORIZATION_HEADER, BEARER_PREFIX.to_owned() + access_token)
             .header(ACCEPT_HEADER, request.media_type).header(CONTENT_TYPE_HEADER, request.media_type);
-        if let Some(connection) = self.connection_identifier.as_ref() { request = request.header(CONNECTION_HEADER, connection); }
+        if !catalog_search {
+            if let Some(connection) = self.connection_identifier.as_ref() { request = request.header(CONNECTION_HEADER, connection); }
+        }
         let request = request.body(request_body.into()).map_err(|_| Failure::InvalidInput)?;
         let dispatch = async {
             let response = self.session.http_client().request_fut(request)

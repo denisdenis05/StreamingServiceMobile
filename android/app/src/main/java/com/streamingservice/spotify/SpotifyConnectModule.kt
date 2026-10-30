@@ -87,12 +87,12 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
 
     @ReactMethod
     fun close(identifier: String, promise: Promise) {
-        dispatch(promise, lifecycle) { runtime.close(attachment, identifier) { promise.resolve(null) } }
+        dispatch(promise, lifecycle) { runtime.close(attachment, identifier, { promise.resolve(null) }, { failure -> reject(promise, safeCode(failure)) }) }
     }
 
     @ReactMethod
     fun shutdown(promise: Promise) {
-        dispatch(promise, lifecycle) { runtime.shutdown(attachment) { promise.resolve(null) } }
+        dispatch(promise, lifecycle) { runtime.shutdown(attachment, { promise.resolve(null) }, { failure -> reject(promise, safeCode(failure)) }) }
     }
 
     @ReactMethod

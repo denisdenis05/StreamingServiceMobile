@@ -6,7 +6,7 @@ const library = require(Modules.library);
 const { SpotifyBackgroundRecordingTask, SpotifyBackgroundRecordingPolicy } = require(Modules.task);
 const Fixture = Object.freeze({ request: 'synthetic-resolution-request', appAccount: 'synthetic-app-account', otherAccount: 'synthetic-other-account',
   spotifyAccount: 'synthetic-spotify-account', session: 'synthetic-session', host: 'synthetic-host', handle: 7, generation: 3,
-  otherGeneration: 4, track: '0000000000000000000001', otherTrack: '0000000000000000000002', market: 'RO', invalidMarket: 'invalid',
+  otherGeneration: 4, baseAddress: 'https://streaming.example.test/', track: '0000000000000000000001', otherTrack: '0000000000000000000002', market: 'RO', invalidMarket: 'invalid',
   title: 'Synthetic Song', artist: 'Synthetic Artist', otherTitle: 'Different Song', duration: 180000, recording: 'synthetic-recording',
   otherRecording: 'synthetic-other-recording', catalog: 'synthetic-catalog', zero: 0, one: 1, two: 2, flushTurns: 40,
   matched: 'matched', ambiguous: 'ambiguous', unavailable: 'unavailable', privateMessage: 'synthetic-private-diagnostic' });
@@ -27,7 +27,7 @@ function recording(identifier = Fixture.recording) { return { identifier, title:
   artistNames: [Fixture.artist], durationMilliseconds: Fixture.duration }; }
 function job() { return { requestIdentifier: Fixture.request, streamingServiceAccountIdentifier: Fixture.appAccount,
   spotifyAccountIdentifier: Fixture.spotifyAccount, jamSessionIdentifier: Fixture.session, hostDeviceIdentifier: Fixture.host,
-  handle: Fixture.handle, generation: Fixture.generation, spotifyTrackIdentifier: Fixture.track, market: Fixture.market,
+  handle: Fixture.handle, generation: Fixture.generation, spotifyTrackIdentifier: Fixture.track, market: Fixture.market, baseAddress: Fixture.baseAddress,
   metadata: { handle: Fixture.handle, generation: Fixture.generation, tracks: [{ spotifyTrackIdentifier: Fixture.track,
     title: Fixture.title, artistNames: [Fixture.artist], durationMilliseconds: Fixture.duration, recordingCodes: [] }] } }; }
 function fixture() {

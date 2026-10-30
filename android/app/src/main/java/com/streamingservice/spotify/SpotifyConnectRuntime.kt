@@ -1,5 +1,7 @@
 package com.streamingservice.spotify
 
+import java.util.concurrent.CompletableFuture
+
 interface SpotifyConnectRuntimeProtocol {
     fun identity(serialized: String): SpotifyConnectRuntimeIdentity
     fun bootstrap(batch: SpotifyConnectBatch, identity: SpotifyConnectRuntimeIdentity, previous: SpotifyConnectBatch?): SpotifyConnectBatch?
@@ -18,7 +20,8 @@ interface SpotifyConnectRuntimePolling {
 class SpotifyConnectRuntime(
     execution: SpotifyConnectExecution,
     private val protocol: SpotifyConnectRuntimeProtocol,
-    private val polling: SpotifyConnectRuntimePolling
+    private val polling: SpotifyConnectRuntimePolling,
+    private val retireFollowing: () -> CompletableFuture<Unit> = { CompletableFuture.completedFuture(Unit) }
 ) {
     class Attachment internal constructor(internal var listener: ((SpotifyConnectRuntimeEvent) -> Unit)?) {
         internal var identifier: String? = null
@@ -36,6 +39,10 @@ class SpotifyConnectRuntime(
     private var handle: Long? = null
     private var connectionLifetime: ConnectionLifetime? = null
     private var failurePublished = false
+    private var retiringConnection = false
+    private var retirementBarrier: CompletableFuture<Unit>? = null
+    @Volatile private var nativeBinding: Pair<String, Long>? = null
+    private val nativeListeners = linkedSetOf<(SpotifyConnectBatch) -> Unit>()
     private val owner = SpotifyConnectOwner(execution) { _, batch -> receive(batch) }
 
     @Synchronized
@@ -71,19 +78,24 @@ class SpotifyConnectRuntime(
         pendingStart = pending
         selected.identifier = identifier
         try {
-            owner.close(NATIVE_OWNER_IDENTIFIER) {
-                pendingStart = null
-                try {
-                    if (connectionLifetime !== retiringLifetime) throw SpotifyConnectFailure(CANCELED_FAILURE)
-                    identity = null
-                    bootstrap = null
-                    handle = null
-                    connectionLifetime = null
-                    if (pending.canceled) throw SpotifyConnectFailure(CANCELED_FAILURE)
-                    requireBinding(selected, identifier)
-                    started(start(selected, identifier, serialized))
-                } catch (failure: Throwable) { failed(failure) }
-            }
+            retireTogether({ complete ->
+                owner.close(NATIVE_OWNER_IDENTIFIER) {
+                    if (connectionLifetime === retiringLifetime) {
+                        identity = null; bootstrap = null; handle = null; connectionLifetime = null
+                    }
+                    complete()
+                }
+            }, {
+                synchronized(this) {
+                    if (pendingStart !== pending) { failed(SpotifyConnectFailure(CANCELED_FAILURE)); return@synchronized }
+                    pendingStart = null
+                    try {
+                        if (pending.canceled) throw SpotifyConnectFailure(CANCELED_FAILURE)
+                        requireBinding(selected, identifier)
+                        started(start(selected, identifier, serialized))
+                    } catch (failure: Throwable) { failed(failure) }
+                }
+            }, { failure -> synchronized(this) { if (pendingStart === pending) pendingStart = null; failed(failure) } })
         } catch (failure: Throwable) {
             pendingStart = null
             selected.identifier = null
@@ -102,12 +114,18 @@ class SpotifyConnectRuntime(
             if (handle == null) throw SpotifyConnectFailure(BACKPRESSURE_FAILURE)
             owner.requireAvailable(NATIVE_OWNER_IDENTIFIER)
         } else {
+            retirementBarrier?.let { retirement ->
+                if (!retirement.isDone) throw SpotifyConnectFailure(BACKPRESSURE_FAILURE)
+                if (retirement.isCompletedExceptionally) throw SpotifyConnectFailure(NETWORK_FAILURE)
+            }
             bootstrap = null
             identity = null
             failurePublished = false
+            retiringConnection = false
             handle = owner.start(NATIVE_OWNER_IDENTIFIER, serialized)
             connectionLifetime = ConnectionLifetime()
             identity = requestedIdentity
+            nativeBinding = requestedIdentity.accountIdentifier to checkNotNull(handle)
             polling.start { pump() }
         }
         selected.identifier = identifier
@@ -158,39 +176,54 @@ class SpotifyConnectRuntime(
         owner.finishCommand(reservation)
     }
 
+    fun close(selected: Attachment, identifier: String, completed: () -> Unit) = close(selected, identifier, completed) { failure -> throw failure }
+
     @Synchronized
-    fun close(selected: Attachment, identifier: String, completed: () -> Unit) {
+    fun close(selected: Attachment, identifier: String, completed: () -> Unit, failed: (Throwable) -> Unit) {
         requireAttachment(selected)
         if (selected.identifier != identifier) { completed(); return }
         pendingStart?.takeIf { pending -> pending.attachment === selected }?.canceled = true
         val retiringLifetime = connectionLifetime
-        owner.close(NATIVE_OWNER_IDENTIFIER) {
-            if (attachment === selected && connectionLifetime === retiringLifetime && selected.identifier == identifier) selected.identifier = null
-            completed()
-        }
+        retireTogether({ complete -> owner.close(NATIVE_OWNER_IDENTIFIER) { complete() } }, {
+            synchronized(this) {
+                if (attachment === selected && (connectionLifetime === retiringLifetime || connectionLifetime == null) && selected.identifier == identifier) selected.identifier = null
+                completed()
+            }
+        }, failed)
     }
 
+    fun shutdown(selected: Attachment, completed: () -> Unit) = shutdown(selected, completed) { failure -> throw failure }
+
     @Synchronized
-    fun shutdown(selected: Attachment, completed: () -> Unit) {
+    fun shutdown(selected: Attachment, completed: () -> Unit, failed: (Throwable) -> Unit) {
         requireAttachment(selected)
         pendingStart?.canceled = true
         val retiringLifetime = connectionLifetime
-        owner.close(NATIVE_OWNER_IDENTIFIER) {
-            if (attachment === selected && connectionLifetime === retiringLifetime) selected.identifier = null
-            completed()
-        }
+        retireTogether({ complete -> owner.close(NATIVE_OWNER_IDENTIFIER) { complete() } }, {
+            synchronized(this) {
+                if (attachment === selected && (connectionLifetime === retiringLifetime || connectionLifetime == null)) selected.identifier = null
+                completed()
+            }
+        }, failed)
     }
 
     @Synchronized
     private fun pump() {
         try { owner.pump() } catch (failure: Throwable) { failAndRetire(failure) }
         if (!owner.hasConnection()) {
+            nativeBinding = null
             handle = null
             connectionLifetime = null
             identity = null
             bootstrap = null
-            attachment?.identifier = null
+            if (pendingStart == null) attachment?.identifier = null
             polling.stop()
+            try {
+                val retirement = retireFollowing()
+                if (!retirement.isDone || retirement.isCompletedExceptionally) retirementBarrier = retirement
+            } catch (failure: Throwable) {
+                retirementBarrier = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
+            }
         }
     }
 
@@ -198,6 +231,7 @@ class SpotifyConnectRuntime(
         val currentIdentity = identity ?: return
         try { bootstrap = protocol.bootstrap(batch, currentIdentity, bootstrap) }
         catch (failure: Throwable) { bootstrap = null; failAndRetire(failure); return }
+        nativeListeners.toList().forEach { listener -> try { listener(batch) } catch (_failure: Throwable) { Unit } }
         val selected = attachment ?: return
         val identifier = selected.identifier ?: return
         publish(selected, SpotifyConnectRuntimeEvent(identifier, batch))
@@ -208,8 +242,38 @@ class SpotifyConnectRuntime(
         failurePublished = true
         val selected = attachment
         val identifier = selected?.identifier
-        try { owner.close(NATIVE_OWNER_IDENTIFIER) {} } catch (_failure: Throwable) {}
+        try { retireTogether({ complete -> owner.close(NATIVE_OWNER_IDENTIFIER) { complete() } }, {}, {}) } catch (_failure: Throwable) { Unit }
         if (selected != null && identifier != null) publish(selected, SpotifyConnectRuntimeEvent(identifier, failure = safeCode(failure)))
+    }
+
+    fun ownsNativeConnection(accountIdentifier: String, expectedHandle: Long): Boolean {
+        val binding = nativeBinding ?: return false
+        return binding.first == accountIdentifier && binding.second == expectedHandle
+    }
+
+    @Synchronized
+    fun observeNativeConnection(listener: (SpotifyConnectBatch) -> Unit): SpotifyNativeFollowerCancellation {
+        nativeListeners.add(listener)
+        return SpotifyNativeFollowerCancellation { synchronized(this) { nativeListeners.remove(listener) } }
+    }
+
+    private fun retireTogether(closeNative: (() -> Unit) -> Unit, completed: () -> Unit, failed: (Throwable) -> Unit) {
+        retirementBarrier?.takeIf { retirement -> !retirement.isDone }?.let { retirement ->
+            retirement.whenComplete { _, failure ->
+                if (failure == null) completed() else failed(failure)
+            }
+            return
+        }
+        retiringConnection = true
+        nativeBinding = null
+        val following = try { retireFollowing() } catch (failure: Throwable) {
+            CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
+        }
+        val native = CompletableFuture<Unit>()
+        try { closeNative { native.complete(Unit) } } catch (failure: Throwable) { native.completeExceptionally(failure) }
+        val retirement = CompletableFuture.allOf(following, native).thenApply { Unit }
+        retirementBarrier = retirement
+        retirement.whenComplete { _, failure -> if (failure == null) completed() else failed(failure) }
     }
 
     private fun publish(selected: Attachment, event: SpotifyConnectRuntimeEvent) {

@@ -12,6 +12,7 @@ export interface SpotifyBackgroundRecordingJob {
   readonly generation: number;
   readonly spotifyTrackIdentifier: string;
   readonly market: string;
+  readonly baseAddress: string;
   readonly metadata: unknown;
 }
 
@@ -35,7 +36,7 @@ export interface SpotifyBackgroundRecordingDependencies {
 export const SpotifyBackgroundRecordingPolicy = Object.freeze({ timeoutMilliseconds: 30000,
   maximumIdentifierCharacters: 512, firstIdentifier: 1, firstPosition: 0, singleSong: 1,
   stringType: 'string', objectType: 'object', abortEvent: 'abort', trackPattern: /^[A-Za-z0-9]{22}$/, marketPattern: /^[A-Z]{2}$/,
-  controlPattern: /[\u0000-\u0020\u007f]/, matched: 'matched', unavailable: 'unavailable', ambiguous: 'ambiguous' } as const);
+  controlPattern: /[\u0000-\u0020\u007f]/, secureProtocol: 'https:', rootPath: '/', matched: 'matched', unavailable: 'unavailable', ambiguous: 'ambiguous' } as const);
 const FailureCodes = new Set<string>(Object.values(IntegrationFailureCode));
 
 class BackgroundMetadataCatalog implements SpotifyCatalog {
@@ -59,6 +60,10 @@ function identifier(value: unknown): value is string {
     && !SpotifyBackgroundRecordingPolicy.controlPattern.test(value as string);
 }
 function validateJob(requestIdentifier: string, job: SpotifyBackgroundRecordingJob): void {
+  let address: URL;
+  try { address = new URL(job.baseAddress); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidInput); }
+  if (address.protocol !== SpotifyBackgroundRecordingPolicy.secureProtocol || address.username || address.password
+    || address.pathname !== SpotifyBackgroundRecordingPolicy.rootPath || address.search || address.hash) throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
   if (typeof job !== SpotifyBackgroundRecordingPolicy.objectType || job === null || Array.isArray(job)
     || job.requestIdentifier !== requestIdentifier || ![job.requestIdentifier, job.streamingServiceAccountIdentifier,
     job.spotifyAccountIdentifier, job.jamSessionIdentifier, job.hostDeviceIdentifier].every(identifier)
@@ -82,7 +87,7 @@ function captureJob(requestIdentifier: string, supplied: SpotifyBackgroundRecord
     streamingServiceAccountIdentifier: supplied.streamingServiceAccountIdentifier, spotifyAccountIdentifier: supplied.spotifyAccountIdentifier,
     jamSessionIdentifier: supplied.jamSessionIdentifier, hostDeviceIdentifier: supplied.hostDeviceIdentifier,
     handle: supplied.handle, generation: supplied.generation, spotifyTrackIdentifier: supplied.spotifyTrackIdentifier,
-    market: supplied.market, metadata }) });
+    market: supplied.market, baseAddress: supplied.baseAddress, metadata }) });
 }
 
 export class SpotifyBackgroundRecordingTask {

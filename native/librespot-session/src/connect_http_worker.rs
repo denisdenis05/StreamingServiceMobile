@@ -4,7 +4,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_membership::ConnectMembershipReading, connect_commands::ConnectCommand, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata},
+use crate::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_commands::ConnectCommand, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata},
     connect_publication::ConnectPublicationSnapshot, connect_receipts::ConnectCommandAcknowledgement,
     connect_session::{ConnectFailureStage, ConnectSessionOperations, RegistrationVerification},
     connect_transport::{native_monotonic_milliseconds, ConnectReading}, connect_wire::ConnectCluster, model::Failure};
@@ -39,6 +39,7 @@ pub(crate) struct CheckedHttpCommand {
 
 pub(crate) enum HttpWork {
     Register { connection_identifier: String },
+    Search { input: ConnectSearchInput, cancellation: CancellationToken, response: PendingHttpResponse<Vec<ConnectSearchTrack>> },
     Metadata { identifiers: Vec<String>, response: PendingHttpResponse<Vec<ConnectTrackMetadata>> },
     Read { response: PendingHttpResponse<ConnectReading> },
     Membership { response: PendingHttpResponse<ConnectMembershipReading> },
@@ -51,6 +52,7 @@ pub(crate) enum HttpWork {
 
 pub(crate) enum HttpCompletion {
     Registered { cluster: Result<ConnectCluster, Failure> },
+    Search { result: Result<Vec<ConnectSearchTrack>, Failure>, response: PendingHttpResponse<Vec<ConnectSearchTrack>> },
     Metadata { result: Result<Vec<ConnectTrackMetadata>, Failure>, response: PendingHttpResponse<Vec<ConnectTrackMetadata>> },
     Read { result: Result<ConnectReading, Failure>, response: PendingHttpResponse<ConnectReading> },
     Membership { result: Result<ConnectMembershipReading, Failure>, response: PendingHttpResponse<ConnectMembershipReading> },
@@ -76,10 +78,16 @@ async fn execute<Response>(operation: impl Future<Output = Result<Response, Fail
     }
 }
 
-async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations), work: HttpWork, cancellation: &CancellationToken) -> HttpCompletion {
+async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations + ConnectSearchOperations), work: HttpWork, cancellation: &CancellationToken) -> HttpCompletion {
     match work {
         HttpWork::Register { connection_identifier } => HttpCompletion::Registered {
             cluster: execute(session.register(connection_identifier), cancellation, cancellation, false).await },
+        HttpWork::Search { input, cancellation: search_cancellation, response } => {
+            let result = if response.is_closed() || search_cancellation.is_cancelled() { Err(Failure::Canceled) } else {
+                execute(session.search(input), cancellation, &search_cancellation, false).await
+            };
+            HttpCompletion::Search { result, response }
+        },
         HttpWork::Metadata { identifiers, response } => {
             let result = if response.is_closed() { Err(Failure::Canceled) } else { execute(session.metadata(identifiers), cancellation, cancellation, false).await };
             HttpCompletion::Metadata { result, response }
@@ -132,7 +140,7 @@ async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMeta
     }
 }
 
-pub(crate) async fn run_http_worker(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations), mut work: mpsc::Receiver<HttpWork>,
+pub(crate) async fn run_http_worker(session: &mut (impl ConnectSessionOperations + ConnectMetadataOperations + ConnectSearchOperations), mut work: mpsc::Receiver<HttpWork>,
     completions: mpsc::Sender<CompletedHttpWork>, cancellation: CancellationToken) {
     loop {
         let work = tokio::select! { biased; _ = cancellation.cancelled() => return, work = work.recv() => match work { Some(work) => work, None => return } };

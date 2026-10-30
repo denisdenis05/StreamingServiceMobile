@@ -11,6 +11,7 @@ internal object SpotifyLibrespotNative : SpotifyLibrespotExecution {
     external override fun finish(identifier: String)
     external fun cancelAll()
     external fun connectStart(serialized: String): String
+    external fun connectSearch(connectionHandle: Long, generation: Long, serialized: String): String
     external fun connectMetadata(connectionHandle: Long, generation: Long, serialized: String): String
     external fun connectRead(connectionHandle: Long, generation: Long): String
     external fun connectMembership(connectionHandle: Long, generation: Long): String

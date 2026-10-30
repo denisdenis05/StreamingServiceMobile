@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use librespot_protocol::{connect::Cluster, player::PlayerState};
 use protobuf::{Message, MessageField};
 use serde_json::{json, Value};
-use streaming_spotify_session::{connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
+use streaming_spotify_session::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
     connect_transport::{process_connected_events, ConnectAction, ConnectEvent, ConnectEventData, OutgoingFrame},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, DealerInput}, model::Failure};
 use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
@@ -37,7 +37,7 @@ const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
-struct Calls { membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
+struct Calls { search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
@@ -54,6 +54,15 @@ impl ConnectMetadataOperations for FakeSession {
         if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
         if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
         Err(Failure::Unsupported)
+    }
+}
+
+impl ConnectSearchOperations for FakeSession {
+    async fn search(&mut self, input: ConnectSearchInput) -> Result<Vec<ConnectSearchTrack>, Failure> {
+        self.calls.lock().unwrap().search_requests.push(input);
+        if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
+        Ok(Vec::new())
     }
 }
 

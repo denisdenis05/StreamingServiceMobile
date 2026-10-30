@@ -336,6 +336,14 @@ class SpotifyPlayerServicePortTest {
         assertNull(fixture.coordinator.authorityIdentifier)
         assertFalse(fixture.coordinator.commands.any { command -> command.getString(ProtocolFields.Operation) == PlayerOperation.Play.protocolValue })
     }
+    @Test fun repeatedCloseReturnsSameFailedCleanupInsteadOfReportingFalseSuccess() {
+        val fixture = Fixture(); fixture.preparedLease(); fixture.coordinator.malformed = true
+        val first = fixture.port.close()
+        failure(SpotifyPlayerFailureReason.UnknownOutcome, first, fixture)
+        val second = fixture.port.close()
+        assertTrue(first.result === second.result)
+        failure(SpotifyPlayerFailureReason.UnknownOutcome, second, fixture)
+    }
     @Test fun closeRetiresPendingAndRejectsNewOperations() {
         val fixture = Fixture(); val lease = fixture.preparedLease()
         val renewal = fixture.port.renew(lease)
