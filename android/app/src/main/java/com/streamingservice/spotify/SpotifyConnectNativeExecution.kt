@@ -4,6 +4,7 @@ import org.json.JSONObject
 
 interface SpotifyConnectNativeCalls {
     fun start(serialized: String): String
+    fun search(handle: Long, generation: Long, serialized: String): String
     fun metadata(handle: Long, generation: Long, serialized: String): String
     fun read(handle: Long, generation: Long): String
     fun poll(handle: Long): String
@@ -17,6 +18,7 @@ interface SpotifyConnectNativeCalls {
 
 private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun start(serialized: String): String = SpotifyLibrespotNative.connectStart(serialized)
+    override fun search(handle: Long, generation: Long, serialized: String): String = SpotifyLibrespotNative.connectSearch(handle, generation, serialized)
     override fun metadata(handle: Long, generation: Long, serialized: String): String = SpotifyLibrespotNative.connectMetadata(handle, generation, serialized)
     override fun read(handle: Long, generation: Long): String = SpotifyLibrespotNative.connectRead(handle, generation)
     override fun poll(handle: Long): String = SpotifyLibrespotNative.connectPoll(handle)
@@ -44,6 +46,7 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
         }
     }
 
+    override fun search(handle: Long, generation: Long, serialized: String): String = boundResponse(handle, generation, native.search(handle, generation, serialized))
     override fun metadata(handle: Long, generation: Long, serialized: String): String = boundResponse(handle, generation, native.metadata(handle, generation, serialized))
     override fun read(handle: Long, generation: Long): String = boundResponse(handle, generation, native.read(handle, generation))
 

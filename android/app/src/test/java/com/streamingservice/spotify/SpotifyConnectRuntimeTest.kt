@@ -21,6 +21,7 @@ class SpotifyConnectRuntimeTest {
         override fun start(serialized: String): Long { starts += SINGLE_COUNT; return HANDLE }
         override fun poll(handle: Long): SpotifyConnectBatch { if (pollFailure) throw SpotifyConnectFailure(NETWORK_FAILURE); return batch }
         override fun read(handle: Long, generation: Long): String { onRead(); return PAYLOAD }
+        override fun search(handle: Long, generation: Long, serialized: String): String { onRead(); return PAYLOAD }
         override fun metadata(handle: Long, generation: Long, serialized: String): String { onRead(); return PAYLOAD }
         override fun refresh(handle: Long, generation: Long) { onRead() }
         override fun beginCommand(handle: Long, requestIdentifier: String) {}
@@ -157,6 +158,7 @@ class SpotifyConnectRuntimeTest {
         requireFailure(CANCELED_FAILURE) { fixture.runtime.read(fixture.attachment, IDENTIFIER, GENERATION) }
         requireFailure(CANCELED_FAILURE) { fixture.runtime.refresh(fixture.attachment, IDENTIFIER, GENERATION) }
         requireFailure(CANCELED_FAILURE) { fixture.runtime.metadata(fixture.attachment, IDENTIFIER, GENERATION, PAYLOAD) }
+        requireFailure(CANCELED_FAILURE) { fixture.runtime.search(fixture.attachment, IDENTIFIER, GENERATION, PAYLOAD) }
         requireFailure(CANCELED_FAILURE) { fixture.runtime.close(fixture.attachment, IDENTIFIER) {} }
         assertEquals(EMPTY_COUNT, fixture.execution.cancellations)
     }
@@ -167,6 +169,7 @@ class SpotifyConnectRuntimeTest {
             requireFailure(CANCELED_FAILURE) {
                 when (operation) {
                     ReadOperation.Read -> fixture.runtime.read(fixture.attachment, IDENTIFIER, GENERATION)
+                    ReadOperation.Search -> fixture.runtime.search(fixture.attachment, IDENTIFIER, GENERATION, PAYLOAD)
                     ReadOperation.Metadata -> fixture.runtime.metadata(fixture.attachment, IDENTIFIER, GENERATION, PAYLOAD)
                     ReadOperation.Refresh -> fixture.runtime.refresh(fixture.attachment, IDENTIFIER, GENERATION)
                 }
@@ -361,7 +364,7 @@ class SpotifyConnectRuntimeTest {
         assertEquals(PAYLOAD, fixture.runtime.read(fixture.attachment, OTHER_IDENTIFIER, GENERATION))
     }
 
-    private enum class ReadOperation { Read, Metadata, Refresh }
+    private enum class ReadOperation { Read, Metadata, Search, Refresh }
     companion object {
         private const val ACCOUNT_IDENTIFIER = "synthetic-account"
         private const val DEVICE_IDENTIFIER = "synthetic-device"

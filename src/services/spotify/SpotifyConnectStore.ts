@@ -1,5 +1,5 @@
-import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand, decodeSpotifyConnectObservation, copySpotifyConnectMetadataIdentifiers, decodeSpotifyConnectMetadata } from 'streaming-service-spotify-jam';
-import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort, SpotifyConnectObservation, SpotifyConnectObservationPort, SharedPlaybackClock, SpotifyConnectMetadataPort, SpotifySong } from 'streaming-service-spotify-jam';
+import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand, decodeSpotifyConnectObservation, copySpotifyConnectMetadataIdentifiers, decodeSpotifyConnectMetadata, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
+import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort, SpotifyConnectObservation, SpotifyConnectObservationPort, SharedPlaybackClock, SpotifyConnectMetadataPort, SpotifyConnectSearchPort, CatalogSearch, SpotifySong } from 'streaming-service-spotify-jam';
 
 export enum SpotifyConnectStatus {
   Detached = 'detached', Connecting = 'connecting', Ready = 'ready', Reconnecting = 'reconnecting', Failed = 'failed',
@@ -18,6 +18,7 @@ export interface SpotifyConnectNative {
   shutdown?(): Promise<void>;
   refresh(identifier: string, generation: number): Promise<void>;
   read(identifier: string, generation: number): Promise<string>;
+  search(identifier: string, generation: number, serialized: string): Promise<string>;
   metadata(identifier: string, generation: number, serialized: string): Promise<string>;
   executeCommand(identifier: string, requestIdentifier: string, serialized: string): Promise<void>;
   cancelCommand(identifier: string, requestIdentifier: string): Promise<void>;
@@ -75,7 +76,7 @@ function failureCode(failure: unknown): IntegrationFailureCode {
   return typeof code === Policy.stringType && FailureCodes.has(code as string) ? code as IntegrationFailureCode : IntegrationFailureCode.Network;
 }
 
-export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyConnectObservationPort, SpotifyConnectMetadataPort {
+export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyConnectObservationPort, SpotifyConnectMetadataPort, SpotifyConnectSearchPort {
   private snapshot = EmptySnapshot;
   private disposed = false;
   private readonly listeners = new Set<() => void>();
@@ -177,6 +178,26 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
       let response: unknown;
       try { response = JSON.parse(serialized); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
       return decodeSpotifyConnectObservation(response, { handle, generation, hostDeviceIdentifier, sentMonotonicMilliseconds, receivedMonotonicMilliseconds });
+    } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
+  }
+
+  async search(accountIdentifier: string, search: CatalogSearch, market: string, cancellation: AbortSignal): Promise<readonly SpotifySong[]> {
+    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    const input = copySpotifyConnectSearch(search, market);
+    const binding = this.binding;
+    if (!binding || binding.accountIdentifier !== accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.requireCurrent(binding);
+    const native = binding.native; const handle = binding.handle; const generation = this.snapshot.generation;
+    if (!native || handle === null || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    try {
+      const serialized = await this.awaitNativeRead(binding, cancellation, () => native.search(binding.identifier, generation, JSON.stringify(input)));
+      if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+      this.requireCurrent(binding);
+      if (this.snapshot.generation !== generation || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (typeof serialized !== Policy.stringType || serialized.length > Policy.maximumBatchCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      let response: unknown;
+      try { response = JSON.parse(serialized); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
+      return decodeSpotifyConnectSearch(response, handle, generation, input.limit);
     } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
   }
 

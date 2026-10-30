@@ -134,6 +134,8 @@ class SpotifyConnectRuntime(
     }
 
     fun read(selected: Attachment, identifier: String, generation: Long): String = observe(selected, identifier) { owner.read(NATIVE_OWNER_IDENTIFIER, generation) }
+    fun search(selected: Attachment, identifier: String, generation: Long, serialized: String): String =
+        observe(selected, identifier) { owner.search(NATIVE_OWNER_IDENTIFIER, generation, serialized) }
     fun metadata(selected: Attachment, identifier: String, generation: Long, serialized: String): String =
         observe(selected, identifier) { owner.metadata(NATIVE_OWNER_IDENTIFIER, generation, serialized) }
     fun refresh(selected: Attachment, identifier: String, generation: Long) {

@@ -3,6 +3,7 @@ package com.streamingservice.spotify
 interface SpotifyConnectExecution {
     fun start(serialized: String): Long
     fun poll(handle: Long): SpotifyConnectBatch
+    fun search(handle: Long, generation: Long, serialized: String): String
     fun metadata(handle: Long, generation: Long, serialized: String): String
     fun read(handle: Long, generation: Long): String
     fun refresh(handle: Long, generation: Long)
@@ -48,6 +49,7 @@ class SpotifyConnectOwner(
     }
 
     fun read(identifier: String, generation: Long): String = observe(identifier, generation) { handle -> execution.read(handle, generation) }
+    fun search(identifier: String, generation: Long, serialized: String): String = observe(identifier, generation) { handle -> execution.search(handle, generation, serialized) }
     fun metadata(identifier: String, generation: Long, serialized: String): String = observe(identifier, generation) { handle -> execution.metadata(handle, generation, serialized) }
 
     private fun observe(identifier: String, generation: Long, operation: (Long) -> String): String {

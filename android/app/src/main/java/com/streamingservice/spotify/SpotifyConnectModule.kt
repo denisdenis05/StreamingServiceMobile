@@ -51,6 +51,15 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
     }
 
     @ReactMethod
+    fun search(identifier: String, generation: Double, serialized: String, promise: Promise) {
+        if (serialized.length > MAXIMUM_INPUT_CHARACTERS || !generation.isFinite() || generation < MINIMUM_GENERATION
+            || generation > MAXIMUM_GENERATION || generation != generation.toLong().toDouble()) {
+            reject(promise, INVALID_INPUT_FAILURE); return
+        }
+        dispatch(promise) { promise.resolve(runtime.search(attachment, identifier, generation.toLong(), serialized)) }
+    }
+
+    @ReactMethod
     fun metadata(identifier: String, generation: Double, serialized: String, promise: Promise) {
         if (serialized.length > MAXIMUM_INPUT_CHARACTERS || !generation.isFinite() || generation < MINIMUM_GENERATION
             || generation > MAXIMUM_GENERATION || generation != generation.toLong().toDouble()) {

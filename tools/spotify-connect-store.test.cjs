@@ -32,12 +32,15 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
-  const listeners = new Set(); const calls = { starts: [], closes: [], refreshes: [], reads: [], metadata: [], commands: [], canceledCommands: [], shutdowns: Fixture.zero, membership: Fixture.zero };
+  const listeners = new Set(); const calls = { searches: [], starts: [], closes: [], refreshes: [], reads: [], metadata: [], commands: [], canceledCommands: [], shutdowns: Fixture.zero, membership: Fixture.zero };
   const state = { credential: { accountIdentifier: Fixture.account, storedCredential: Fixture.stored }, start: null, close: null, shutdown: null, command: null, reading: null, metadata: null, nowMonotonicMilliseconds: ReadFixture.sent };
   const provider = { getNativeSessionCredential: async () => state.credential };
   const started = deferred();
   let sequence = Fixture.zero;
-  const native = { async shutdown() { calls.shutdowns += Fixture.one; if (state.shutdown) await state.shutdown.promise; }, async metadata(identifier, generation, serialized) {
+  const native = { async search(identifier, generation, serialized) {
+      calls.searches.push({ identifier, generation, input: JSON.parse(serialized) });
+      return JSON.stringify(state.searching ? await state.searching.promise : metadataResponse());
+    }, async shutdown() { calls.shutdowns += Fixture.one; if (state.shutdown) await state.shutdown.promise; }, async metadata(identifier, generation, serialized) {
       const requested = JSON.parse(serialized); calls.metadata.push({ identifier, generation, requested });
       return JSON.stringify(state.metadata ? await state.metadata.promise : metadataResponse());
     }, async read(identifier, generation) {
@@ -430,4 +433,35 @@ test(RecoveryDescriptorName, async () => {
   current.send({ type: Fixture.connecting }, Fixture.nextGeneration);
   assert.deepEqual(current.store.getRecoveringPlaybackConnection(Fixture.account), { handle: Fixture.handle, generation: Fixture.nextGeneration });
   await current.store.detach(); assert.equal(current.store.getRecoveringPlaybackConnection(Fixture.account), null);
+});
+
+const SearchFixture = Object.freeze({ limit: 4, market: 'RO', names: {
+  route: 'Native search captures query account generation and explicit country without web credentials',
+  reconnect: 'Native search rejects a late reconnect response', cancel: 'Native search cancellation does not close the current session',
+  foreign: 'Native search rejects another account before native dispatch' } });
+function searchInput() { return { title: MetadataFixture.title, author: MetadataFixture.artist, limit: SearchFixture.limit }; }
+test(SearchFixture.names.route, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  const songs = await current.store.search(Fixture.account, searchInput(), SearchFixture.market, new AbortController().signal);
+  assert.equal(songs[Fixture.zero].identifier, MetadataFixture.track);
+  assert.deepEqual(current.calls.searches, [{ identifier: current.calls.starts[Fixture.zero].identifier, generation: Fixture.generation,
+    input: { ...searchInput(), market: SearchFixture.market } }]);
+});
+test(SearchFixture.names.foreign, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  await assert.rejects(current.store.search(Fixture.otherAccount, searchInput(), SearchFixture.market, new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
+  assert.deepEqual(current.calls.searches, []);
+});
+test(SearchFixture.names.reconnect, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.searching = deferred();
+  const result = current.store.search(Fixture.account, searchInput(), SearchFixture.market, new AbortController().signal);
+  current.send(registration(), Fixture.nextGeneration); current.state.searching.resolve(metadataResponse());
+  await assert.rejects(result, { code: library.IntegrationFailureCode.Superseded });
+});
+test(SearchFixture.names.cancel, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); current.state.searching = deferred();
+  const cancellation = new AbortController(); const result = current.store.search(Fixture.account, searchInput(), SearchFixture.market, cancellation.signal);
+  cancellation.abort(); await assert.rejects(result, { code: library.IntegrationFailureCode.Canceled });
+  current.state.searching.resolve(metadataResponse()); await flush();
+  assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready); assert.deepEqual(current.calls.closes, []);
 });

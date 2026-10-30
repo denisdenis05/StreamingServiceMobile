@@ -8,6 +8,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SpotifyConnectNativeExecutionTest {
+    @Test fun searchRequiresTheExactHandleAndGenerationAndPreservesSafeFailures() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        assertEquals(native.reading, execution.search(HANDLE, GENERATION, CREDENTIAL))
+        native.reading = JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, NEXT_GENERATION).toString()
+        try { execution.search(HANDLE, GENERATION, CREDENTIAL); throw AssertionError(INVALID_RESPONSE_FAILURE) }
+        catch (failure: SpotifyConnectFailure) { assertEquals(INVALID_RESPONSE_FAILURE, failure.code) }
+    }
     private class Native : SpotifyConnectNativeCalls {
         var opened = JSONObject().put(HANDLE_FIELD, HANDLE).toString()
         var polled = JSONObject().put(HANDLE_FIELD, HANDLE).put(FINISHED_FIELD, false).put(EVENTS_FIELD, JSONArray()).toString()
@@ -24,6 +31,7 @@ class SpotifyConnectNativeExecutionTest {
         val finished = mutableListOf<Long>()
         override fun start(serialized: String): String { assertEquals(CREDENTIAL, serialized); return opened }
         var reading = JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, GENERATION).toString()
+        override fun search(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
         override fun metadata(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
         override fun read(handle: Long, generation: Long): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); return reading }
         override fun poll(handle: Long): String { assertEquals(HANDLE, handle); return polled }
@@ -163,6 +171,7 @@ class SpotifyConnectNativeExecutionTest {
         private const val HANDLE = 4L
         private const val OTHER_HANDLE = 5L
         private const val GENERATION = 2L
+        private const val NEXT_GENERATION = 3L
         private const val INVALID_HANDLE = 0L
         private const val FRACTIONAL_HANDLE = 4.5
         private const val UNSAFE_HANDLE = 9007199254740992L

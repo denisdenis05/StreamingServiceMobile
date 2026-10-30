@@ -1,3 +1,22 @@
+# Native catalog search bridge — 2026-10-30
+
+Connected the existing Rust/JNI catalog search to Kotlin execution, account owner,
+retained runtime, React Native module and the mobile account-bound catalog port.
+The library now validates bounded search input/results and routes device sign-in
+search through the actual native session. Handle/generation, account replacement
+and cancellation fence every result. Permission failures do not retry with browser
+credentials. No account or song payloads are logged.
+
+Verification: `npm run test:spotify` passed 422 Node and 95 Jest cases;
+`npx tsc --noEmit` passed; Android `./gradlew :app:testDebugUnitTest --tests
+'*SpotifyConnect*Test' -x :app:buildSpotifyLibrespot --console=plain` passed 103
+JVM cases. Library `npm test` passed 619 cases including seven new search cases.
+Feature tests: `tools/spotify-connect-store.test.cjs` (routing/account/cancel/
+reconnect), `SpotifyConnectNativeExecutionTest`, `SpotifyConnectOwnerTest`,
+`SpotifyConnectRuntimeTest` and library `tests/connect-search.test.mjs`.
+No new Rust behavior or APK packaging in this chapter. Live permission awaits
+probe pairing approval. Continue hosting and background lifecycle source work.
+
 # Native same-Jam reconnect recovery — 2026-10-30
 
 Implemented application-owned native connection recovery and the matching React
