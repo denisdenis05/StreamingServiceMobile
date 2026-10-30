@@ -1,9 +1,11 @@
 # Native catalog search investigation — 2026-10-27
 
-Status: read-only protocol investigation. No native search implementation,
-JavaScript search routing, token export or live search permission result exists
-in this chapter yet. The existing SpotifyConnectCatalog uses native private
-metadata for lookup but still delegates search to SpotifyWebCatalog.
+Status: implemented in native Rust and exposed through the diagnostic probe's
+fixed `search` operation. The token remains inside NativeConnectSession. The
+current-session live permission check remains outstanding because the prior probe
+is no longer registered. The existing foreground SpotifyConnectCatalog search
+still delegates to SpotifyWebCatalog; native search is not silently substituted
+for the existing catalog path.
 
 ## Public search boundary
 
@@ -70,10 +72,9 @@ song payload was read or printed. No official-client state was changed.
 
 ## Next concrete check
 
-Agree the fixed native public-search operation and add its controlled approved-
-session probe action. Record only HTTP outcome, bounded candidate count and
-validation flags in diagnostic summaries. If the actual Login5 session cannot
-use the public endpoint, derive and verify the private persisted-query request
-against the same independent native session before enabling it in production.
-Do not add automatic public/private fallback or advertise native search from
-static strings.
+Run the fixed probe search against a newly retained approved native session and
+record only HTTP outcome, bounded candidate count and validation flags. If the
+actual Login5 session cannot use the public endpoint, derive and verify the
+private persisted-query request against that same independent native session
+before enabling it in production. Do not add automatic public/private fallback or
+advertise native search from static strings.

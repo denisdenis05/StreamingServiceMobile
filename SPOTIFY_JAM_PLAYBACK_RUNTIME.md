@@ -105,8 +105,10 @@ cases across these four selected suites:
 ```
 
 No physical-device binding, audible following, screen-lock lifecycle, process
-survival or measured alignment result is claimed. The JavaScript provider,
-headless registration and AppState handoff are separate composition work owned
-by the integration chapter. Application-led host publication/readiness remains
-disabled. This native module alone does not establish end-to-end background
-playback or automatic Dealer generation recovery.
+survival or measured alignment result is claimed. `SpotifyBackgroundRecordingHeadless`
+now connects the broker to app-account restore, authenticated recording lookup,
+the existing association store and bounded matcher. `index.js` registers the
+headless task. AppState still stops the foreground follower; no runtime evidence
+authorizes changing that safety behavior. Application-led host publication/
+readiness and automatic Dealer generation recovery remain incomplete. The APK
+and source validation are recorded in SPOTIFY_JAM_APK.md.

@@ -1101,9 +1101,9 @@ Android JVM coverage passed (108 cases); `npm run test:spotify` passed 364 Node
 and 92 Jest cases; strict TypeScript checking and the Android Metro bundle passed.
 All 19 dedicated background resolver cases passed. One overlapping-retirement
 race was fixed by sharing the current cleanup barrier and its regression test
-passes. These are source tests, not native phone verification. No APK was built
-because the requested live-session search validation and full end-to-end source
-acceptance remain open.
+passes. These are source tests, not native phone verification. The release APK
+was packaged and its signature/16 KB alignment verified; live-session search and
+full end-to-end/device acceptance remain open. See SPOTIFY_JAM_APK.md.
 
 ## Mobile personal-test chapter — 2026-10-22
 

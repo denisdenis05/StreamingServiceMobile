@@ -1,5 +1,33 @@
 # Application runtime and native integration checkpoint — 2026-10-27
 
+# Native background resolver and search build — 2026-10-30
+
+Current APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.
+35,636,788 bytes; SHA-256
+`9aabd47ba313b7fbc4d9f15b31d54fe3f5089fb5337236fe1d1ecfb23be4ce71`.
+Source: Mobile `58e5aa4`; this commit includes the Android Jam follower runtime,
+native app-player adapter, bounded background recording broker, React Native
+headless registration, typed native catalog search and explicit host activation
+gate.
+
+`npm run test:spotify` passed 364 Node and 92 Jest cases. Focused Rust tests passed
+67 cases; focused Android JVM coverage passed 108 cases. Strict TypeScript and
+Android Metro bundle generation passed. Release APK assembly passed after
+installing Rust 1.99.0 with the `aarch64-linux-android` target into the task
+toolchain. APK v2 signature verification and 16 KB ZIP alignment passed. The
+Spotify native library LOAD segments use 16 KB alignment. APK contains a
+2,159,120-byte Hermes bundle and a 5,516,072-byte Spotify native library.
+
+No Android device is attached and no live native probe remains registered, so
+the current-session catalog-search request was not sent. This is packaged source,
+not device verification. Guest membership/queue permission, synchronized audible
+playback and measured timing, app-led host readiness/publication, reconnect after
+generation replacement, and screen-lock/network/background lifecycle remain
+unverified. The APK has not been installed by the agent.
+
+Earlier build notes follow chronologically; their artifact/status statements
+refer to those checkpoints, not this current APK.
+
 Current APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk.
 35,427,788 bytes; SHA-256
 5756a4efcdca57b29165eb3422ae7e42dbdc7ad9578efaf60b5d11cbefd0b92b.
