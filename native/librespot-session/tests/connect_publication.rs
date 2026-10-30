@@ -19,6 +19,7 @@ const COMMAND_SESSION: &str = "synthetic-command-session";
 const EXCEEDS_LIMIT: usize = 1;
 const EXCEEDS_CLOCK_LIMIT: u64 = 1;
 const PAUSED_PLAYBACK_SPEED: f64 = 0.0;
+const INVALID_SERVER_TIMESTAMP_MILLISECONDS: u64 = 0;
 const NORMAL_PLAYBACK_SPEED: f64 = 1.0;
 
 fn registration() -> PutStateRequest {
@@ -191,4 +192,27 @@ fn incoming_controls_are_advertised_only_with_explicit_handler_readiness_and_dem
     let inactive = streaming_spotify_session::connect_publication::build_deactivation(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
     assert!(!inactive.device.device_info.capabilities.is_controllable);
     assert!(!inactive.device.device_info.capabilities.supports_command_request);
+}
+
+#[test]
+fn withdrawal_contains_only_the_real_device_session_and_no_playback_or_command_claims() {
+    let played = build_publication(&registration(), &snapshot(), PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    let withdrawn = streaming_spotify_session::connect_publication::build_withdrawal(&played, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(!withdrawn.is_active); assert!(!withdrawn.device.device_info.can_play);
+    let capabilities = &withdrawn.device.device_info.capabilities;
+    assert!(capabilities.hidden); assert!(!capabilities.can_be_player); assert!(!capabilities.is_controllable);
+    assert!(!capabilities.supports_command_request); assert!(!capabilities.supports_transfer_command);
+    assert!(!capabilities.supports_set_options_command); assert!(!capabilities.supports_playlist_v2);
+    assert_eq!(withdrawn.device.device_info.device_id, DEVICE);
+    assert_eq!(withdrawn.device.player_state.session_id, SESSION);
+    assert!(withdrawn.device.player_state.track.is_none()); assert!(withdrawn.device.player_state.prev_tracks.is_empty());
+    assert!(withdrawn.device.player_state.next_tracks.is_empty()); assert!(withdrawn.device.player_state.playback_id.is_empty());
+    assert!(withdrawn.last_command_sent_by_device_id.is_empty());
+}
+
+#[test]
+fn withdrawal_rejects_a_missing_owned_identity_and_invalid_timestamp() {
+    let mut missing = registration(); missing.device.mut_or_insert_default().device_info.mut_or_insert_default().device_id.clear();
+    assert!(streaming_spotify_session::connect_publication::build_withdrawal(&missing, PUBLICATION_TIMESTAMP_MILLISECONDS).is_err());
+    assert!(streaming_spotify_session::connect_publication::build_withdrawal(&registration(), INVALID_SERVER_TIMESTAMP_MILLISECONDS).is_err());
 }

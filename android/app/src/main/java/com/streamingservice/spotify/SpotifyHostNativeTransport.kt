@@ -85,6 +85,12 @@ class SpotifyHostNativeTransport(
         val commandsReady = handlingReady(identity)
         return if (!commandsReady) rejected(Unsupported) else mutate(identity, control(identity, PublishOperation).put(SnapshotField, commandedSnapshot(snapshot, commandsReady)), true)
     }
+    override fun withdraw(identity: SpotifyHostIdentity, registration: SpotifyHostNativeRegistration): SpotifyPlayerOperation<Unit> {
+        if (registration.identity.deviceIdentifier != identity.deviceIdentifier || registration.nextPublicationSequence !in FirstIdentifier..MaximumSafeInteger)
+            return rejected(InvalidInput)
+        return mutate(identity, control(identity, WithdrawOperation).put(DeviceField, registration.identity.deviceIdentifier)
+            .put(PlayerSessionField, registration.identity.sessionIdentifier).put(SequenceField, registration.nextPublicationSequence))
+    }
     override fun deactivate(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> = mutate(identity, control(identity, DeactivateOperation).put(SnapshotField, snapshot))
     override fun reply(identity: SpotifyHostIdentity, key: String, accepted: Boolean): SpotifyPlayerOperation<Unit> =
         mutate(identity, control(identity, ReplyOperation).put(KeyField, key).put(AcceptedField, accepted))
@@ -201,6 +207,8 @@ class SpotifyHostNativeTransport(
         private const val HostIdentityOperation = "hostIdentity"
         private const val ActivateOperation = "activate"
         private const val PublishOperation = "publish"
+        private const val WithdrawOperation = "withdraw"
+        private const val SequenceField = "sequence"
         private const val DeactivateOperation = "deactivate"
         private const val ReplyOperation = "reply"
         private const val Canceled = "canceled"

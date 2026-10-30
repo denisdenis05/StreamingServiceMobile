@@ -64,6 +64,10 @@ class SpotifyHostCoordinatorTest {
                 publications.add(snapshot); nextSequence = snapshot.getLong(SequenceField) + SequenceIncrement
                 return publicationFailure?.let { failure -> SpotifyPlayerOperation(failed<Unit>(SpotifyConnectFailure(failure))) {} } ?: operation(Unit)
             }
+            override fun withdraw(identity: SpotifyHostIdentity, registration: SpotifyHostNativeRegistration): SpotifyPlayerOperation<Unit> {
+                deactivations.add(JSONObject().put(SequenceField, registration.nextPublicationSequence))
+                return demotionFailure?.let { failure -> SpotifyPlayerOperation(failed<Unit>(SpotifyConnectFailure(failure))) {} } ?: operation(Unit)
+            }
             override fun deactivate(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> {
                 deactivations.add(snapshot)
                 return demotionFailure?.let { failure -> SpotifyPlayerOperation(failed<Unit>(SpotifyConnectFailure(failure))) {} } ?: operation(Unit)
@@ -155,6 +159,11 @@ class SpotifyHostCoordinatorTest {
     @Test fun unexpectedLocalQueueMappingRetiresInsteadOfPublishingAFabricatedTrack() {
         val fixture = Fixture(); fixture.start().get(); fixture.recording = OtherRecording; fixture.tick()
         assertTrue(fixture.publications.isEmpty()); assertEquals(SpotifyHostStatus.Failed, fixture.coordinator.snapshot().status)
+        assertEquals(SingleCount, fixture.deactivations.size)
+    }
+    @Test fun missingPlayerQueueAfterStartupCannotBlockNativeWithdrawal() {
+        val fixture = Fixture(); fixture.start().get(); fixture.sampleCompletion = fixture.failed(SpotifyPlayerFailure(SpotifyPlayerFailureReason.Unavailable))
+        fixture.stop().get(); assertEquals(SingleCount, fixture.deactivations.size)
     }
     @Test fun foreignHostTakeoverDemotesWithoutPublishingNewAuthority() {
         val fixture = Fixture(); fixture.start().get(); fixture.host = ForeignHost; fixture.tick()

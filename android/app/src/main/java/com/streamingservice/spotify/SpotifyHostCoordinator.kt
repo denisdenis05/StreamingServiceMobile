@@ -148,17 +148,7 @@ class SpotifyHostCoordinator(
             if (pauseFailure != null && failure == null && !conflict(pauseFailure)) failure = PlayerFailed
             if (!activationAttempted) finishCleanup(null)
             else cleanupOperation(transport.registration(identity)) { actual ->
-                registration = actual; sequence = actual.nextPublicationSequence
-                cleanupOperation(transport.retirementAnchor(identity)) { anchor ->
-                    val sampling = try { player.sampleQueue(identity) } catch (failure: Throwable) { finishCleanup(failure); return@cleanupOperation }
-                    sampling.whenComplete { queue, samplingFailure -> decide {
-                        if (samplingFailure != null) finishCleanup(samplingFailure)
-                        else try {
-                            val publication = project(queue, anchor)
-                            cleanupOperation(transport.deactivate(identity, publication)) { finishCleanup(null) }
-                        } catch (failure: Throwable) { finishCleanup(failure) }
-                    } }
-                }
+                cleanupOperation(transport.withdraw(identity, actual)) { finishCleanup(null) }
             }
         } }
     }

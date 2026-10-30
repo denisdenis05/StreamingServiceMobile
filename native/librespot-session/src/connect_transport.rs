@@ -39,6 +39,7 @@ pub struct OutgoingFrame {
 }
 
 pub enum ConnectAction {
+    Withdraw { generation: u64, device_identifier: String, session_identifier: String, sequence: u64, cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
     Deactivate { generation: u64, snapshot: ConnectPublicationSnapshot, cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
     HostIdentity { generation: u64, result: ActionResult<ConnectHostIdentity> },
     Activate { generation: u64, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation,
@@ -156,7 +157,7 @@ fn retire_action(action: ConnectAction) {
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Membership { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Deactivate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Withdraw { result, .. } | ConnectAction::Deactivate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::HostIdentity { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Activate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Publish { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
@@ -400,6 +401,15 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         activation_previous_host = Some(activation.expected_previous_host_device_identifier.clone());
                         submit_http_work(&work, HttpWork::Activate { snapshot, activation, readiness, cluster: reading.cluster.clone(), generation,
                             cancellation: activation_cancellation, response: PendingHttpResponse::new(result) })?; busy = true;
+                    },
+                    ConnectAction::Withdraw { generation: expected, device_identifier, session_identifier, sequence, cancellation: withdrawal_cancellation, result } => {
+                        if result.is_closed() { continue; }
+                        if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled() || withdrawal_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if device_identifier != identity.device_identifier || identity.playback_session_identifier.as_deref() != Some(session_identifier.as_str()) {
+                            let _ = result.send(Err(Failure::Canceled)); continue;
+                        }
+                        if let Err(failure) = publication_order.acquire(sequence) { let _ = result.send(Err(failure)); continue; }
+                        submit_http_work(&work, HttpWork::Withdraw { sequence, cancellation: withdrawal_cancellation, response: PendingHttpResponse::new(result) })?; busy = true;
                     },
                     ConnectAction::Deactivate { generation: expected, snapshot, cancellation: deactivation_cancellation, result } => {
                         if result.is_closed() { continue; }

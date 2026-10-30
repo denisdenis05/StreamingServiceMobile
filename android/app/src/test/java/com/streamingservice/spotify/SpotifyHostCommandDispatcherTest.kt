@@ -49,6 +49,7 @@ class SpotifyHostCommandDispatcherTest {
             override fun retirementAnchor(identity: SpotifyHostIdentity): SpotifyPlayerOperation<SpotifyHostClockAnchor> = throw UnsupportedOperationException()
             override fun activate(identity: SpotifyHostIdentity, queue: SpotifyHostPlayerQueue, snapshot: JSONObject, activation: JSONObject): SpotifyPlayerOperation<Unit> = throw UnsupportedOperationException()
             override fun publish(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> = throw UnsupportedOperationException()
+            override fun withdraw(identity: SpotifyHostIdentity, registration: SpotifyHostNativeRegistration): SpotifyPlayerOperation<Unit> = throw UnsupportedOperationException()
             override fun deactivate(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> = throw UnsupportedOperationException()
         }
         val clock = SpotifyNativeFollowerClock { now }

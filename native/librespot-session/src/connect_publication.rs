@@ -134,6 +134,17 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
     Ok(publication)
 }
 
+pub fn build_withdrawal(registration: &PutStateRequest, timestamp_milliseconds: u64) -> Result<PutStateRequest, Failure> {
+    if timestamp_milliseconds < MINIMUM_SERVER_TIMESTAMP_MILLISECONDS || timestamp_milliseconds > i64::MAX as u64 { return Err(Failure::InvalidInput); }
+    let device = &registration.device.device_info;
+    let mut observer = crate::connect_device::initial_registration(&crate::connect_device::ConnectDeviceConfiguration {
+        name: device.name.clone(), playback_ready: false,
+    }, &device.device_id, &registration.device.player_state.session_id, timestamp_milliseconds)?;
+    observer.put_state_reason = EnumOrUnknown::new(PutStateReason::PLAYER_STATE_CHANGED);
+    observer.device.mut_or_insert_default().device_info.mut_or_insert_default().capabilities.mut_or_insert_default().supports_playlist_v2 = false;
+    Ok(observer)
+}
+
 pub fn build_deactivation(registration: &PutStateRequest, snapshot: &ConnectPublicationSnapshot,
     publication_server_timestamp_milliseconds: u64) -> Result<PutStateRequest, Failure> {
     let mut publication = build_publication(registration, snapshot, publication_server_timestamp_milliseconds)?;

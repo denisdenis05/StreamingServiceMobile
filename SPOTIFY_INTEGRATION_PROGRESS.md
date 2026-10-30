@@ -1,3 +1,31 @@
+# Queue-independent native host withdrawal — 2026-10-31
+
+Host shutdown no longer needs a mapped player queue or a membership read. Added
+strict generation/device/session/sequence-scoped withdrawal through JNI, the
+responsive actor and its HTTP worker. It constructs an inactive hidden observer
+registration using only the actual native device/session. It carries no track,
+queue, playback occurrence or command claim. Actual sequence order and uncertainty
+fences survive withdrawal. Only known successful demotion permits another explicit
+activation; late/foreign/canceled attempts cannot replace current authority.
+
+The Kotlin transport exposes this control without an incoming-handler requirement.
+The coordinator pauses against its actual cursor, reads the actual native next
+sequence, then withdraws. Unmapped local queue additions or loss of player queue
+sampling therefore cannot block demotion. An uncertain withdrawal is never replayed
+and remains a failed cleanup barrier.
+
+Verification: full native Cargo suite passed 230 cases using `cargo test
+--manifest-path native/librespot-session/Cargo.toml --locked --quiet`; all Android
+app JVM tests passed 385 cases across 28 suites using `./android/gradlew -p android
+:app:testDebugUnitTest -x :app:buildSpotifyLibrespot --no-daemon --console=plain`.
+Dedicated cases cover empty playback withdrawal encoding, identity/time validation,
+strict bridge fields, actor generation/cancellation/order/uncertainty, deliberate
+reactivation, Kotlin exact identity/sequence/no-handler dispatch and missing player
+queue cleanup. `git diff --check` passed. No live withdrawal, physical-device or
+APK claim. Application-owned host runtime, module/task routing, JS hosting controls
+and background reverse mapping remain the next source chapters. Guest admission,
+live catalog backpressure and actual background/audio verification remain open.
+
 # Host native session and exact configuration — 2026-10-31
 
 Added an exact bounded host configuration carrying actual player epochs, cursor,

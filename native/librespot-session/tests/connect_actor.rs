@@ -99,6 +99,15 @@ impl ConnectSessionOperations for FakeSession {
         published.changed_at_milliseconds = cluster.changed_at_milliseconds;
         Ok(published)
     }
+    async fn withdraw(&mut self, sequence: u64) -> Result<ConnectCluster, Failure> {
+        {
+            let mut calls = self.calls.lock().unwrap(); calls.deactivation_sequences.push(sequence);
+            if let Some(failure) = calls.deactivation_failure { return Err(failure); }
+        }
+        if let Some(started) = self.publication_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.publication_gate.take() { gate.await.map_err(|_| Failure::UnknownOutcome)?; }
+        Ok(self.snapshot.lock().unwrap().clone())
+    }
     async fn deactivate(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
         {
             let mut calls = self.calls.lock().unwrap(); calls.deactivation_sequences.push(snapshot.sequence);
@@ -929,5 +938,55 @@ async fn a_newer_local_host_observation_prevents_old_demotion_acknowledgement_fr
     let mut changed = playable_cluster(DEVICE); changed.server_at_milliseconds = publication::SERVER_TIMESTAMP_MILLISECONDS as i64;
     harness.incoming.send(DealerInput::Cluster(changed)).await.unwrap(); harness.events.recv().await.unwrap();
     release.send(()).unwrap(); assert!(matches!(deactivation.await, Err(Failure::UnknownOutcome)));
+    harness.stop().await;
+}
+
+async fn withdraw_device(actions: &mpsc::Sender<ConnectAction>, generation: u64, sequence: u64, device_identifier: &str,
+    cancellation: CancellationToken) -> Result<ConnectCluster, Failure> {
+    let (result, receipt) = oneshot::channel();
+    actions.send(ConnectAction::Withdraw { generation, sequence, device_identifier: device_identifier.to_owned(),
+        session_identifier: publication::SESSION.to_owned(), cancellation, result }).await.unwrap();
+    receipt.await.unwrap()
+}
+
+#[tokio::test]
+async fn withdrawal_hides_only_the_owned_device_without_a_player_queue_or_membership_read() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(OTHER_TARGET);
+    withdraw_device(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, DEVICE, CancellationToken::new()).await.unwrap();
+    let calls = harness.calls.lock().unwrap();
+    assert_eq!(calls.deactivation_sequences, [publication::FIRST_SEQUENCE]);
+    assert_eq!(calls.membership_requests, EMPTY_CALL_COUNT);
+    drop(calls); harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_foreign_and_canceled_withdrawals_cannot_touch_the_device() {
+    let mut harness = Harness::start(None); harness.register().await;
+    assert!(matches!(withdraw_device(&harness.actions, STALE_GENERATION, publication::FIRST_SEQUENCE, DEVICE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert!(matches!(withdraw_device(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, OTHER_TARGET, CancellationToken::new()).await, Err(Failure::Canceled)));
+    let cancellation = CancellationToken::new(); cancellation.cancel();
+    assert!(matches!(withdraw_device(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, DEVICE, cancellation).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().deactivation_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn unknown_withdrawal_keeps_its_sequence_fence_and_is_never_replayed() {
+    let mut harness = Harness::start(None); harness.register().await;
+    harness.calls.lock().unwrap().deactivation_failure = Some(Failure::UnknownOutcome);
+    assert!(matches!(withdraw_device(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, DEVICE, CancellationToken::new()).await, Err(Failure::UnknownOutcome)));
+    assert!(matches!(withdraw_device(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, DEVICE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    assert_eq!(harness.calls.lock().unwrap().deactivation_sequences.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn successful_withdrawal_allows_only_a_new_explicit_activation_at_the_next_sequence() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    withdraw_device(&harness.actions, GENERATION, publication::SECOND_SEQUENCE, DEVICE, CancellationToken::new()).await.unwrap();
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
     harness.stop().await;
 }

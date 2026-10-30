@@ -104,3 +104,15 @@ and malformed inputs map to SpotifyHostConfigurationProtocolTest; connection
 loss/replacement maps to SpotifyHostConnectionEventsTest. The application runtime,
 headless job routing and explicit JavaScript controls remain to be composed.
 A failed cleanup retains the binding and must remain visible to its owner.
+
+## Withdrawal without a playable queue
+
+The latest coordinator cleanup uses native withdrawal after its cursor-fenced
+pause. Withdrawal reads the actor's actual next sequence and constructs a hidden,
+inactive observer registration from the real native device/session. It contains
+no player song, queue or command provenance and needs no app recording mapping
+or current Jam membership. The previous cleanup projection limitation is resolved
+for a still-owned native connection. Actual connection/generation replacement can
+still reject cleanup and must remain a failed barrier until native retirement.
+Dedicated suites: native connect_publication/connect_actor/connect_bridge and
+Kotlin SpotifyHostNativeTransportTest/SpotifyHostCoordinatorTest.

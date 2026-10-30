@@ -152,3 +152,24 @@ fn deactivation_uses_the_same_strict_generation_and_actual_player_snapshot_contr
         Ok(ConnectControl::Deactivate { .. })));
     assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): DEACTIVATE, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): {} }).to_string()), Err(Failure::InvalidInput)));
 }
+
+const WITHDRAW: &str = "withdraw";
+const DEVICE_IDENTIFIER_FIELD: &str = "deviceIdentifier";
+const SESSION_IDENTIFIER_FIELD: &str = "sessionIdentifier";
+const SEQUENCE_FIELD: &str = "sequence";
+const WITHDRAWAL_DEVICE: &str = "synthetic-withdrawal-device";
+const WITHDRAWAL_SESSION: &str = "synthetic-withdrawal-session";
+
+#[test]
+fn withdrawal_requires_exact_owned_identity_sequence_and_generation_without_song_data() {
+    let value = json!({ (OPERATION_FIELD): WITHDRAW, (GENERATION_FIELD): VALID_GENERATION,
+        (DEVICE_IDENTIFIER_FIELD): WITHDRAWAL_DEVICE, (SESSION_IDENTIFIER_FIELD): WITHDRAWAL_SESSION, (SEQUENCE_FIELD): VALID_GENERATION });
+    assert!(matches!(decode_control(&value.to_string()), Ok(ConnectControl::Withdraw { .. })));
+    for field in [DEVICE_IDENTIFIER_FIELD, SESSION_IDENTIFIER_FIELD, SEQUENCE_FIELD, GENERATION_FIELD] {
+        let mut missing = value.clone(); missing.as_object_mut().unwrap().remove(field);
+        assert!(decode_control(&missing.to_string()).is_err());
+    }
+    let mut zero = value.clone(); zero[SEQUENCE_FIELD] = json!(ZERO_GENERATION); assert!(decode_control(&zero.to_string()).is_err());
+    let mut coerced = value.clone(); coerced[SEQUENCE_FIELD] = json!(WITHDRAWAL_SESSION); assert!(decode_control(&coerced.to_string()).is_err());
+    let mut extra = value; extra[SNAPSHOT_FIELD] = json!({}); assert!(decode_control(&extra.to_string()).is_err());
+}

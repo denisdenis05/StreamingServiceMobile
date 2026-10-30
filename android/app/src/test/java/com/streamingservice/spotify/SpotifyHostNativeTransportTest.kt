@@ -173,6 +173,30 @@ class SpotifyHostNativeTransportTest {
         assertTrue(fixture.controls.single().getJSONObject(SnapshotField).getBoolean(CommandReadyField))
         assertFalse(snapshot.has(CommandReadyField))
     }
+    @Test fun withdrawalUsesOnlyTheActualNativeIdentityAndSequenceWithoutAHandlerOrPlayerSample() {
+        val fixture = Fixture(); fixture.commandHandlingReady = false; fixture.owned = false
+        val actual = fixture.complete(fixture.transport.registration(fixture.identity))
+        fixture.controls.clear()
+        fixture.complete(fixture.transport.withdraw(fixture.identity, actual))
+        val control = fixture.controls.single()
+        assertEquals(WithdrawOperation, control.getString(OperationField)); assertEquals(Device, control.getString(DeviceField))
+        assertEquals(NativeSession, control.getString(SessionField)); assertEquals(NextSequence, control.getLong(SequenceField))
+        assertFalse(control.has(SnapshotField)); assertEquals(EmptyCount, fixture.reads); assertEquals(EmptyCount, fixture.membershipCount)
+    }
+    @Test fun withdrawalRejectsForeignNativeIdentityAndInvalidSequenceBeforeDispatch() {
+        val fixture = Fixture()
+        val foreign = SpotifyHostNativeRegistration(SpotifyHostPublicationIdentity(OtherHost, NativeSession), NextSequence)
+        failure(fixture.transport.withdraw(fixture.identity, foreign).result, InvalidInput)
+        val invalid = foreign.copy(identity = foreign.identity.copy(deviceIdentifier = Device), nextPublicationSequence = InvalidSequence)
+        failure(fixture.transport.withdraw(fixture.identity, invalid).result, InvalidInput)
+        assertTrue(fixture.controls.isEmpty())
+    }
+    @Test fun uncertainWithdrawalIsNeverReplayed() {
+        val fixture = Fixture(); val actual = fixture.complete(fixture.transport.registration(fixture.identity)); fixture.controls.clear()
+        fixture.executionFailure = true
+        val operation = fixture.transport.withdraw(fixture.identity, actual); fixture.queue.drain()
+        failure(operation.result, UnknownOutcome); assertEquals(SingleCount, fixture.controls.size)
+    }
     @Test fun incomingRepliesCarryTheirActualKeyAndAcceptance() {
         val fixture = Fixture(); fixture.complete(fixture.transport.reply(fixture.identity, CommandKey, false))
         assertEquals(CommandKey, fixture.controls.single().getString(KeyField)); assertFalse(fixture.controls.single().getBoolean(AcceptedField))
@@ -182,6 +206,9 @@ class SpotifyHostNativeTransportTest {
         catch (failure: ExecutionException) { assertEquals(code, (failure.cause as SpotifyConnectFailure).code) }
     }
     companion object {
+        private const val WithdrawOperation = "withdraw"
+        private const val SequenceField = "sequence"
+        private const val InvalidSequence = 0L
         private const val Unsupported = "unsupported"
         private const val SnapshotField = "snapshot"
         private const val CommandReadyField = "commandHandlingReady"

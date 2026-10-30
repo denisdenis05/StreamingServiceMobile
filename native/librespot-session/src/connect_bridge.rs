@@ -30,6 +30,7 @@ pub struct ConnectStartInput {
 pub enum ConnectControl {
     HostIdentity { generation: u64 },
     Activate { generation: u64, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness },
+    Withdraw { generation: u64, device_identifier: String, session_identifier: String, sequence: u64 },
     Deactivate { generation: u64, snapshot: ConnectPublicationSnapshot },
     Publish { generation: u64, snapshot: ConnectPublicationSnapshot },
     Refresh { generation: u64 },
@@ -133,6 +134,11 @@ pub fn decode_control(serialized: &str) -> Result<ConnectControl, Failure> {
         ConnectControl::Command { generation, request_identifier, target_device_identifier, command } => {
             command.validate(request_identifier, target_device_identifier)?; generation
         },
+        ConnectControl::Withdraw { generation, device_identifier, session_identifier, sequence } => {
+            if !bounded_text(device_identifier, MAXIMUM_KEY_CHARACTERS) || !bounded_text(session_identifier, MAXIMUM_KEY_CHARACTERS)
+                || *sequence < MINIMUM_HANDLE as u64 || *sequence > MAXIMUM_SAFE_JAVASCRIPT_INTEGER { return Err(Failure::InvalidInput); }
+            generation
+        },
         ConnectControl::Reply { generation, key, .. } => {
             if !bounded_text(key, MAXIMUM_KEY_CHARACTERS) { return Err(Failure::InvalidInput); }
             generation
@@ -165,6 +171,14 @@ async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt,
             let cancellation = SearchCancellation(CancellationToken::new());
             let (result, response) = oneshot::channel();
             actions.try_send(ConnectAction::Activate { generation, snapshot, activation, readiness, activation_cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
+            let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+                .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
+            receipt(response.map(|_| ()))
+        },
+        ConnectControl::Withdraw { generation, device_identifier, session_identifier, sequence } => {
+            let cancellation = SearchCancellation(CancellationToken::new());
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Withdraw { generation, device_identifier, session_identifier, sequence, cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
             let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
                 .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
             receipt(response.map(|_| ()))
