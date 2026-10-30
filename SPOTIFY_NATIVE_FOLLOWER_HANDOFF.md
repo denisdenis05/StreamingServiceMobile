@@ -1,3 +1,38 @@
+# Integrated source and packaged APK checkpoint — 2026-10-31
+
+Mobile source `e82ea20` integrates retained app hosting, explicit UI start/stop,
+real queue/epoch capture, host/follower cleanup exclusivity, native module/task
+routing and background reverse matching. Native HTTP deferral is in `ce558bd`;
+retained runtime composition is in `dfe384f`. Packaging notes are committed in
+`840f8a3`. Library documentation is now `ce2cb0a`; Player remains `b28f393`.
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 35,886,828 bytes;
+SHA-256 7bfcc1ea616f7c0275a811fd1204d30ee95e67501533c1583b6863057730afa0.
+Release assembly, v2 signature, 16 KB ZIP alignment and Spotify ELF LOAD alignment
+passed. Fresh Hermes bundle contains the host UI and headless hosting/auth tasks.
+Source results: 235 Rust, 409 JVM, 451 Spotify Node, 105 Jest, 329 player/mobile,
+619 library cases; full mobile TypeScript passed. Exact commands and feature/test
+mapping are in SPOTIFY_INTEGRATION_PROGRESS.md and SPOTIFY_APP_HOSTING.md.
+
+The old native probe ended across an interrupted turn. A newly built read-only
+probe is running in execution session 31908 and currently waits for fresh user
+pairing approval. Preserve it. Do not interpret the stale socket as registration;
+wait for actual registered output before running the safe native search validator.
+No new live result exists yet. Earlier approved state/metadata reads passed and
+two search attempts returned backpressure; cause/HTTP status remain unproven.
+No Spotify process was stopped. Only an obsolete-expectation Cargo test and its
+own worker were stopped during the bounded HTTP deferral test update.
+
+No Android device is attached. The user has been asked to connect a device and
+confirm availability of a second Spotify account, and separately to approve the
+fresh probe. These answers are pending, not assumed. Continue read-only current-
+session catalog validation after actual registration. Then install the APK and
+run SPOTIFY_JAM_ACCEPTANCE.md when the device/account are available. Do not claim
+guest permission, installation, audible timing or background lifecycle from these
+source and packaging results. Guest permission guards remain intact pending
+cross-account evidence. New local queue matching pauses playback and never
+resumes it implicitly; the later Play action remains explicit.
+
 # Current session checkpoint — 2026-10-31
 
 Read this checkpoint before the historical follower notes below. Mobile source
