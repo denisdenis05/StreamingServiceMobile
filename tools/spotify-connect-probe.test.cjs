@@ -4,7 +4,7 @@ const test = require(Imports.test);
 const assert = require(Imports.assertion);
 const { EventEmitter } = require(Imports.events);
 const { PassThrough } = require(Imports.stream);
-const { projectEvent, observeConnect } = require(Imports.probe);
+const { projectEvent, projectFailure, observeConnect } = require(Imports.probe);
 const Fixture = Object.freeze({ generation: 1, observedMilliseconds: 57, privateValue: 'synthetic-private-value',
   track: 'spotify:track:aaaaaaaaaaaaaaaaaaaaaa', revision: 'synthetic-revision', occurrence: 'synthetic-occurrence',
   connecting: 'connecting', registered: 'registered', membership: 'membership', reconnecting: 'reconnecting', stopped: 'stopped',
@@ -104,4 +104,22 @@ test(CommandFixture.name, async () => {
   fixture.child.stdout.write(JSON.stringify(event({ type: Fixture.reconnecting, failure: Fixture.forbidden })) + Fixture.line);
   fixture.input.write(CommandFixture.play + Fixture.line); assert.equal(fixture.writes.length, count);
   fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
+});
+
+const FailureFixture = Object.freeze({ authorization: 'authorization', grant: 'nativeGrant', observation: 'observation', network: 'network',
+  names: { known: 'Probe failures preserve only known categories and fixed lifecycle phases',
+    private: 'Raw exceptions unknown codes and throwing properties never escape failure summaries' } });
+test(FailureFixture.names.known, () => {
+  for (const phase of [FailureFixture.authorization, FailureFixture.grant, FailureFixture.observation]) {
+    assert.deepEqual(projectFailure({ code: Fixture.forbidden, message: Fixture.privateValue }, phase),
+      { stage: Fixture.stage, phase, failure: Fixture.forbidden });
+  }
+});
+test(FailureFixture.names.private, () => {
+  for (const failure of [new Error(Fixture.privateValue), { code: Fixture.privateValue }, null,
+    Object.defineProperty({}, 'code', { get() { throw new Error(Fixture.privateValue); } })]) {
+    const summary = projectFailure(failure, Fixture.privateValue);
+    assert.deepEqual(summary, { stage: Fixture.stage, phase: FailureFixture.authorization, failure: FailureFixture.network });
+    assert.equal(JSON.stringify(summary).includes(Fixture.privateValue), false);
+  }
 });

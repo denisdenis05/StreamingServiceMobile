@@ -1,6 +1,7 @@
 const Imports = Object.freeze({ subprocess: 'node:child_process', path: 'node:path', readline: 'node:readline',
-  timers: 'node:timers/promises', login: './probe-spotify-device-login.cjs' });
+  timers: 'node:timers/promises', library: 'streaming-service-spotify-jam', login: './probe-spotify-device-login.cjs' });
 const { spawn } = require(Imports.subprocess);
+const { IntegrationFailureCode } = require(Imports.library);
 const path = require(Imports.path);
 const readline = require(Imports.readline);
 const { setTimeout: wait } = require(Imports.timers);
@@ -19,6 +20,8 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
   networkFailure: 'network', invalidResponse: 'invalid-response', canceled: 'canceled',
   allowedFailures: ['network', 'invalid-response', 'invalid-input', 'unauthorized', 'forbidden', 'not-found',
     'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported', 'superseded'],
+  failureCodes: Object.values(IntegrationFailureCode),
+  phases: ['authorization', 'nativeGrant', 'observation'], authorizationPhase: 'authorization', grantPhase: 'nativeGrant', observationPhase: 'observation',
   stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'ignore' });
 const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, play, pause, next, previous, queue <Spotify track ID>, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
 
@@ -134,22 +137,34 @@ function observeConnect(storedCredential, onSummary, childFactory = spawn, input
   });
 }
 
+function projectFailure(failure, phase) {
+  let code = Policy.networkFailure;
+  try { if (Policy.failureCodes.includes(failure?.code)) code = failure.code; } catch {}
+  return { stage: Policy.stage, phase: Policy.phases.includes(phase) ? phase : Policy.authorizationPhase, failure: code };
+}
+
 async function main() {
   const cancellation = new AbortController();
   const store = memoryAuthorizationStore();
-  const broker = createDeviceAuthorization((token, signal) => nativeSessionGrant(token, false, signal), store);
+  let phase = Policy.authorizationPhase;
+  const broker = createDeviceAuthorization((token, signal) => {
+    phase = Policy.grantPhase;
+    console.log(JSON.stringify({ stage: Policy.stage, phase }));
+    return nativeSessionGrant(token, false, signal);
+  }, store);
   try {
     const grant = await authorizeWithRecovery({ broker, store, cancellation: cancellation.signal,
       wait: (delayMilliseconds, signal) => wait(delayMilliseconds, undefined, { signal }),
       onRecovery: code => console.log(JSON.stringify({ stage: Policy.stage, code })) });
+    phase = Policy.observationPhase;
     console.log(Copy.ready);
     let restarting = true;
     while (restarting) restarting = await observeConnect(grant.storedCredential, summary => console.log(JSON.stringify(summary)));
-  } catch {
-    console.log(JSON.stringify({ stage: Policy.stage, failure: Policy.networkFailure }));
+  } catch (failure) {
+    console.log(JSON.stringify(projectFailure(failure, phase)));
     process.exitCode = Policy.exitFailure;
   } finally { cancellation.abort(); }
 }
 
-module.exports = { projectEvent, observeConnect };
+module.exports = { projectEvent, projectFailure, observeConnect };
 if (require.main === module) void main();

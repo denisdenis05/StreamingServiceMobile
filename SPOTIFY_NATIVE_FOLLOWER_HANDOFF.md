@@ -1,3 +1,15 @@
+# Probe failure correction — 2026-10-31
+
+Fresh probe execution 31908 has ended with exit 1 before registration. The generic
+network summary did not preserve the failure phase or original safe category;
+no pairing/native-grant/search result may be inferred from it. The probe now
+reports only fixed lifecycle phases and known safe error codes, with 29 probe
+tests passing. There is currently no approved registered probe from this attempt.
+Do not reuse its stale pairing link or mistake a socket file for a live owner.
+The APK and integrated source described below remain valid; diagnostics-only
+changes do not require APK regeneration. Live catalog and device/guest acceptance
+remain pending fresh authorization and actual device/account availability.
+
 # Integrated source and packaged APK checkpoint — 2026-10-31
 
 Mobile source `e82ea20` integrates retained app hosting, explicit UI start/stop,

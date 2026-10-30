@@ -1,3 +1,20 @@
+# Fresh probe ended before registration — 2026-10-31
+
+Execution 31908 exited with status 1 after waiting for pairing. Its sole terminal
+summary was a generic network failure. That old top-level catch erased safe
+failure categories and had no phase field, so this evidence cannot distinguish
+pairing, token/bootstrap or transport failure. No registration or live search
+succeeded in this attempt. Do not treat the prior pairing link as a live session.
+
+The probe now preserves only known library failure codes and fixed authorization,
+nativeGrant or observation phases. Raw errors, account/song data and credentials
+stay excluded. The nativeGrant phase is emitted only when the authorization
+broker actually invokes bootstrap. `npm run test:spotify-probes` passed 29 cases,
+including known-code/phase preservation and raw/unknown/throwing-property privacy
+regressions. `git diff --check` passed. Only host diagnostics and notes changed;
+the packaged Android artifact is unchanged. A fresh authorized session and an
+attached Android device/second account are still required for live acceptance.
+
 # Integrated ARM64 release artifact — 2026-10-31
 
 Source Mobile `e82ea20` has been packaged after source integration. Current artifact
