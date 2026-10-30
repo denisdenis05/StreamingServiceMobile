@@ -48,7 +48,15 @@ object SpotifyJamPlaybackApplicationRuntime {
                 override fun unbind(): CompletableFuture<Unit> = binding.unbind()
             }, source, broker, clock, scheduler, decisionExecutor, isCurrent, observer)
         }
-        runtime = SpotifyJamPlaybackRuntime(protocol, factory) { account ->
+        val authenticationFactory = SpotifyJamAuthenticationRenewalFactory { configuration, failed ->
+            val authenticationRunner = SpotifyHeadlessRecordingRunner(mainExecutor,
+                SpotifyAndroidHeadlessRecordingDispatch(application, SpotifyJamAuthenticationRenewal.TaskName))
+            SpotifyJamAuthenticationRenewal(scheduler, authenticationRunner, identifiers,
+                { System.currentTimeMillis() / SpotifyJamAuthenticationRenewal.MillisecondsPerSecond }, configuration.account.baseAddress,
+                { identity -> runtime.isCurrentConfiguration(configuration, identity) },
+                { identity, token -> runtime.synchronizeAuthentication(configuration, identity, token) }, decisionExecutor, failed)
+        }
+        runtime = SpotifyJamPlaybackRuntime(protocol, factory, authenticationFactory) { account ->
             SpotifyConnectApplicationRuntime.runtime.ownsNativeConnection(account.spotifyAccountIdentifier, account.handle)
         }
         val recovery = SpotifyJamConnectionRecovery(decisionExecutor, runtime::connectionUnavailable, runtime::reconnect, runtime::connectionStopped,

@@ -20,19 +20,20 @@ class SpotifyJamPlaybackRuntimeTest {
         val startup = CompletableFuture<Unit>()
         var cleanup = CompletableFuture.completedFuture(Unit)
         var stops = EmptyCount
+        var tokenCompletion: CompletableFuture<Unit>? = null
         val tokens = mutableListOf<String>()
         val completedJobs = mutableListOf<String>()
         var pending = true
         override fun start(): CompletableFuture<Unit> = startup
         override fun stop(): CompletableFuture<Unit> { stops += SingleCount; return cleanup }
-        override fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> { tokens.add(accessToken); return CompletableFuture.completedFuture(Unit) }
+        override fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> { tokens.add(accessToken); return tokenCompletion ?: CompletableFuture.completedFuture(Unit) }
         override fun claimRecording(requestIdentifier: String): String? = if (pending) requestIdentifier else null
         override fun isRecordingPending(requestIdentifier: String): Boolean = pending
         override fun completeRecording(requestIdentifier: String, serialized: String) { completedJobs.add(requestIdentifier); pending = false }
         override fun failRecording(requestIdentifier: String, code: String) { pending = false }
         override fun synchronizeRecordingAuthentication(requestIdentifier: String, accountIdentifier: String, accessToken: String): CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)
     }
-    private class Fixture {
+    private class Fixture(authenticationFactory: SpotifyJamAuthenticationRenewalFactory? = null) {
         val sessions = mutableListOf<Session>()
         val configurations = mutableListOf<SpotifyJamPlaybackConfiguration>()
         val observers = mutableListOf<(SpotifyNativeFollowerSnapshot) -> Unit>()
@@ -42,7 +43,7 @@ class SpotifyJamPlaybackRuntimeTest {
         var owned = true
         val runtime = SpotifyJamPlaybackRuntime(protocol, { configuration, observer ->
             configurations.add(configuration); observers.add(observer); Session().also(sessions::add)
-        }) { owned }
+        }, authenticationFactory) { owned }
         val events = mutableListOf<String>()
         val attachment = runtime.attach(events::add)
         fun begin(selected: SpotifyJamPlaybackRuntime.Attachment = attachment, account: String = AppAccount, expiry: Long = InitialExpiry): CompletableFuture<String> = runtime.startFollowing(selected, Identifier, configuration(account, expiry))
@@ -112,6 +113,48 @@ class SpotifyJamPlaybackRuntimeTest {
         fixture.runtime.completeRecording(RequestIdentifier, SerializedResult)
         assertFalse(fixture.runtime.isRecordingPending(RequestIdentifier))
         assertEquals(listOf(RequestIdentifier), fixture.sessions.single().completedJobs)
+    }
+    @Test fun failedCredentialUpdateCanRetryTheSameExpiryAfterTheActualNativeWriteFails() {
+        val fixture = Fixture(); fixture.start(); val session = fixture.sessions.single()
+        session.tokenCompletion = CompletableFuture()
+        val update = fixture.runtime.updateApplicationAccount(fixture.attachment, AppAccount, token(AppAccount, NewerExpiry))
+        session.tokenCompletion?.completeExceptionally(SpotifyConnectFailure(Unauthorized))
+        failure(Unauthorized) { update.get() }
+        session.tokenCompletion = null
+        fixture.runtime.updateApplicationAccount(fixture.attachment, AppAccount, token(AppAccount, NewerExpiry)).get()
+        assertEquals(DoubleCount, session.tokens.size)
+    }
+    @Test fun serializedCredentialsCannotApplyAnOlderTokenAfterANewerPendingWrite() {
+        val fixture = Fixture(); fixture.start(); val session = fixture.sessions.single()
+        session.tokenCompletion = CompletableFuture()
+        val newest = token(AppAccount, NewerExpiry)
+        val update = fixture.runtime.updateApplicationAccount(fixture.attachment, AppAccount, newest)
+        val older = fixture.runtime.updateApplicationAccount(fixture.attachment, AppAccount, token(AppAccount, InitialExpiry))
+        assertFalse(older.isDone)
+        session.tokenCompletion?.complete(Unit); update.get(); older.get()
+        assertEquals(listOf(newest), session.tokens)
+    }
+    @Test fun authenticationFailureStopsNativeOwnershipAndLateFailureCannotStopAReplacement() {
+        var reject: () -> Unit = {}
+        val factory = SpotifyJamAuthenticationRenewalFactory { configuration, failed ->
+            reject = failed
+            SpotifyJamAuthenticationRenewal({ _, _ -> SpotifyNativeFollowerCancellation {} }, object : SpotifyBackgroundRecordingRunner {
+                override fun start(requestIdentifier: String, failed: (Throwable) -> Unit): SpotifyNativeFollowerCancellation = SpotifyNativeFollowerCancellation {}
+            }, { RequestIdentifier }, { OlderExpiry }, configuration.account.baseAddress, { true },
+                { _, _ -> CompletableFuture.completedFuture(Unit) }, Runnable::run, failed)
+        }
+        val fixture = Fixture(factory); val startup = fixture.begin()
+        val identity = SpotifyNativeFollowerIdentity(AppAccount, SpotifyAccount, SessionIdentifier, Host, Handle, Generation,
+            SpotifyPlayerIdentity(EngineEpoch, AuthenticationEpoch))
+        fixture.observers.single()(SpotifyNativeFollowerSnapshot(SpotifyNativeFollowerStatus.Following, identity, Occurrence, Recording, null, null))
+        fixture.sessions.single().startup.complete(Unit); startup.get()
+        val oldFailure = reject; reject()
+        assertEquals(SingleCount, fixture.sessions.single().stops)
+        assertFalse(fixture.runtime.isCurrent(identity))
+        assertEquals(SpotifyNativeFollowerStatus.Failed.name, JSONObject(fixture.runtime.getSnapshot(fixture.attachment)).getString(StatusField))
+        fixture.runtime.stopFollowing(fixture.attachment).get()
+        val replacement = fixture.begin(); fixture.sessions.last().startup.complete(Unit); replacement.get(); oldFailure()
+        assertEquals(EmptyCount, fixture.sessions.last().stops)
     }
     @Test fun olderAndEqualExpiryUpdatesNeverReplaceNativeCredential() {
         val fixture = Fixture(); fixture.start()

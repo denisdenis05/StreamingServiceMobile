@@ -13,7 +13,8 @@ import com.facebook.react.jstasks.HeadlessJsTaskContext
 import com.facebook.react.jstasks.HeadlessJsTaskEventListener
 import java.util.concurrent.atomic.AtomicBoolean
 
-class SpotifyAndroidHeadlessRecordingDispatch(private val application: Application) : SpotifyHeadlessRecordingDispatch {
+class SpotifyAndroidHeadlessRecordingDispatch(private val application: Application,
+    private val taskName: String = SpotifyBackgroundRecordingProtocol.TaskName) : SpotifyHeadlessRecordingDispatch {
     override fun dispatch(requestIdentifier: String, timeoutMilliseconds: Long, finished: (Throwable?) -> Unit): SpotifyNativeFollowerCancellation {
         UiThreadUtil.assertOnUiThread()
         val host = (application as? ReactApplication)?.reactHost ?: throw SpotifyConnectFailure(Unsupported)
@@ -54,7 +55,7 @@ class SpotifyAndroidHeadlessRecordingDispatch(private val application: Applicati
                 listener = events
                 selected.addTaskEventListener(events)
                 val data = Arguments.createMap().apply { putString(SpotifyBackgroundRecordingProtocol.RequestIdentifierField, requestIdentifier) }
-                selectedTaskIdentifier = selected.startTask(HeadlessJsTaskConfig(SpotifyBackgroundRecordingProtocol.TaskName, data, timeoutMilliseconds, AllowForeground))
+                selectedTaskIdentifier = selected.startTask(HeadlessJsTaskConfig(taskName, data, timeoutMilliseconds, AllowForeground))
             } catch (_failure: Throwable) { settle(SpotifyConnectFailure(Network)) }
         }
         try {

@@ -1,3 +1,28 @@
+# Background app authentication lifecycle — 2026-10-30
+
+Added native expiry-driven app credential renewal independent of recording
+resolution. A bounded account/server/Jam/host/generation-scoped headless task
+restores and refreshes the StreamingService account, then updates the real native
+player. Completion requires committed expiry advancement. Failures stop native
+ownership; reconnect, replacement, suspension and stop retire old jobs. Native
+credential writes now serialize and commit expiry only after actual success.
+
+Verification: `npm run test:spotify` passed 433 Node and 99 Jest cases;
+`npm run test:player-mobile` passed 329 cases; full `npx tsc --noEmit` passed;
+`./android/gradlew -p android :app:testDebugUnitTest --tests
+'*SpotifyJamAuthenticationRenewalTest' --tests '*SpotifyJamPlayback*Test'
+-x :app:buildSpotifyLibrespot --console=plain` passed 42 JVM cases. Library
+`npm run check` and `git diff --check` passed. Feature mapping and lifecycle
+limits: SPOTIFY_BACKGROUND_AUTHENTICATION.md. A preexisting suspended-view test
+caught a changed adoption contract during implementation; terminal view adoption
+again returns its state without starting another session, and the full focused
+suite passes. No Spotify process was stopped.
+
+No new APK or physical/device evidence. The live native probe remains pending
+pairing approval. Continue actual app host composition and incoming command/state
+publication before packaging; guest and physical audio acceptance still need
+another account and an attached Android device.
+
 # Explicit native activation transport — 2026-10-30
 
 Connected explicit activation to the responsive Dealer actor, bounded HTTP worker

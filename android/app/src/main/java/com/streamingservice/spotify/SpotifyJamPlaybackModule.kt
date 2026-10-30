@@ -28,6 +28,10 @@ class SpotifyJamPlaybackModule(private val context: ReactApplicationContext) : R
     @ReactMethod fun stopFollowing(promise: Promise) = settle(promise) { runtime.stopFollowing(attachment) }
     @ReactMethod fun getSnapshot(promise: Promise) = settle(promise) { CompletableFuture.completedFuture(runtime.getSnapshot(attachment)) }
     @ReactMethod fun updateApplicationAccount(accountIdentifier: String?, accessToken: String?, promise: Promise) = settle(promise) { runtime.updateApplicationAccount(attachment, accountIdentifier, accessToken) }
+    @ReactMethod fun claimAuthentication(requestIdentifier: String, promise: Promise) = settle(promise) { CompletableFuture.completedFuture(runtime.claimAuthentication(requestIdentifier)) }
+    @ReactMethod fun isAuthenticationPending(requestIdentifier: String, promise: Promise) = settle(promise) { CompletableFuture.completedFuture(runtime.isAuthenticationPending(requestIdentifier)) }
+    @ReactMethod fun completeAuthentication(requestIdentifier: String, accountIdentifier: String, token: String, promise: Promise) = settle(promise) { runtime.completeAuthentication(requestIdentifier, accountIdentifier, token) }
+    @ReactMethod fun failAuthentication(requestIdentifier: String, promise: Promise) = settle(promise) { runtime.failAuthentication(requestIdentifier); CompletableFuture.completedFuture(Unit) }
     @ReactMethod fun claimRecording(requestIdentifier: String, promise: Promise) = settle(promise) { CompletableFuture.completedFuture(runtime.claimRecording(requestIdentifier)) }
     @ReactMethod fun isRecordingPending(requestIdentifier: String, promise: Promise) = settle(promise) { CompletableFuture.completedFuture(runtime.isRecordingPending(requestIdentifier)) }
     @ReactMethod fun completeRecording(requestIdentifier: String, serialized: String, promise: Promise) = settle(promise) { runtime.completeRecording(requestIdentifier, serialized); CompletableFuture.completedFuture(Unit) }
