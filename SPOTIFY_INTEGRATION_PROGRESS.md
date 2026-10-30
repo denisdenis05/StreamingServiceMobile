@@ -1,3 +1,23 @@
+# Bounded native HTTP contention handling — 2026-10-31
+
+Native reads, catalog searches and host publication/demotion can wait behind an
+active HTTP operation in an eight-action bounded queue. Deferred actions recheck
+actual generation, registration, cancellation, authority and publication order
+when dispatched. Pending response retirement remains explicit. Dealer commands,
+acknowledgements and heartbeat processing stay responsive. No HTTP request is
+replayed: catalog throttling/backpressure returned by HTTP stays a failure.
+
+Verification: full `cargo test --manifest-path native/librespot-session/Cargo.toml
+--locked --quiet` passed 235 cases. Dedicated actor cases cover search waiting,
+bounded capacity, cancellation, shutdown, withdrawal behind passive work and no
+HTTP search retry. The former immediate metadata-backpressure test now verifies
+bounded deferral while unqueued playback mutations and stale reads remain refused.
+An initial full test run waited on that obsolete expectation; only its own Cargo
+and test worker were stopped, and the corrected complete suite passed. No Spotify
+process was touched. This resolves a deterministic actor-contention path; it does
+not establish the cause of the earlier live search failures or successful live
+catalog permission. `git diff --check` passed.
+
 # Retained host runtime and native task composition — 2026-10-31
 
 Added an application-owned host runtime with revocable React attachments, scoped

@@ -40,7 +40,7 @@ const COMMAND_LIFETIME_MILLISECONDS: u64 = 10000;
 const EXPECTED_TIMED_COMMAND: &str = "Expected a timed command event";
 
 #[derive(Default)]
-struct Calls { deactivation_sequences: Vec<u64>, deactivation_failure: Option<Failure>, search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
+struct Calls { search_failure: Option<Failure>, deactivation_sequences: Vec<u64>, deactivation_failure: Option<Failure>, search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
@@ -63,6 +63,7 @@ impl ConnectMetadataOperations for FakeSession {
 impl ConnectSearchOperations for FakeSession {
     async fn search(&mut self, input: ConnectSearchInput) -> Result<Vec<ConnectSearchTrack>, Failure> {
         self.calls.lock().unwrap().search_requests.push(input);
+        if let Some(failure) = self.calls.lock().unwrap().search_failure { return Err(failure); }
         if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
         if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
         Ok(Vec::new())
@@ -655,14 +656,14 @@ async fn dealer_commands_and_their_replies_progress_while_a_passive_http_read_is
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_busy_http_worker_rejects_new_reads_metadata_and_mutations_before_dispatch() {
+async fn a_busy_http_worker_defers_metadata_but_rejects_unqueued_mutations_and_stale_reads() {
     let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
     let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
     let (result, reading) = oneshot::channel();
     harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
-    let (result, metadata) = oneshot::channel();
+    let (result, mut metadata) = oneshot::channel();
     harness.actions.send(ConnectAction::Metadata { generation: GENERATION, identifiers: vec![METADATA_TRACK_IDENTIFIER.to_owned()], result }).await.unwrap();
-    assert!(matches!(metadata.await.unwrap(), Err(Failure::Backpressure)));
+    assert!(matches!(metadata.try_recv(), Err(oneshot::error::TryRecvError::Empty)));
     let (result, command) = oneshot::channel();
     harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(), target_device_identifier: TARGET.to_owned(),
         command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
@@ -671,7 +672,8 @@ async fn a_busy_http_worker_rejects_new_reads_metadata_and_mutations_before_disp
     harness.actions.send(ConnectAction::Read { generation: STALE_GENERATION, result }).await.unwrap();
     assert!(matches!(stale.await.unwrap(), Err(Failure::Canceled)));
     assert!(harness.calls.lock().unwrap().metadata_requests.is_empty()); assert!(harness.calls.lock().unwrap().commands.is_empty());
-    release.send(()).unwrap(); reading.await.unwrap().unwrap(); harness.stop().await;
+    release.send(()).unwrap(); reading.await.unwrap().unwrap(); assert!(matches!(metadata.await.unwrap(), Err(Failure::Unsupported)));
+    assert_eq!(harness.calls.lock().unwrap().metadata_requests.len(), ONE_CALL); harness.stop().await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -989,4 +991,72 @@ async fn successful_withdrawal_allows_only_a_new_explicit_activation_at_the_next
     let reading = activation_read(&harness).await;
     activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
     harness.stop().await;
+}
+
+const SEARCH_TITLE: &str = "Synthetic title";
+const SEARCH_AUTHOR: &str = "Synthetic author";
+const SEARCH_MARKET: &str = "GB";
+const SEARCH_LIMIT: usize = 1;
+const DEFERRED_SEARCH_CAPACITY: usize = 8;
+
+fn search_input() -> ConnectSearchInput { ConnectSearchInput { title: SEARCH_TITLE.to_owned(), author: SEARCH_AUTHOR.to_owned(), market: SEARCH_MARKET.to_owned(), limit: SEARCH_LIMIT } }
+
+#[tokio::test]
+async fn one_read_only_search_can_wait_for_the_active_http_request_without_replaying_it() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel(); harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.inbound(PAUSE).await; harness.events.recv().await.unwrap(); harness.acknowledge(false).await.unwrap();
+    release.send(()).unwrap(); reading.await.unwrap().unwrap(); assert!(searching.await.unwrap().unwrap().is_empty());
+    assert_eq!(harness.calls.lock().unwrap().search_requests.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn queued_search_capacity_is_bounded_and_cancellation_prevents_later_http_dispatch() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel(); harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    let cancellation = CancellationToken::new();
+    let mut queued = Vec::new();
+    for _position in EMPTY_CALL_COUNT..DEFERRED_SEARCH_CAPACITY {
+        let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: cancellation.clone(), result }).await.unwrap();
+        queued.push(searching);
+    }
+    let (result, excessive) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(excessive.await.unwrap(), Err(Failure::Backpressure))); cancellation.cancel(); release.send(()).unwrap(); reading.await.unwrap().unwrap();
+    for searching in queued { assert!(matches!(searching.await.unwrap(), Err(Failure::Canceled))); }
+    assert!(harness.calls.lock().unwrap().search_requests.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn native_shutdown_retires_a_queued_search_before_it_can_reach_http() {
+    let (_release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel(); harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.inbound(PAUSE).await; harness.events.recv().await.unwrap(); harness.acknowledge(false).await.unwrap(); harness.cancellation.cancel();
+    assert!(matches!(reading.await.unwrap(), Err(Failure::Canceled))); assert!(matches!(searching.await.unwrap(), Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().search_requests.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn host_withdrawal_waits_for_passive_http_work_without_replay_or_foreign_takeover() {
+    let (release, gate) = oneshot::channel(); let (started, observing) = oneshot::channel();
+    let mut harness = Harness::with_refresh(None, Some(gate), Some(started)); harness.register().await;
+    let (result, reading) = oneshot::channel(); harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap(); observing.await.unwrap();
+    let (result, withdrawn) = oneshot::channel(); harness.actions.send(ConnectAction::Withdraw { generation: GENERATION, device_identifier: DEVICE.to_owned(),
+        session_identifier: publication::SESSION.to_owned(), sequence: publication::FIRST_SEQUENCE, cancellation: CancellationToken::new(), result }).await.unwrap();
+    harness.inbound(PAUSE).await; harness.events.recv().await.unwrap(); harness.acknowledge(false).await.unwrap(); release.send(()).unwrap();
+    reading.await.unwrap().unwrap(); withdrawn.await.unwrap().unwrap();
+    assert_eq!(harness.calls.lock().unwrap().deactivation_sequences.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn http_catalog_backpressure_is_returned_without_repeating_the_search() {
+    let mut harness = Harness::start(None); harness.register().await;
+    harness.calls.lock().unwrap().search_failure = Some(Failure::Backpressure);
+    let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(searching.await.unwrap(), Err(Failure::Backpressure)));
+    assert_eq!(harness.calls.lock().unwrap().search_requests.len(), ONE_CALL); harness.stop().await;
 }

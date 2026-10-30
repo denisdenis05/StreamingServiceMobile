@@ -16,6 +16,7 @@ const PING_INTERVAL_SECONDS: u64 = 30;
 const PONG_TIMEOUT_SECONDS: u64 = 5;
 const EVENT_BACKPRESSURE_MILLISECONDS: u64 = 500;
 const COMMAND_ACKNOWLEDGEMENT_SECONDS: u64 = 10;
+const MAXIMUM_DEFERRED_HTTP_ACTIONS: usize = 8;
 const MILLISECONDS_PER_SECOND: u64 = 1000;
 const HOUSEKEEPING_INTERVAL_MILLISECONDS: u64 = 500;
 const RECONNECT_DELAY_SECONDS: u64 = 5;
@@ -149,21 +150,28 @@ async fn reply(socket: &mpsc::Sender<OutgoingFrame>, key: &str, accepted: bool) 
     send(socket, Message::Text(message.into())).await
 }
 
-fn retire_action(action: ConnectAction) {
+fn retire_action(action: ConnectAction) { reject_action(action, Failure::Canceled); }
+
+fn reject_action(action: ConnectAction, failure: Failure) {
     match action {
-        ConnectAction::CheckedCommand { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Search { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Membership { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Withdraw { result, .. } | ConnectAction::Deactivate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::HostIdentity { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Activate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Publish { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
-        ConnectAction::Command { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::CheckedCommand { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::InspectFailure { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Search { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Membership { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Read { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Withdraw { result, .. } | ConnectAction::Deactivate { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::HostIdentity { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Activate { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Publish { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Refresh { result, .. } => { let _ = result.send(Err(failure)); },
+        ConnectAction::Command { result, .. } | ConnectAction::Reply { result, .. } => { let _ = result.send(Err(failure)); },
     }
+}
+
+struct DeferredHttpActions { actions: VecDeque<ConnectAction> }
+impl Drop for DeferredHttpActions {
+    fn drop(&mut self) { while let Some(action) = self.actions.pop_front() { retire_action(action); } }
 }
 
 struct ConnectActorIdentity {
@@ -216,6 +224,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
     work: mpsc::Sender<HttpWork>, mut completions: mpsc::Receiver<CompletedHttpWork>, cancellation: &CancellationToken) -> Result<(), Failure> {
     let mut registered = false;
     let mut busy = false;
+    let mut deferred = DeferredHttpActions { actions: VecDeque::new() };
     let mut failure_stage = initial_failure_stage;
     let mut activation_previous_host: Option<String> = None;
     let mut activation_guard = ConnectActivationDispatchGuard::default();
@@ -322,8 +331,24 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     _ => (),
                 }
             },
-            action = actions.recv() => {
+            action = async {
+                if !busy && !deferred.actions.is_empty() { deferred.actions.pop_front() } else { actions.recv().await }
+            } => {
                 let action = action.ok_or(Failure::Canceled)?;
+                let expected = match &action {
+                    ConnectAction::InspectFailure { generation, .. } | ConnectAction::Reply { generation, .. } | ConnectAction::Search { generation, .. }
+                    | ConnectAction::Metadata { generation, .. } | ConnectAction::Read { generation, .. } | ConnectAction::Membership { generation, .. }
+                    | ConnectAction::Activate { generation, .. } | ConnectAction::Publish { generation, .. } | ConnectAction::Withdraw { generation, .. }
+                    | ConnectAction::Deactivate { generation, .. } | ConnectAction::HostIdentity { generation, .. } | ConnectAction::Refresh { generation, .. }
+                    | ConnectAction::Command { generation, .. } | ConnectAction::CheckedCommand { generation, .. } => *generation,
+                };
+                if expected != generation { retire_action(action); continue; }
+                if busy && registered && matches!(&action, ConnectAction::Search { .. } | ConnectAction::Metadata { .. } | ConnectAction::Read { .. }
+                    | ConnectAction::Membership { .. } | ConnectAction::Activate { .. } | ConnectAction::Publish { .. } | ConnectAction::Withdraw { .. } | ConnectAction::Deactivate { .. }) {
+                    if deferred.actions.len() < MAXIMUM_DEFERRED_HTTP_ACTIONS { deferred.actions.push_back(action); }
+                    else { reject_action(action, Failure::Backpressure); }
+                    continue;
+                }
                 match action {
                     ConnectAction::InspectFailure { generation: expected, result } => { let _ = result.send(if expected == generation { Ok(failure_stage) } else { Err(Failure::Canceled) }); },
                     ConnectAction::Reply { generation: expected, key, accepted, result } => {
@@ -342,7 +367,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     },
                     ConnectAction::Search { generation: expected, input, search_cancellation, result } => {
                         if result.is_closed() { continue; }
-                        if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled() || search_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if let Some(failure) = http_action_failure(expected, generation, registered, false, cancellation.is_cancelled() || search_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
                         if let Err(failure) = input.validate() { let _ = result.send(Err(failure)); continue; }
                         submit_http_work(&work, HttpWork::Search { input, cancellation: search_cancellation, response: PendingHttpResponse::new(result) })?; busy = true;
                     },
