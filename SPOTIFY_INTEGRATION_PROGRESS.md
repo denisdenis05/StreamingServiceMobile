@@ -15,8 +15,10 @@ passed; `./gradlew :app:testDebugUnitTest --tests '*SpotifyJamPlayback*Test'
 -x :app:buildSpotifyLibrespot --console=plain` passed Android compilation and
 22 JVM cases. This chapter changes no Rust source or player engine selection.
 
-The APK rebuild follows the source commit. The old probe is unavailable and
-there is no current live-session/device result. Real screen-lock operation,
+Mobile source commit `147eb76` is packaged in the APK recorded in
+`SPOTIFY_JAM_APK.md`. Release assembly, signature and 16 KB ZIP/native ELF
+alignment checks passed. The old probe is unavailable and there is no new
+live-session/device result. Real screen-lock operation,
 unseen-song playback, background renewal, measured synchronization and guest
 permission remain unverified. Next source work is same-Jam reconnect recovery,
 then app-led host activation/incoming controls/publication. Process-death recovery

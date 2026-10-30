@@ -1,3 +1,33 @@
+# Native follower app handoff build — 2026-10-30
+
+Current APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.
+35,656,248 bytes; SHA-256
+`04489bc0967939637c7107208ee91e161872bdb3ce7273d5e7a9d15213c8eb36`.
+Source: Mobile `147eb76`, SpotifyJam `3bd1232`, Player `b28f393`.
+
+The existing follow action now uses the application-owned native Android runtime
+with device sign-in. Native player ownership and a verified account/server/player-
+epoch receipt must be acknowledged before background continuation. Browser sign-in
+keeps foreground following. Local pause remains authoritative; account, host,
+generation and stale-response protections remain active. New dedicated source
+tests cover the handoff, player receipt, credential updates, restoration and
+cleanup. Full behavior and feature mapping are in `SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md`.
+
+Source checks passed: 413 Spotify Node cases, 95 Jest cases, 329 player/mobile
+cases, full TypeScript and focused Android compilation/22 JVM cases. Release
+assembly passed, including fresh Hermes generation. APK v2 signature and 16 KB
+ZIP alignment checks passed; the Spotify native library LOAD segments use 16 KB
+alignment. The packaged Hermes bundle is 2,178,580 bytes and contains the native
+ownership handoff and headless task registration. Packaged Spotify native library
+is 5,516,064 bytes. Source identities, checksum and validation logs are retained
+under the ignored `build/spotify-jam/` artifact directory.
+
+No Android device was attached, and the APK has not been installed by the agent.
+No new live Spotify request was made. Guest permission, audible synchronization,
+measured timing, screen lock/network/renewal acceptance, automatic reconnect and
+app-led hosting remain open. The source allows guarded native background following;
+physical lifecycle behavior remains unverified.
+
 # Application runtime and native integration checkpoint — 2026-10-27
 
 # Native background resolver and search build — 2026-10-30
