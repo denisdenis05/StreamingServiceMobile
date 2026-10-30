@@ -15,7 +15,7 @@ object SpotifyConnectApplicationRuntime {
     val runtime = SpotifyConnectRuntime(SpotifyConnectNativeExecution(pollClock = SpotifyNativeFollowerClock { SystemClock.elapsedRealtime() }), SpotifyConnectJsonRuntimeProtocol { serialized ->
         val decoded = Base64.decode(serialized, Base64.NO_WRAP)
         decoded.isNotEmpty() && Base64.encodeToString(decoded, Base64.NO_WRAP) == serialized
-    }, Polling(), SpotifyJamPlaybackApplicationRuntime::retireFollowing)
+    }, Polling(), SpotifyHostApplicationRuntime::retireHosting, SpotifyHostApplicationRuntime::releaseRetiredConnections, SpotifyJamPlaybackApplicationRuntime::retireFollowing)
 
     private class Polling : SpotifyConnectRuntimePolling {
         private val executor = ScheduledThreadPoolExecutor(POLLING_WORKER_COUNT).apply {

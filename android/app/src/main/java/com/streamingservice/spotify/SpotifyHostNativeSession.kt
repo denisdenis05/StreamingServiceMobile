@@ -24,8 +24,9 @@ class SpotifyHostNativeSession(
     private val clock: SpotifyNativeFollowerClock,
     private val connection: SpotifyHostConnectionObservation,
     private val factory: SpotifyHostCoordinatorFactory,
-    private val isCurrent: (SpotifyHostIdentity) -> Boolean
-) {
+    private val isCurrent: (SpotifyHostIdentity) -> Boolean,
+    private val canExecute: (SpotifyHostIdentity) -> Boolean = isCurrent
+) : SpotifyHostRuntimeSession {
     private val connectionEvents = SpotifyHostConnectionEvents()
     private val started = CompletableFuture<SpotifyHostSnapshot>()
     private var stopped: CompletableFuture<Unit>? = null
@@ -41,7 +42,7 @@ class SpotifyHostNativeSession(
     private var startupTimer: SpotifyNativeFollowerCancellation? = null
     @Volatile private var authenticationTail = CompletableFuture.completedFuture(Unit)
 
-    @Synchronized fun start(): CompletableFuture<SpotifyHostSnapshot> {
+    @Synchronized override fun start(): CompletableFuture<SpotifyHostSnapshot> {
         if (retired) return failed(Canceled)
         if (requested) return started
         requested = true
@@ -82,13 +83,13 @@ class SpotifyHostNativeSession(
                 operation.result.whenComplete { actual, authenticationFailure -> configured(player, actual, authenticationFailure) }
                 return
             }
-            val hostPlayer = player.hosting(resolver, scheduler, clock::nowElapsedRealtimeMilliseconds, ::currentIdentity)
+            val hostPlayer = player.hosting(resolver, scheduler, clock::nowElapsedRealtimeMilliseconds, ::currentIdentity, canExecute)
             val hosting = factory.create(hostPlayer, ::commandHandlingReady)
             coordinator = hosting
             val attached = connection.attach { batch ->
                 if (!retired) when (connectionEvents.inspect(batch, configuration.identity)) {
                     SpotifyHostConnectionDecision.Ignore -> Unit
-                    SpotifyHostConnectionDecision.Current -> hosting.accept(batch)
+                    SpotifyHostConnectionDecision.Current -> if (canExecute(configuration.identity)) hosting.accept(batch)
                     SpotifyHostConnectionDecision.Retire -> stop()
                 }
             }
@@ -105,11 +106,11 @@ class SpotifyHostNativeSession(
             } }
         } catch (creationFailure: Throwable) { failStart(creationFailure) }
     }
-    fun commandHandlingReady(identity: SpotifyHostIdentity): Boolean = !retired && observation != null && currentIdentity(identity)
+    fun commandHandlingReady(identity: SpotifyHostIdentity): Boolean = !retired && observation != null && currentIdentity(identity) && canExecute(identity)
         && coordinator?.commandHandlingReady(identity) == true
     @Synchronized fun snapshot(): SpotifyHostSnapshot? = coordinator?.snapshot()
 
-    @Synchronized fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> {
+    @Synchronized override fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> {
         if (retired || !current()) return failed(Superseded)
         latestAccessToken = accessToken
         val player = port
@@ -130,7 +131,7 @@ class SpotifyHostNativeSession(
         return completion
     }
 
-    fun stop(): CompletableFuture<Unit> {
+    override fun stop(): CompletableFuture<Unit> {
         val completion: CompletableFuture<Unit>
         val startup: CompletableFuture<Unit>
         val attached: SpotifyNativeFollowerCancellation?
@@ -154,6 +155,19 @@ class SpotifyHostNativeSession(
                 }
             }
         return completion
+    }
+    override fun releaseAfterConnectionRetired(): CompletableFuture<Unit> {
+        val pending = synchronized(this) {
+            retired = true
+            observation?.cancel(); observation = null
+            startupTimer?.cancel(); startupTimer = null
+            started.completeExceptionally(SpotifyConnectFailure(Superseded))
+            authentication?.cancel()
+            authentication?.result?.handle { _, _ -> Unit } ?: bindingOperation?.handle { _, _ -> Unit }
+                ?: CompletableFuture.completedFuture(Unit)
+        }
+        val retirement = try { coordinator?.stop() ?: CompletableFuture.completedFuture(Unit) } catch (_failure: Throwable) { CompletableFuture.completedFuture(Unit) }
+        return pending.thenCompose { retirement.handle { _, _ -> Unit } }.thenCompose { binding.unbind() }
     }
     private fun failStart(failure: Throwable) { started.completeExceptionally(failure); stop() }
     private fun currentIdentity(identity: SpotifyHostIdentity): Boolean = identity == configuration.identity && current()

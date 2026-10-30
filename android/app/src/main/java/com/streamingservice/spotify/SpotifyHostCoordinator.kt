@@ -142,7 +142,7 @@ class SpotifyHostCoordinator(
         if (stopped.isDone) return
         work = null; cancelWork = null; mutationPending = false
         val cursor = lastCursor
-        val pause = if (cursor == null || !current()) CompletableFuture.completedFuture(Unit)
+        val pause = if (cursor == null) CompletableFuture.completedFuture(Unit)
             else try { player.pause(identity, cursor) } catch (failure: Throwable) { failedFuture(failure) }
         pause.whenComplete { _, pauseFailure -> decide {
             if (pauseFailure != null && failure == null && !conflict(pauseFailure)) failure = PlayerFailed

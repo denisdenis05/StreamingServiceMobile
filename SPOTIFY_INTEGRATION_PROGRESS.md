@@ -1,3 +1,31 @@
+# Retained host runtime and native task composition — 2026-10-31
+
+Added an application-owned host runtime with revocable React attachments, scoped
+native ownership, serial decisions, explicit cleanup barriers and account/token
+updates. Failed cleanup survives repeated replacement attempts. Actual native
+retirement can release a retained binding and clear that fence. Host sessions,
+real player, native transport, metadata broker and bounded authentication renewal
+are composed in SpotifyHostApplicationRuntime. The existing headless recording
+and authentication entry points route their unique jobs to the correct owner.
+Native hosting commands and snapshots are exposed through SpotifyJamPlayback.
+Starting native following retires hosting first. Host command permission is
+separate from old-scope cleanup permission.
+
+Connect shutdown attempts host demotion before removing the native device; failed
+demotion still proceeds through actual native retirement and binding release.
+Automatic native closure also retires hosting. Snapshots contain actual scope and
+status, without credentials or song details. External session/coordinator work
+runs outside owner locks on a serial decision queue.
+
+Verification: all Android JVM tests passed 402 cases with `./android/gradlew -p
+android :app:testDebugUnitTest -x :app:buildSpotifyLibrespot --no-daemon
+--console=plain`. Dedicated new suites: SpotifyHostRuntimeTest,
+SpotifyDecisionExecutorTest and SpotifyHostSnapshotProtocolTest. Additional
+Connect/session tests cover host-before-native ordering, failed demotion release
+and failed-binding cleanup. `git diff --check` passed. No live hosting or device
+result. Continue explicit JS controls, queue capture and reverse background
+matching before integrated APK packaging.
+
 # Queue-independent native host withdrawal — 2026-10-31
 
 Host shutdown no longer needs a mapped player queue or a membership read. Added

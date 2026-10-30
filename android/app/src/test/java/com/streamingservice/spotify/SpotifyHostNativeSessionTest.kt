@@ -126,6 +126,11 @@ class SpotifyHostNativeSessionTest {
         assertTrue(stopped.isCompletedExceptionally); assertEquals(EmptyCount, fixture.unbinds)
         assertFalse(fixture.session.commandHandlingReady(fixture.configuration.identity))
     }
+    @Test fun actualNativeRetirementReleasesTheBindingAfterFailedDemotion() {
+        val fixture = Fixture(); fixture.session.start(); fixture.bind(); fixture.completeStart(); fixture.cleanup = CompletableFuture()
+        fixture.session.stop(); fixture.cleanup.completeExceptionally(SpotifyConnectFailure(UnknownOutcome))
+        fixture.session.releaseAfterConnectionRetired().get(); assertEquals(SingleCount, fixture.unbinds)
+    }
     @Test fun stopDuringBindingWaitsForActualBindingBeforeUnbindingAndNeverActivates() {
         val fixture = Fixture(); val started = fixture.session.start(); val stopped = fixture.session.stop()
         assertFalse(stopped.isDone); fixture.bind(); stopped.get()

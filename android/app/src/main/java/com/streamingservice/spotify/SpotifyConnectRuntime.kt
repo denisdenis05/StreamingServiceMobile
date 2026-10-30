@@ -21,6 +21,8 @@ class SpotifyConnectRuntime(
     execution: SpotifyConnectExecution,
     private val protocol: SpotifyConnectRuntimeProtocol,
     private val polling: SpotifyConnectRuntimePolling,
+    private val retireHosting: () -> CompletableFuture<Unit> = { CompletableFuture.completedFuture(Unit) },
+    private val releaseHostingAfterClose: () -> CompletableFuture<Unit> = { CompletableFuture.completedFuture(Unit) },
     private val retireFollowing: () -> CompletableFuture<Unit> = { CompletableFuture.completedFuture(Unit) }
 ) {
     class Attachment internal constructor(internal var listener: ((SpotifyConnectRuntimeEvent) -> Unit)?) {
@@ -221,8 +223,12 @@ class SpotifyConnectRuntime(
             if (pendingStart == null) attachment?.identifier = null
             polling.stop()
             try {
-                val retirement = retireFollowing()
-                if (!retirement.isDone || retirement.isCompletedExceptionally) retirementBarrier = retirement
+                val following = retireFollowing()
+                if (!retiringConnection) {
+                    retiringConnection = true
+                    val hosting = retireHosting().handle { _, _ -> Unit }
+                    retirementBarrier = CompletableFuture.allOf(following, hosting).thenCompose { releaseHostingAfterClose() }
+                } else if (retirementBarrier?.isDone != false && (!following.isDone || following.isCompletedExceptionally)) retirementBarrier = following
             } catch (failure: Throwable) {
                 retirementBarrier = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
             }
@@ -267,14 +273,20 @@ class SpotifyConnectRuntime(
             return
         }
         retiringConnection = true
-        nativeBinding = null
-        val following = try { retireFollowing() } catch (failure: Throwable) {
-            CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
-        }
-        val native = CompletableFuture<Unit>()
-        try { closeNative { native.complete(Unit) } } catch (failure: Throwable) { native.completeExceptionally(failure) }
-        val retirement = CompletableFuture.allOf(following, native).thenApply { Unit }
+        val retirement = CompletableFuture<Unit>()
         retirementBarrier = retirement
+        val hosting = try { retireHosting() } catch (failure: Throwable) { CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) } }
+        hosting.whenComplete { _, _ -> synchronized(this) {
+            nativeBinding = null
+            val following = try { retireFollowing() } catch (failure: Throwable) {
+                CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
+            }
+            val native = CompletableFuture<Unit>()
+            try { closeNative { native.complete(Unit) } } catch (failure: Throwable) { native.completeExceptionally(failure) }
+            CompletableFuture.allOf(following, native).thenCompose { releaseHostingAfterClose() }.whenComplete { _, failure ->
+                if (failure == null) retirement.complete(Unit) else retirement.completeExceptionally(failure)
+            }
+        } }
         retirement.whenComplete { _, failure -> if (failure == null) completed() else failed(failure) }
     }
 

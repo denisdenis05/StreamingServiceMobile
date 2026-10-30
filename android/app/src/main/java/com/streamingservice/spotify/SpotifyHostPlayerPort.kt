@@ -54,7 +54,8 @@ class SpotifyHostPlayerPort(
     private val identifiers: SpotifyPlayerIdentifierSource,
     private val isCurrent: (SpotifyHostIdentity) -> Boolean,
     private val maximumJournalEntries: Int = DefaultMaximumJournalEntries,
-    private val maximumPendingCommands: Int = DefaultMaximumPendingCommands
+    private val maximumPendingCommands: Int = DefaultMaximumPendingCommands,
+    private val canExecute: (SpotifyHostIdentity) -> Boolean = isCurrent
 ) : SpotifyHostPlayer {
     private val monitor = Any()
     private val journal = LinkedHashMap<String, Job>()
@@ -124,7 +125,7 @@ class SpotifyHostPlayerPort(
                 if (previous.identity != identity || previous.expected != expected || previous.request != request) return rejected(SpotifyPlayerFailureReason.Conflict)
                 return operation(previous)
             }
-            if (retired || !isCurrent(identity)) return rejected(SpotifyPlayerFailureReason.Superseded)
+            if (retired || !isCurrent(identity) || !canExecute(identity)) return rejected(SpotifyPlayerFailureReason.Superseded)
             if (journal.size >= maximumJournalEntries || journal.values.count { entry -> !entry.completion.isDone } >= maximumPendingCommands) return rejected(SpotifyPlayerFailureReason.Capacity)
             val now = elapsedMilliseconds()
             if (request.key.isBlank() || receivedAtElapsedMilliseconds > now || receivedAtElapsedMilliseconds < MinimumElapsedMilliseconds
@@ -282,7 +283,7 @@ class SpotifyHostPlayerPort(
     }
     private fun requireCurrent(job: Job) {
         if (job.completion.isDone) fail(if (job.dispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.Cancelled)
-        if (retired || !isCurrent(job.identity)) fail(if (job.dispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.Superseded)
+        if (retired || !isCurrent(job.identity) || !canExecute(job.identity)) fail(if (job.dispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.Superseded)
         if (elapsedMilliseconds() >= job.deadline) fail(if (job.dispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.Cancelled)
     }
     private fun cancel(job: Job) { finish(job, null, SpotifyPlayerFailure(if (job.dispatched) SpotifyPlayerFailureReason.UnknownOutcome else SpotifyPlayerFailureReason.Cancelled)) }

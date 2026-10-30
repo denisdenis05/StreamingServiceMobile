@@ -48,12 +48,14 @@ class SpotifyConnectRuntimeTest {
             return if (batch.finished) null else batch
         }
     }
-    private class Fixture(val following: CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)) {
+    private class Fixture(val following: CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit),
+        val hosting: CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit),
+        val released: CompletableFuture<Unit> = CompletableFuture.completedFuture(Unit)) {
         var followingRetirements = EMPTY_COUNT
         val execution = Execution()
         val protocol = Protocol()
         val polling = Polling()
-        val runtime = SpotifyConnectRuntime(execution, protocol, polling) { followingRetirements += SINGLE_COUNT; following }
+        val runtime = SpotifyConnectRuntime(execution, protocol, polling, { hosting }, { released }) { followingRetirements += SINGLE_COUNT; following }
         val events = mutableListOf<SpotifyConnectRuntimeEvent>()
         val attachment = runtime.attach { event -> events.add(event) }
         fun start(): Long = runtime.start(attachment, IDENTIFIER, CREDENTIAL)
@@ -65,6 +67,22 @@ class SpotifyConnectRuntimeTest {
         catch (failure: SpotifyConnectFailure) { assertEquals(code, failure.code) }
     }
 
+    @Test fun nativeCloseWaitsForHostDemotionAndBindingRelease() {
+        val hosting = CompletableFuture<Unit>(); val released = CompletableFuture<Unit>(); val fixture = Fixture(hosting = hosting, released = released)
+        fixture.start(); var completed = false
+        fixture.runtime.shutdown(fixture.attachment, { completed = true }, { throw it })
+        assertFalse(completed); assertEquals(EMPTY_COUNT, fixture.followingRetirements)
+        hosting.complete(Unit); fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertFalse(completed)
+        released.complete(Unit); assertTrue(completed)
+    }
+    @Test fun failedHostDemotionStillClosesNativeBeforeReleasingTheBinding() {
+        val hosting = CompletableFuture<Unit>(); val released = CompletableFuture<Unit>(); val fixture = Fixture(hosting = hosting, released = released)
+        fixture.start(); var completed = false
+        fixture.runtime.shutdown(fixture.attachment, { completed = true }, { throw it })
+        hosting.completeExceptionally(SpotifyConnectFailure(NETWORK_FAILURE)); fixture.execution.batch = SpotifyConnectBatch(PAYLOAD, true); fixture.polling.pump()
+        assertFalse(completed); released.complete(Unit); assertTrue(completed)
+    }
     @Test
     fun explicitShutdownWaitsForNativeAndFollowerCleanupAndDetachDoesNotRetireFollowing() {
         val following = CompletableFuture<Unit>(); val fixture = Fixture(following); fixture.start()
