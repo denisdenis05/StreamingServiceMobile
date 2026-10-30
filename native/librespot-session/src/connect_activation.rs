@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use librespot_protocol::connect::PutStateRequest;
 
 use crate::{connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationSnapshot, MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS},
@@ -7,7 +8,8 @@ const MAXIMUM_ACTIVATION_IDENTIFIER_CHARACTERS: usize = 128;
 const MAXIMUM_PREVIOUS_HOST_CHARACTERS: usize = 512;
 const INITIAL_GENERATION: u64 = 0;
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectExplicitActivation {
     pub request_identifier: String,
     pub generation: u64,
@@ -17,6 +19,8 @@ pub struct ConnectExplicitActivation {
     pub requested_native_monotonic_milliseconds: u64,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectActivationPlayerReadiness {
     pub playback_output_ready: bool,
     pub external_authority_absent: bool,

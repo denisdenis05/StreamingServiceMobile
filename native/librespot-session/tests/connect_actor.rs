@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use librespot_protocol::{connect::Cluster, player::PlayerState};
 use protobuf::{Message, MessageField};
 use serde_json::{json, Value};
-use streaming_spotify_session::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
+use streaming_spotify_session::{connect_activation::{ConnectExplicitActivation, ConnectActivationPlayerReadiness, build_explicit_activation}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_session::ConnectSessionOperations, connect_commands::ConnectCommand,
     connect_transport::{process_connected_events, ConnectAction, ConnectEvent, ConnectEventData, OutgoingFrame},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, DealerInput}, model::Failure};
 use tokio::{sync::{mpsc, oneshot}, task::JoinHandle};
@@ -33,6 +33,7 @@ const ONE_CALL: usize = 1;
 const FIRST_CALL: usize = 0;
 const EXPIRATION_SECONDS: u64 = 11;
 const REQUEST: &str = "synthetic-checked-command";
+const EARLY_ACTIVATION_MESSAGE: &str = "Activation completed before the blocked publication was released";
 const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
@@ -83,6 +84,18 @@ impl ConnectSessionOperations for FakeSession {
         if let Some(started) = self.refresh_started.take() { let _ = started.send(()); }
         if let Some(gate) = self.refresh_gate.take() { gate.await.map_err(|_| Failure::Network)?; }
         Ok(self.snapshot.lock().unwrap().clone())
+    }
+    async fn activate(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot,
+        activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness, cluster: ConnectCluster, generation: u64) -> Result<ConnectCluster, Failure> {
+        let registration = streaming_spotify_session::connect_device::initial_registration(
+            &streaming_spotify_session::connect_device::ConnectDeviceConfiguration { name: DEVICE.to_owned(), playback_ready: true },
+            DEVICE, publication::SESSION, publication::SERVER_TIMESTAMP_MILLISECONDS)?;
+        build_explicit_activation(&registration, &snapshot, &activation, &readiness, &cluster, generation,
+            streaming_spotify_session::connect_transport::native_monotonic_milliseconds())?;
+        let mut published = self.publish(snapshot).await?;
+        published.server_at_milliseconds = cluster.server_at_milliseconds;
+        published.changed_at_milliseconds = cluster.changed_at_milliseconds;
+        Ok(published)
     }
     async fn publish(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
         self.calls.lock().unwrap().publication_sequences.push(snapshot.sequence);
@@ -708,4 +721,109 @@ async fn stalled_local_state_publication_keeps_incoming_controls_and_host_retire
     release.send(()).unwrap(); published.await.unwrap().unwrap();
     assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
     assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]); harness.stop().await;
+}
+
+async fn activation_read(harness: &Harness) -> streaming_spotify_session::connect_transport::ConnectReading {
+    harness.snapshot.lock().unwrap().server_at_milliseconds = publication::SERVER_TIMESTAMP_MILLISECONDS as i64;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    receipt.await.unwrap().unwrap()
+}
+
+async fn activate_sample(actions: &mpsc::Sender<ConnectAction>, reading: &streaming_spotify_session::connect_transport::ConnectReading,
+    generation: u64, previous_host: &str, playback_output_ready: bool) -> Result<ConnectCluster, Failure> {
+    let native_now = streaming_spotify_session::connect_transport::native_monotonic_milliseconds();
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    snapshot.sampled_native_monotonic_milliseconds = native_now;
+    snapshot.sampled_server_timestamp_milliseconds = reading.cluster.server_at_milliseconds as u64
+        + native_now - reading.request_completed_native_monotonic_milliseconds;
+    let activation = ConnectExplicitActivation { request_identifier: REQUEST.to_owned(), generation,
+        expected_previous_host_device_identifier: previous_host.to_owned(),
+        observation_started_native_monotonic_milliseconds: reading.request_started_native_monotonic_milliseconds,
+        observation_completed_native_monotonic_milliseconds: reading.request_completed_native_monotonic_milliseconds,
+        requested_native_monotonic_milliseconds: reading.request_started_native_monotonic_milliseconds };
+    let readiness = ConnectActivationPlayerReadiness { playback_output_ready, external_authority_absent: true };
+    let (result, receipt) = oneshot::channel();
+    actions.send(ConnectAction::Activate { generation, snapshot, activation, readiness,
+        activation_cancellation: CancellationToken::new(), result }).await.unwrap();
+    receipt.await.unwrap()
+}
+
+#[tokio::test]
+async fn explicit_activation_uses_the_actual_preflight_and_establishes_local_publication_authority() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await.unwrap();
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, [publication::FIRST_SEQUENCE, publication::SECOND_SEQUENCE]);
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await, Err(Failure::UnknownOutcome)));
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_generation_changed_host_and_unready_output_cannot_dispatch_activation() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    assert!(matches!(activate_sample(&harness.actions, &reading, STALE_GENERATION, TARGET, true).await, Err(Failure::Canceled)));
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, OTHER_TARGET, true).await, Err(Failure::Canceled)));
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, TARGET, false).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty());
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn actual_native_host_identity_requires_the_current_registered_generation() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::HostIdentity { generation: GENERATION, result }).await.unwrap();
+    let identity = receipt.await.unwrap().unwrap();
+    assert_eq!(identity.device_identifier, DEVICE); assert_eq!(identity.session_identifier, publication::SESSION);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::HostIdentity { generation: STALE_GENERATION, result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Canceled)));
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn activation_without_an_actor_owned_read_cannot_promote_the_observer() {
+    let mut harness = Harness::start(None); harness.register().await;
+    let reading = streaming_spotify_session::connect_transport::ConnectReading {
+        request_started_native_monotonic_milliseconds: publication::NATIVE_TIMESTAMP_MILLISECONDS,
+        request_completed_native_monotonic_milliseconds: publication::NATIVE_TIMESTAMP_MILLISECONDS,
+        cluster: playable_cluster(TARGET) };
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn changed_host_after_preflight_prevents_explicit_activation() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    let mut changed = playable_cluster(OTHER_TARGET);
+    changed.server_at_milliseconds = reading.cluster.server_at_milliseconds + ONE_CALL as i64;
+    harness.incoming.send(DealerInput::Cluster(changed)).await.unwrap(); harness.events.recv().await.unwrap();
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().publication_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn a_host_change_during_activation_prevents_late_success_from_restoring_publication() {
+    let (release, gate) = oneshot::channel(); let (started, observed_start) = oneshot::channel();
+    let mut harness = Harness::with_publication(None, None, None, None, None, Some(gate), Some(started)); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    let actions = harness.actions.clone();
+    let activation = activate_sample(&actions, &reading, GENERATION, TARGET, true);
+    tokio::pin!(activation);
+    tokio::select! { _result = &mut activation => panic!("{EARLY_ACTIVATION_MESSAGE}"), result = observed_start => result.unwrap() }
+    let mut changed = playable_cluster(OTHER_TARGET);
+    changed.server_at_milliseconds = reading.cluster.server_at_milliseconds + ONE_CALL as i64;
+    harness.incoming.send(DealerInput::Cluster(changed)).await.unwrap(); harness.events.recv().await.unwrap();
+    release.send(()).unwrap();
+    assert!(matches!(activation.await, Err(Failure::UnknownOutcome)));
+    assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    harness.stop().await;
 }

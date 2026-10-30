@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio::{runtime::Runtime, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_search::{ConnectSearchInput, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
-    connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
+use crate::{connect_activation::{ConnectExplicitActivation, ConnectActivationPlayerReadiness}, connect_publication::ConnectPublicationSnapshot, connect_search::{ConnectSearchInput, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
+    connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading, ConnectHostIdentity}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
 const MAXIMUM_KEY_CHARACTERS: usize = 2048;
@@ -28,6 +28,9 @@ pub struct ConnectStartInput {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum ConnectControl {
+    HostIdentity { generation: u64 },
+    Activate { generation: u64, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness },
+    Publish { generation: u64, snapshot: ConnectPublicationSnapshot },
     Refresh { generation: u64 },
     Reply { generation: u64, key: String, accepted: bool },
     Command { generation: u64, request_identifier: String, target_device_identifier: String, command: ConnectCommand },
@@ -99,6 +102,8 @@ struct ConnectReceipt {
     failure: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     acknowledgement: Option<ConnectCommandAcknowledgement>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hosting_identity: Option<ConnectHostIdentity>,
 }
 
 fn runtime() -> Result<&'static Runtime, Failure> {
@@ -122,7 +127,8 @@ pub fn decode_control(serialized: &str) -> Result<ConnectControl, Failure> {
     if serialized.len() > MAXIMUM_INPUT_BYTES { return Err(Failure::InvalidInput); }
     let control: ConnectControl = serde_json::from_str(serialized).map_err(|_| Failure::InvalidInput)?;
     let generation = match &control {
-        ConnectControl::Refresh { generation } => generation,
+        ConnectControl::HostIdentity { generation } | ConnectControl::Activate { generation, .. }
+        | ConnectControl::Publish { generation, .. } | ConnectControl::Refresh { generation } => generation,
         ConnectControl::Command { generation, request_identifier, target_device_identifier, command } => {
             command.validate(request_identifier, target_device_identifier)?; generation
         },
@@ -141,12 +147,35 @@ fn handle(value: jlong) -> Result<u64, Failure> {
 }
 
 fn receipt(result: Result<(), Failure>) -> Result<ConnectReceipt, Failure> {
-    result?; Ok(ConnectReceipt { failure: None, acknowledgement: None })
+    result?; Ok(ConnectReceipt { failure: None, acknowledgement: None, hosting_identity: None })
 }
 
 async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt, Failure> {
     let actions = connections().actions(handle)?;
     match control {
+        ConnectControl::HostIdentity { generation } => {
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::HostIdentity { generation, result }).map_err(|_| Failure::Backpressure)?;
+            let identity = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+                .map_err(|_| Failure::Deadline)?.map_err(|_| Failure::Canceled)??;
+            Ok(ConnectReceipt { failure: None, acknowledgement: None, hosting_identity: Some(identity) })
+        },
+        ConnectControl::Activate { generation, snapshot, activation, readiness } => {
+            let cancellation = SearchCancellation(CancellationToken::new());
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Activate { generation, snapshot, activation, readiness, activation_cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
+            let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+                .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
+            receipt(response.map(|_| ()))
+        },
+        ConnectControl::Publish { generation, snapshot } => {
+            let cancellation = SearchCancellation(CancellationToken::new());
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Publish { generation, snapshot, publication_cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
+            let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+                .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
+            receipt(response.map(|_| ()))
+        },
         ConnectControl::Refresh { generation } => {
             let (result, response) = oneshot::channel();
             actions.try_send(ConnectAction::Refresh { generation, result }).map_err(|_| Failure::Backpressure)?;
@@ -168,7 +197,7 @@ async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt,
                 .map_err(|_| Failure::Backpressure)?;
             let result = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
                 .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
-            result.map(|acknowledgement| ConnectReceipt { failure: None, acknowledgement: Some(acknowledgement) })
+            result.map(|acknowledgement| ConnectReceipt { failure: None, acknowledgement: Some(acknowledgement), hosting_identity: None })
         },
     }
 }
@@ -186,7 +215,7 @@ fn boundary_with_panic_failure<Response: Serialize>(environment: &mut JNIEnv, pa
     let result = guarded_native_operation(panic_failure, || operation(environment));
     let serialized = match result {
         Ok(response) => serde_json::to_string(&response),
-        Err(failure) => serde_json::to_string(&ConnectReceipt { failure: Some(failure.code()), acknowledgement: None }),
+        Err(failure) => serde_json::to_string(&ConnectReceipt { failure: Some(failure.code()), acknowledgement: None, hosting_identity: None }),
     }.unwrap_or_else(|_| crate::FALLBACK_FAILURE_JSON.to_owned());
     crate::return_string(environment, serialized)
 }

@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use serde::{Deserialize, Serialize};
+
 use librespot_core::SpotifyId;
 use librespot_protocol::{connect::{PutStateReason, PutStateRequest}, player::{PlayerState, ProvidedTrack}};
 use protobuf::{EnumOrUnknown, MessageField};
@@ -18,23 +20,27 @@ const MINIMUM_SERVER_TIMESTAMP_MILLISECONDS: u64 = 1;
 pub const MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS: u64 = 15000;
 pub const MAXIMUM_PUBLICATION_CLOCK_UNCERTAINTY_MILLISECONDS: u64 = 2000;
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectPublicationTrack {
     pub spotify_track_identifier: String,
     pub occurrence_identifier: String,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ConnectPublicationPlayback { Playing, Paused, Buffering, PausedBuffering }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectPublicationCommand {
     pub message_identifier: u32,
     pub sender_device_identifier: String,
     pub session_command_identifier: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConnectPublicationSnapshot {
     pub device_identifier: String,
     pub session_identifier: String,

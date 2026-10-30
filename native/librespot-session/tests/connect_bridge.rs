@@ -1,3 +1,6 @@
+#[path = "support/publication.rs"]
+mod publication;
+
 use librespot_core::authentication::Credentials;
 use librespot_protocol::authentication::AuthenticationType;
 use serde_json::json;
@@ -122,4 +125,20 @@ fn unexpected_native_command_panics_remain_uncertain_without_changing_explicit_p
     assert!(matches!(panic, Err(Failure::UnknownOutcome)));
     let preflight = streaming_spotify_session::connect_bridge::guarded_native_operation::<()>(Failure::UnknownOutcome, || Err(Failure::InvalidInput));
     assert!(matches!(preflight, Err(Failure::InvalidInput)));
+}
+
+const HOST_IDENTITY: &str = "hostIdentity";
+const PUBLISH: &str = "publish";
+const SNAPSHOT_FIELD: &str = "snapshot";
+
+#[test]
+fn hosting_identity_reads_are_generation_checked_and_publication_requires_a_typed_player_snapshot() {
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): HOST_IDENTITY, (GENERATION_FIELD): VALID_GENERATION }).to_string()),
+        Ok(ConnectControl::HostIdentity { generation: VALID_GENERATION })));
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): HOST_IDENTITY, (GENERATION_FIELD): ZERO_GENERATION }).to_string()), Err(Failure::InvalidInput)));
+    let mut snapshot = publication::snapshot(); snapshot.sequence = publication::SECOND_SEQUENCE;
+    let snapshot = serde_json::to_value(snapshot).unwrap();
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): PUBLISH, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): snapshot }).to_string()),
+        Ok(ConnectControl::Publish { .. })));
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): PUBLISH, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): {} }).to_string()), Err(Failure::InvalidInput)));
 }

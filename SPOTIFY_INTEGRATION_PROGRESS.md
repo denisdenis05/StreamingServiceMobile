@@ -1,3 +1,21 @@
+# Explicit native activation transport — 2026-10-30
+
+Connected explicit activation to the responsive Dealer actor, bounded HTTP worker
+and session publication path. The actor retains its own exact native read and
+exposes actual player session/device identity. Activation requires current
+registered generation, matching previous host/read brackets, actual player state
+and readiness. Dispatch is one-shot. Host replacement during HTTP prevents late
+success from restoring local authority. Typed JNI controls reject malformed data;
+raw playback-ready startup and incoming control capability remain disabled.
+
+Verification: focused Rust activation/publication/actor/bridge suites passed 73
+cases. Complete `cargo test --manifest-path native/librespot-session/Cargo.toml
+--locked --quiet` passed 209 cases. `git diff --check` passed. Dedicated test map
+and design: native/librespot-session/PUBLICATION_PROGRESS.md. No live takeover,
+Android host control or APK rebuild in this chapter. Continue composing the
+actual app host, incoming commands, queue mapping and native clock publication.
+Background renewal independent of new recording resolution is also pending.
+
 # Native catalog search bridge — 2026-10-30
 
 Connected the existing Rust/JNI catalog search to Kotlin execution, account owner,

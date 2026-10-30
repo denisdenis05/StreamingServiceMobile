@@ -4,7 +4,7 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_commands::ConnectCommand, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata},
+use crate::{connect_activation::{ConnectExplicitActivation, ConnectActivationPlayerReadiness}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_commands::ConnectCommand, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata},
     connect_publication::ConnectPublicationSnapshot, connect_receipts::ConnectCommandAcknowledgement,
     connect_session::{ConnectFailureStage, ConnectSessionOperations, RegistrationVerification},
     connect_transport::{native_monotonic_milliseconds, ConnectReading}, connect_wire::ConnectCluster, model::Failure};
@@ -47,6 +47,8 @@ pub(crate) enum HttpWork {
     Command { target_device_identifier: String, body: Value, response: PendingHttpResponse<()> },
     CheckedPreflight { command: CheckedHttpCommand },
     CheckedMutation { command: CheckedHttpCommand, body: Value },
+    Activate { snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness,
+        cluster: ConnectCluster, generation: u64, cancellation: CancellationToken, response: PendingHttpResponse<ConnectCluster> },
     Publish { snapshot: ConnectPublicationSnapshot, cancellation: CancellationToken, response: PendingHttpResponse<ConnectCluster> },
 }
 
@@ -60,6 +62,7 @@ pub(crate) enum HttpCompletion {
     Command { result: Result<(), Failure>, response: PendingHttpResponse<()> },
     Prepared { result: Result<(Value, ConnectCluster), Failure>, command: CheckedHttpCommand },
     CheckedMutation { result: Result<ConnectCommandAcknowledgement, Failure>, command: CheckedHttpCommand },
+    Activated { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
     Published { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
 }
 
@@ -130,6 +133,13 @@ async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMeta
                 execute(session.command(&command.target_device_identifier, body), cancellation, &command.cancellation, true).await
             };
             HttpCompletion::CheckedMutation { result, command }
+        },
+        HttpWork::Activate { snapshot, activation, readiness, cluster, generation, cancellation: activation_cancellation, mut response } => {
+            let result = if response.is_closed() || activation_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {
+                response.mark_dispatched();
+                execute(session.activate(snapshot, activation, readiness, cluster, generation), cancellation, &activation_cancellation, true).await
+            };
+            HttpCompletion::Activated { result, response }
         },
         HttpWork::Publish { snapshot, cancellation: publication_cancellation, mut response } => {
             let result = if response.is_closed() || publication_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {

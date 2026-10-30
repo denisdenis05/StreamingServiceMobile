@@ -1,3 +1,25 @@
+# Explicit activation transport — 2026-10-30
+
+The native actor now exposes actual device/player-session identity and explicit
+activation through the existing internal JNI control boundary. Activation uses
+the actor's retained current-generation read, exact previous host and matching
+request brackets. Actual player snapshot/readiness inputs remain required. The
+session promotes its observer registration only for this guarded publication;
+raw playback-ready startup remains rejected. Activation/publication mutations
+never replay. A host change during dispatch prevents a late response from
+restoring publication authority. Incoming control capability remains disabled
+until the app host dispatcher is composed.
+
+Dedicated source tests: `connect_actor` has six new activation/identity cases;
+`connect_bridge` covers strict identity/publication decoding; existing activation
+and publication builder suites remain passing. Focused command:
+`cargo test --manifest-path native/librespot-session/Cargo.toml --test
+connect_activation --test connect_publication --test connect_actor --test
+connect_bridge --quiet` passed 73 cases. Complete `cargo test --manifest-path
+native/librespot-session/Cargo.toml --locked --quiet` results are recorded in
+mobile SPOTIFY_INTEGRATION_PROGRESS.md. No live activation or Android host action
+has been exercised; application host composition remains next.
+
 # Native local-player publication — 2026-10-27
 
 Implemented the bounded actual-player protobuf builder, session-bound publication
