@@ -1,3 +1,29 @@
+# Actual host command dispatcher and retirement pause — 2026-10-30
+
+Added an injected native command dispatcher that samples the actual app cursor,
+serializes incoming actions and waits for the real player receipt before replying
+success. Duplicate keys never execute twice; unsupported commands are refused.
+The original deadline applies while waiting behind another command or sampling.
+Unknown outcomes, receipt mismatch and failed acknowledgement retire the handler;
+late callbacks cannot revive it. Retirement cancels pending work. The host player
+now supports a cursor-fenced safety pause that cannot override newer local controls.
+Cleanup clock reads remain available after membership ends or a foreign host wins,
+with actual connection/generation checks retained.
+
+Verification: focused Android host and player-service JVM tests passed 112 cases
+using `./android/gradlew -p android :app:testDebugUnitTest --tests
+'*SpotifyHost*Test' --tests '*SpotifyPlayerServicePortTest'
+-x :app:buildSpotifyLibrespot --no-daemon --console=plain`.
+Dedicated dispatcher tests cover actual receipts, duplicates, serialized sampling,
+inactive/unsupported requests, retirement, delayed sampling, expired operations,
+unknown outcomes, acknowledgement failure and account replacement. Dedicated
+player tests cover pause receipts, cursor conflict, malformed receipts and already
+paused state. A deadline test caught duplicate cancellation and now passes.
+`git diff --check` passed. This remains source implementation: the dispatcher is
+not yet attached to a retained host lifetime, and no new APK/device claim is made.
+Continue native host coordination, periodic actual queue publication, cleanup,
+headless mapping and app hosting controls without changing live Spotify processes.
+
 # Host command readiness and native deadlines — 2026-10-30
 
 Remote command capabilities now require evidence of an attached command handler.

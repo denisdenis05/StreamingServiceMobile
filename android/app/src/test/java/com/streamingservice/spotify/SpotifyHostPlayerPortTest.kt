@@ -88,6 +88,35 @@ class SpotifyHostPlayerPortTest {
         fun queueLength(): Int = actual.snapshot().getInt(ProtocolFields.QueueLength)
     }
 
+    @Test fun hostRetirementPauseUsesTheActualCursorAndReceipt() {
+        val fixture = Fixture(); fixture.play(); val cursor = fixture.sample().cursor
+        val paused = fixture.port.pause(fixture.identity, cursor); fixture.main.drain(); paused.get()
+        assertFalse(fixture.output.playing); assertTrue(fixture.sample().paused)
+    }
+    @Test fun retirementPauseCannotOverrideANewerLocalControl() {
+        val fixture = Fixture(); fixture.play(); val cursor = fixture.sample().cursor
+        val next = fixture.execute(SpotifyHostCommand.Next); fixture.main.drain(); next.result.get()
+        val paused = fixture.port.pause(fixture.identity, cursor); fixture.main.drain()
+        try { paused.get(); throw AssertionError() } catch (failure: ExecutionException) {
+            assertEquals(SpotifyPlayerFailureReason.Conflict, (failure.cause as SpotifyPlayerFailure).reason)
+        }
+        assertTrue(fixture.output.playing)
+    }
+    @Test fun malformedRetirementPauseReceiptRemainsUncertain() {
+        val fixture = Fixture(); fixture.play(); val cursor = fixture.sample().cursor
+        fixture.receiptOverride = JSONObject().toString()
+        val paused = fixture.port.pause(fixture.identity, cursor); fixture.main.drain()
+        try { paused.get(); throw AssertionError() } catch (failure: ExecutionException) {
+            assertEquals(SpotifyPlayerFailureReason.UnknownOutcome, (failure.cause as SpotifyPlayerFailure).reason)
+        }
+    }
+    @Test fun alreadyPausedRetirementNeedsNoAdditionalPlayerCommand() {
+        val fixture = Fixture(); fixture.play()
+        val pause = fixture.execute(SpotifyHostCommand.Pause); fixture.main.drain(); pause.result.get()
+        val before = fixture.executions.size
+        val paused = fixture.port.pause(fixture.identity, fixture.sample().cursor); fixture.main.drain(); paused.get()
+        assertEquals(before, fixture.executions.size)
+    }
     @Test fun inlinePlayUsesTheRealNormalQueueAndPreservesTwoOccurrencesOfTheSameSong() {
         val fixture = Fixture(); fixture.play()
         assertEquals(TwoEntries, fixture.queueLength()); assertTrue(fixture.output.playing)

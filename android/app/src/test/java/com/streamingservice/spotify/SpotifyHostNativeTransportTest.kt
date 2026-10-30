@@ -79,6 +79,17 @@ class SpotifyHostNativeTransportTest {
         assertEquals(fixture.elapsedMilliseconds, anchor.receivedElapsedMilliseconds)
         assertTrue(anchor.uncertaintyMilliseconds >= ReadRoundTripMilliseconds)
     }
+    @Test fun retirementReadRemainsAvailableAfterMembershipEndsOrAnotherHostTakesOver() {
+        val fixture = Fixture(); fixture.owned = false; fixture.host = OtherHost
+        val anchor = fixture.complete(fixture.transport.retirementAnchor(fixture.identity))
+        assertEquals(OtherHost, anchor.previousHostDeviceIdentifier)
+        assertEquals(EmptyCount, fixture.membershipCount); assertEquals(SingleCount, fixture.reads)
+    }
+    @Test fun retirementReadStillRejectsAReplacedConnection() {
+        val fixture = Fixture(); fixture.afterRead = { fixture.current = false }
+        val operation = fixture.transport.retirementAnchor(fixture.identity); fixture.queue.drain()
+        failure(operation.result, Superseded)
+    }
     @Test fun guestMembershipCannotActivateTheAppAsHost() {
         val fixture = Fixture(); fixture.owned = false
         val result = fixture.transport.preflight(fixture.identity, PreviousHost); fixture.queue.drain()

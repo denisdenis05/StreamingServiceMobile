@@ -70,3 +70,15 @@ SpotifyHostCommandEventDecoderTest and SpotifyConnectNativeExecutionTest; the
 producer lifetime and duplicate case lives in the native connect_actor suite.
 Remote command capabilities require an actual attached handler; composition must
 provide this evidence before activation, including a final dispatch-time check.
+
+## Command execution and retirement
+
+SpotifyHostCommandDispatcher serializes native actions through SpotifyHostPlayer,
+retains bounded duplicate keys and acknowledges only actual matching receipts.
+An original deadline also covers queue waits and asynchronous sampling. Unknown
+player outcomes or failed replies retire the handler without replay. Feature tests
+are SpotifyHostCommandDispatcherTest. SpotifyHostPlayerPortTest covers the
+actual cursor-fenced safety pause, including newer local controls and uncertain
+receipts. SpotifyHostNativeTransportTest covers membership-independent retirement
+reads. Runtime composition must attach this dispatcher before opening capability
+gates and detach it before cleanup; this chapter does not perform that composition.

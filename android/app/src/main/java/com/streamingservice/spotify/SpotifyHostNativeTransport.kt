@@ -24,8 +24,8 @@ class SpotifyHostNativeTransport(
     private val clock: SpotifyNativeFollowerClock,
     private val isCurrent: (SpotifyHostIdentity) -> Boolean,
     private val commandHandlingReady: (SpotifyHostIdentity) -> Boolean
-) {
-    fun registration(identity: SpotifyHostIdentity): SpotifyPlayerOperation<SpotifyHostNativeRegistration> = submit(identity, false) { requireCurrent, _markDispatched ->
+) : SpotifyHostControlTransport {
+    override fun registration(identity: SpotifyHostIdentity): SpotifyPlayerOperation<SpotifyHostNativeRegistration> = submit(identity, false) { requireCurrent, _markDispatched ->
         requireCurrent()
         val response = response(native.execute(identity.handle, control(identity, HostIdentityOperation).toString()))
         val registration = response.getJSONObject(HostingIdentityField)
@@ -34,9 +34,21 @@ class SpotifyHostNativeTransport(
         SpotifyHostNativeRegistration(SpotifyHostPublicationIdentity(device, text(registration, PlayerSessionField)), integer(registration, NextSequenceField, FirstIdentifier))
     }
 
-    fun preflight(identity: SpotifyHostIdentity, expectedHostDeviceIdentifier: String): SpotifyPlayerOperation<SpotifyHostClockAnchor> = submit(identity, false) { requireCurrent, _markDispatched ->
+    override fun preflight(identity: SpotifyHostIdentity, expectedHostDeviceIdentifier: String): SpotifyPlayerOperation<SpotifyHostClockAnchor> = submit(identity, false) { requireCurrent, _markDispatched ->
         requireCurrent()
         membership(native.membership(identity.handle, identity.generation), identity, expectedHostDeviceIdentifier)
+        requireCurrent()
+        val anchor = readAnchor(identity, expectedHostDeviceIdentifier, requireCurrent)
+        membership(native.membership(identity.handle, identity.generation), identity, expectedHostDeviceIdentifier)
+        requireCurrent()
+        anchor
+    }
+
+    override fun retirementAnchor(identity: SpotifyHostIdentity): SpotifyPlayerOperation<SpotifyHostClockAnchor> = submit(identity, false) { requireCurrent, _markDispatched ->
+        readAnchor(identity, null, requireCurrent)
+    }
+
+    private fun readAnchor(identity: SpotifyHostIdentity, expectedHostDeviceIdentifier: String?, requireCurrent: () -> Unit): SpotifyHostClockAnchor {
         requireCurrent()
         val sent = clock.nowElapsedRealtimeMilliseconds()
         val response = response(native.read(identity.handle, identity.generation))
@@ -53,14 +65,13 @@ class SpotifyHostNativeTransport(
             || startedNative > completedNative || completedNative > sampledNative
             || completedNative - startedNative > roundTrip + NativePrecisionMilliseconds) fail(Deadline)
         val cluster = reading.getJSONObject(ClusterField)
-        if (cluster.getString(ActiveDeviceField) != expectedHostDeviceIdentifier) fail(Superseded)
+        val activeHost = cluster.getString(ActiveDeviceField)
+        if (expectedHostDeviceIdentifier != null && activeHost != expectedHostDeviceIdentifier) fail(Superseded)
         val server = integer(cluster, ServerField, FirstIdentifier)
-        membership(native.membership(identity.handle, identity.generation), identity, expectedHostDeviceIdentifier)
-        requireCurrent()
-        SpotifyHostClockAnchor(identity, startedNative, completedNative, received, server, roundTrip + NativePrecisionMilliseconds, expectedHostDeviceIdentifier)
+        return SpotifyHostClockAnchor(identity, startedNative, completedNative, received, server, roundTrip + NativePrecisionMilliseconds, activeHost)
     }
 
-    fun activate(identity: SpotifyHostIdentity, queue: SpotifyHostPlayerQueue, snapshot: JSONObject, activation: JSONObject): SpotifyPlayerOperation<Unit> {
+    override fun activate(identity: SpotifyHostIdentity, queue: SpotifyHostPlayerQueue, snapshot: JSONObject, activation: JSONObject): SpotifyPlayerOperation<Unit> {
         if (queue.snapshot.identity != identity || !queue.snapshot.ready || !queue.snapshot.externalAuthorityAbsent
             || queue.entries.none { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }) return rejected(InvalidInput)
         val commandsReady = handlingReady(identity)
@@ -70,12 +81,12 @@ class SpotifyHostNativeTransport(
                 .put(CommandReadyField, commandsReady)), true)
     }
 
-    fun publish(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> {
+    override fun publish(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> {
         val commandsReady = handlingReady(identity)
         return if (!commandsReady) rejected(Unsupported) else mutate(identity, control(identity, PublishOperation).put(SnapshotField, commandedSnapshot(snapshot, commandsReady)), true)
     }
-    fun deactivate(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> = mutate(identity, control(identity, DeactivateOperation).put(SnapshotField, snapshot))
-    fun reply(identity: SpotifyHostIdentity, key: String, accepted: Boolean): SpotifyPlayerOperation<Unit> =
+    override fun deactivate(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> = mutate(identity, control(identity, DeactivateOperation).put(SnapshotField, snapshot))
+    override fun reply(identity: SpotifyHostIdentity, key: String, accepted: Boolean): SpotifyPlayerOperation<Unit> =
         mutate(identity, control(identity, ReplyOperation).put(KeyField, key).put(AcceptedField, accepted))
 
     private fun mutate(identity: SpotifyHostIdentity, control: JSONObject, requiresHandler: Boolean = false): SpotifyPlayerOperation<Unit> {

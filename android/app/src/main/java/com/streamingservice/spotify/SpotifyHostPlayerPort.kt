@@ -55,7 +55,7 @@ class SpotifyHostPlayerPort(
     private val isCurrent: (SpotifyHostIdentity) -> Boolean,
     private val maximumJournalEntries: Int = DefaultMaximumJournalEntries,
     private val maximumPendingCommands: Int = DefaultMaximumPendingCommands
-) {
+) : SpotifyHostPlayer {
     private val monitor = Any()
     private val journal = LinkedHashMap<String, Job>()
     @Volatile private var retired = false
@@ -70,7 +70,7 @@ class SpotifyHostPlayerPort(
         return completion
     }
 
-    fun sampleQueue(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerQueue> {
+    override fun sampleQueue(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerQueue> {
         val completion = CompletableFuture<SpotifyHostPlayerQueue>()
         dispatch({ completion.completeExceptionally(it) }) {
             try {
@@ -112,7 +112,7 @@ class SpotifyHostPlayerPort(
         return completion
     }
 
-    fun execute(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor, request: SpotifyHostCommandRequest,
+    override fun execute(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor, request: SpotifyHostCommandRequest,
         receivedAtElapsedMilliseconds: Long, deadlineElapsedMilliseconds: Long): SpotifyPlayerOperation<SpotifyHostPlayerAccepted> {
         val job: Job
         if (!validIdentity(identity) || !validIdentifier(request.key) || !validIdentifier(request.senderDeviceIdentifier)
@@ -140,7 +140,34 @@ class SpotifyHostPlayerPort(
         return operation(job)
     }
 
-    fun retire() {
+    override fun pause(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor): CompletableFuture<Unit> {
+        val completion = CompletableFuture<Unit>()
+        dispatch({ completion.completeExceptionally(it) }) {
+            var dispatched = false
+            try {
+                val before = snapshot(identity)
+                if (before.cursor != expected) fail(SpotifyPlayerFailureReason.Conflict)
+                if (!before.paused) {
+                    val requestIdentifier = identifiers.nextIdentifier()
+                    if (!validIdentifier(requestIdentifier)) fail(SpotifyPlayerFailureReason.InvalidInput)
+                    val command = JSONObject().put(ProtocolFields.Operation, PlayerOperation.Pause.protocolValue)
+                        .put(ProtocolFields.RequestIdentifier, requestIdentifier).put(ProtocolFields.EngineEpoch, identity.playerIdentity.engineEpoch)
+                        .put(ProtocolFields.AuthenticationEpoch, identity.playerIdentity.authenticationEpoch)
+                        .put(ProtocolFields.ExpectedQueueIdentifier, expected.queueIdentifier).put(ProtocolFields.ExpectedQueueRevision, expected.queueRevision)
+                        .put(ProtocolFields.ExpectedPlaybackControlRevision, expected.controlRevision)
+                    dispatched = true
+                    val receipt = JSONObject(coordinator.execute(command.toString()))
+                    if (receipt.get(ProtocolFields.RequestIdentifier) != requestIdentifier || receipt.get(ProtocolFields.Status) != PlayerProtocol.AppliedStatus)
+                        fail(SpotifyPlayerFailureReason.UnknownOutcome)
+                    if (!snapshot(identity).paused) fail(SpotifyPlayerFailureReason.UnknownOutcome)
+                }
+                completion.complete(Unit)
+            } catch (failure: Throwable) { completion.completeExceptionally(safeFailure(failure, dispatched)) }
+        }
+        return completion
+    }
+
+    override fun retire() {
         val jobs = synchronized(monitor) { retired = true; journal.values.filter { job -> !job.completion.isDone } }
         jobs.forEach(::cancel)
     }
