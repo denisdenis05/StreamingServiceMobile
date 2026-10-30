@@ -1,5 +1,16 @@
 # Application-owned native Jam following — 2026-10-27
 
+## App control handoff — 2026-10-30
+
+The mobile follow action now composes this runtime for device sign-in. A native
+handoff acknowledgement must also supply the actual player engine/authentication
+epochs; the app verifies the live player and persists its account-bound ownership
+receipt before background continuation. Browser sign-in keeps its existing
+foreground follower. Scoped restoration, credential updates, local suspension,
+late response and cleanup behavior are documented and mapped to dedicated tests
+in `SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md`. Real device/background behavior and
+same-Jam generation recovery remain unverified.
+
 `SpotifyJamPlaybackApplicationRuntime` owns a native follower session independently
 of React module lifetime. Its production factory binds the existing Android
 player service, reads the actual engine/authentication identity, verifies fresh
@@ -35,7 +46,7 @@ A refresh received during startup is applied before the actual lease starts.
 
 Snapshots and `SpotifyJamPlaybackChanged` events use serialized JSON strings.
 Snapshots contain `identifier`, `nativeHandoff`, account/session/host/handle/
-generation fields, `baseAddress`, `market`, `status`, current occurrence and
+generation fields, `playerEngineEpoch`, `playerAuthenticationEpoch`, `baseAddress`, `market`, `status`, current occurrence and
 recording, drift and failure. Status/failure values retain Kotlin enum names,
 including `Following`, `Suspended` and `Detached`. Tokens, metadata payloads,
 private credentials and grants are absent.
@@ -108,7 +119,8 @@ No physical-device binding, audible following, screen-lock lifecycle, process
 survival or measured alignment result is claimed. `SpotifyBackgroundRecordingHeadless`
 now connects the broker to app-account restore, authenticated recording lookup,
 the existing association store and bounded matcher. `index.js` registers the
-headless task. AppState still stops the foreground follower; no runtime evidence
-authorizes changing that safety behavior. Application-led host publication/
+headless task. AppState stops pending native handoffs and the browser follower;
+an acknowledged native lease with a verified app ownership receipt may continue.
+Application-led host publication/
 readiness and automatic Dealer generation recovery remain incomplete. The APK
 and source validation are recorded in SPOTIFY_JAM_APK.md.

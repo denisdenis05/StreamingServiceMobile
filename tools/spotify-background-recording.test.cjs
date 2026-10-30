@@ -6,7 +6,9 @@ const library = require(Modules.library);
 const { SpotifyBackgroundRecordingTask, SpotifyBackgroundRecordingPolicy } = require(Modules.task);
 const Fixture = Object.freeze({ request: 'synthetic-resolution-request', appAccount: 'synthetic-app-account', otherAccount: 'synthetic-other-account',
   spotifyAccount: 'synthetic-spotify-account', session: 'synthetic-session', host: 'synthetic-host', handle: 7, generation: 3,
-  otherGeneration: 4, baseAddress: 'https://streaming.example.test/', track: '0000000000000000000001', otherTrack: '0000000000000000000002', market: 'RO', invalidMarket: 'invalid',
+  otherGeneration: 4, baseAddress: 'https://streaming.example.test/', apiBaseAddress: 'https://streaming.example.test/api/',
+  unsafeBaseAddresses: ['http://streaming.example.test/', 'https://credential@streaming.example.test/', 'https://streaming.example.test/?credential=private', 'https://streaming.example.test/#private'],
+  track: '0000000000000000000001', otherTrack: '0000000000000000000002', market: 'RO', invalidMarket: 'invalid',
   title: 'Synthetic Song', artist: 'Synthetic Artist', otherTitle: 'Different Song', duration: 180000, recording: 'synthetic-recording',
   otherRecording: 'synthetic-other-recording', catalog: 'synthetic-catalog', zero: 0, one: 1, two: 2, flushTurns: 40,
   matched: 'matched', ambiguous: 'ambiguous', unavailable: 'unavailable', privateMessage: 'synthetic-private-diagnostic' });
@@ -20,7 +22,9 @@ const Names = Object.freeze({ match: 'Background matching uses native metadata a
   before: 'An already canceled task never claims a native request', invalid: 'Invalid native identity and market values fail before authentication or lookup',
   metadata: 'Native metadata must match the exact handle generation and requested song', snapshot: 'Native job and metadata are captured before account restoration awaits',
   failure: 'Unexpected lookup errors retain only a safe failure code', synchronize: 'Native player authentication is synchronized before and after a query that can renew app credentials',
-  authFailure: 'Player authentication failure prevents a matched result from reaching native playback', cleanup: 'Failure reporting cannot leak unexpected native error details' });
+  authFailure: 'Player authentication failure prevents a matched result from reaching native playback', cleanup: 'Failure reporting cannot leak unexpected native error details',
+  apiAddress: 'A secure API base path survives native job capture and recording resolution',
+  unsafeAddress: 'Insecure credential-bearing and query-bearing API addresses cannot start background requests' });
 function deferred() { let resolve; const promise = new Promise(complete => { resolve = complete; }); return { promise, resolve }; }
 async function flush() { for (let turn = Fixture.zero; turn < Fixture.flushTurns; turn += Fixture.one) await Promise.resolve(); }
 function recording(identifier = Fixture.recording) { return { identifier, title: Fixture.title, author: Fixture.artist,
@@ -114,4 +118,17 @@ test(Names.authFailure, async () => { const context = fixture(); context.state.s
   await context.task.execute(Fixture.request); failure(context, library.IntegrationFailureCode.Unauthorized); assertion.equal(context.calls.search.length, Fixture.zero); });
 test(Names.cleanup, async () => { const context = fixture(); context.state.account = Fixture.otherAccount; context.state.fail = async () => { throw new Error(Fixture.privateMessage); };
   await assertion.rejects(context.task.execute(Fixture.request), error => error instanceof library.IntegrationFailure && error.code === library.IntegrationFailureCode.Network);
+});
+test(Names.apiAddress, async () => {
+  const context = fixture(); context.state.job.baseAddress = Fixture.apiBaseAddress;
+  await context.task.execute(Fixture.request);
+  assertion.equal(context.calls.completions[Fixture.zero].result.status, Fixture.matched);
+  assertion.equal(context.calls.synchronized[Fixture.zero].request.baseAddress, Fixture.apiBaseAddress);
+});
+test(Names.unsafeAddress, async () => {
+  for (const baseAddress of Fixture.unsafeBaseAddresses) {
+    const context = fixture(); context.state.job.baseAddress = baseAddress;
+    await context.task.execute(Fixture.request); failure(context, library.IntegrationFailureCode.InvalidInput);
+    assertion.equal(context.calls.restorations, Fixture.zero);
+  }
 });

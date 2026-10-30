@@ -1,3 +1,27 @@
+# Native follower app handoff — 2026-10-30
+
+The existing follow action now selects the native Android runtime for device
+sign-in, while browser sign-in keeps the foreground route. Both previous playback
+owners must finish cleanup before replacement. Native startup must acknowledge
+the actual player lease and persist a verified account/server/player-epoch
+ownership receipt before the app permits background continuation. Account/host/
+native-generation changes, local suspension and delayed responses remain fenced.
+Same-account token updates reach the native runtime without restarting following.
+`SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md` maps each behavior to dedicated tests.
+
+Source validation: `npm run test:spotify` passed 413 Node and 95 Jest cases;
+`npm run test:player-mobile` passed 329 cases; `npx tsc --noEmit --pretty false`
+passed; `./gradlew :app:testDebugUnitTest --tests '*SpotifyJamPlayback*Test'
+-x :app:buildSpotifyLibrespot --console=plain` passed Android compilation and
+22 JVM cases. This chapter changes no Rust source or player engine selection.
+
+The APK rebuild follows the source commit. The old probe is unavailable and
+there is no current live-session/device result. Real screen-lock operation,
+unseen-song playback, background renewal, measured synchronization and guest
+permission remain unverified. Next source work is same-Jam reconnect recovery,
+then app-led host activation/incoming controls/publication. Process-death recovery
+and physical lifecycle testing remain in the implementation queue.
+
 # Application runtime APK and fresh live grant — 2026-10-27
 
 Current APK checkpoint: Mobile4231657, library1e4f009, Playerb28f393;

@@ -1,5 +1,13 @@
 # Bounded background recording matching — 2026-10-27
 
+The broker, Android headless dispatch and app/native control handoff are now
+composed. Device sign-in routes explicit following to the native runtime;
+background continuation requires its real player ownership acknowledgement and
+the app's verified player-epoch receipt. `SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md`
+records the current tests and lifecycle gaps. API addresses with a path are
+accepted, matching native configuration; insecure or credential/query/fragment
+addresses are rejected before account restore or catalog requests.
+
 SpotifyBackgroundRecordingTask implements the asynchronous matching operation
 needed by the native follower. It claims a native request exactly once, captures
 validated identities and exact private metadata before awaiting account restore,
@@ -35,8 +43,9 @@ application TypeScript compilation passed. The new resolver-failure native case
 passed in the26-case coordinator suite. The prior complete JVM check passed187
 cases before this additional test; no new full JVM aggregate is claimed here.
 
-This is implemented matching logic awaiting the Android native pending-job broker,
-React Headless JS runner/registration and actual scoped runtime/handoff. Production
-catalog access, token renewal, screen suspension and physical audio are not proved
-by these tests. Existing AppState safety stopping remains enabled. Continue the
-native broker and service composition; do not mark background following complete.
+The original chapter tested matching logic independently. Native pending-job
+broker, Headless JS registration and scoped app handoff are now integrated.
+Production catalog access, token renewal, screen suspension and physical audio
+are not proved by these tests. AppState stopping remains for browser following
+and native startup before ownership acknowledgement. Background playback is
+implemented behind the native handoff guard and awaits physical verification.

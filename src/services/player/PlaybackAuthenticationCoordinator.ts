@@ -1,4 +1,4 @@
-import type { PlaybackNativeSessionOwnership } from './PlaybackNativeSessionOwnership';
+import type { PlaybackNativeSessionOwnership, PlaybackNativeSessionReceipt } from './PlaybackNativeSessionOwnership';
 import { NativePlayerCommandDispatcher } from './NativePlayerCommandDispatcher';
 import { NativeQueueController } from './NativeQueueController';
 import { NativePlaybackViewStore } from './NativePlaybackViewStore';
@@ -19,6 +19,7 @@ export const PlaybackAuthenticationPolicy = Object.freeze({
   initialSessionAttempt: 0, sessionAttemptIncrement: 1, maximumSessionAttempts: 3,
   unstableSessionMessage: 'The audio session keeps changing. Try again.',
   missingAuthenticationMessage: 'Sign in before using audio playback.',
+  nativeOwnershipChangedMessage: 'The native playback ownership changed.',
 });
 
 export class PlaybackAuthenticationCoordinator {
@@ -112,6 +113,41 @@ export class PlaybackAuthenticationCoordinator {
   }
 
   whenReady(): Promise<void> { return this.waitForCurrentSession(PlaybackAuthenticationPolicy.initialSessionAttempt); }
+
+  adoptNativeSession(receipt: PlaybackNativeSessionReceipt, isCurrent: () => boolean): Promise<void> {
+    const captured = Object.freeze({ ...receipt });
+    const requireCurrent = () => {
+      if (this.disposed || !isCurrent() || !this.desired.restored
+        || !this.configured || this.nativeAccountIdentifier !== captured.accountIdentifier
+        || this.desired.accountIdentifier !== captured.accountIdentifier || this.desired.accessToken === null
+        || captured.serverAddress !== this.mediaServerAddress || !captured.engineEpoch.trim() || !captured.authenticationEpoch.trim()) {
+        throw new Error(PlaybackAuthenticationPolicy.nativeOwnershipChangedMessage);
+      }
+    };
+    const operation = this.pendingTransition.then(async () => {
+      requireCurrent();
+      if (this.ownership === undefined) throw new Error(PlaybackAuthenticationPolicy.nativeOwnershipChangedMessage);
+      const snapshot = await this.dispatcher.getSnapshot();
+      requireCurrent();
+      const authorityIdentifier = snapshot.externalAuthorityIdentifier;
+      if (!authorityIdentifier || snapshot.externalAuthoritySuspended === true || snapshot.externalAuthorityExpired === true
+        || snapshot.cursor.engineEpoch !== captured.engineEpoch || snapshot.cursor.authenticationEpoch !== captured.authenticationEpoch) {
+        throw new Error(PlaybackAuthenticationPolicy.nativeOwnershipChangedMessage);
+      }
+      await this.ownership.write(captured);
+      requireCurrent();
+      const verified = await this.dispatcher.getSnapshot();
+      requireCurrent();
+      if (verified.cursor.engineEpoch !== captured.engineEpoch || verified.cursor.authenticationEpoch !== captured.authenticationEpoch
+        || verified.externalAuthorityIdentifier !== authorityIdentifier || verified.externalAuthoritySuspended === true || verified.externalAuthorityExpired === true) {
+        throw new Error(PlaybackAuthenticationPolicy.nativeOwnershipChangedMessage);
+      }
+      this.boundEngineEpoch = captured.engineEpoch;
+      this.boundAuthenticationEpoch = captured.authenticationEpoch;
+    });
+    this.pendingTransition = operation.catch(() => undefined);
+    return operation;
+  }
 
   private async waitForCurrentSession(attempt: number): Promise<void> {
     if (attempt >= PlaybackAuthenticationPolicy.maximumSessionAttempts) throw new Error(PlaybackAuthenticationPolicy.unstableSessionMessage);

@@ -55,6 +55,8 @@ class SpotifyJamPlaybackProtocol(private val tokens: SpotifyJamPlaybackTokenDeco
         .put(SpotifyAccountField, account?.spotifyAccountIdentifier ?: JSONObject.NULL).put(SessionField, account?.jamSessionIdentifier ?: JSONObject.NULL)
         .put(HostField, account?.hostDeviceIdentifier ?: JSONObject.NULL).put(HandleField, account?.handle ?: JSONObject.NULL)
         .put(GenerationField, account?.generation ?: JSONObject.NULL).put(OccurrenceField, follower?.occurrenceIdentifier ?: JSONObject.NULL)
+        .put(PlayerEngineEpochField, follower?.identity?.playerIdentity?.engineEpoch ?: JSONObject.NULL)
+        .put(PlayerAuthenticationEpochField, follower?.identity?.playerIdentity?.authenticationEpoch ?: JSONObject.NULL)
         .put(RecordingField, follower?.recordingIdentifier ?: JSONObject.NULL).put(DriftField, follower?.driftMilliseconds ?: JSONObject.NULL)
         .put(FailureField, follower?.failure?.name ?: JSONObject.NULL).toString()
 
@@ -83,6 +85,8 @@ class SpotifyJamPlaybackProtocol(private val tokens: SpotifyJamPlaybackTokenDeco
         const val GenerationField = "generation"
         const val MarketField = "market"
         private const val NativeHandoffField = "nativeHandoff"
+        private const val PlayerEngineEpochField = "playerEngineEpoch"
+        private const val PlayerAuthenticationEpochField = "playerAuthenticationEpoch"
         private const val IdentifierField = "identifier"
         private const val StatusField = "status"
         private const val OccurrenceField = "occurrenceIdentifier"

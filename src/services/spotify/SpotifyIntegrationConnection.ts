@@ -33,6 +33,7 @@ export class SpotifyIntegrationConnection {
   }
 
   get runtime(): SpotifyJamRuntime | null { return this.activeRuntime; }
+  get usesNativeConnect(): boolean { return this.deviceSelection?.useNativeConnect === true; }
 
   resumeObserversAfterMembership(): void {
     const runtime = this.activeRuntime;

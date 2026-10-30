@@ -156,6 +156,17 @@ class SpotifyJamPlaybackRuntimeTest {
         failure(InvalidInput) { fixture.protocol.configuration(extra.toString()) }
         failure(InvalidInput) { fixture.protocol.tokenExpiry(AppAccount, InvalidToken) }
     }
+    @Test fun snapshotRetainsActualPlayerEpochsWithoutExportingCredentials() {
+        val fixture = Fixture()
+        val account = fixture.protocol.configuration(configuration()).account
+        val identity = SpotifyNativeFollowerIdentity(AppAccount, SpotifyAccount, SessionIdentifier, Host, Handle, Generation,
+            SpotifyPlayerIdentity(EngineEpoch, AuthenticationEpoch))
+        val follower = SpotifyNativeFollowerSnapshot(SpotifyNativeFollowerStatus.Following, identity, Occurrence, Recording, null, null)
+        val snapshot = JSONObject(fixture.protocol.snapshot(Identifier, account, follower, true))
+        assertEquals(EngineEpoch, snapshot.getString(PlayerEngineEpochField))
+        assertEquals(AuthenticationEpoch, snapshot.getString(PlayerAuthenticationEpochField))
+        assertFalse(snapshot.has(SpotifyJamPlaybackProtocol.AccessTokenField))
+    }
     companion object {
         private const val EmptyCount = 0
         private const val SingleCount = 1
@@ -186,6 +197,8 @@ class SpotifyJamPlaybackRuntimeTest {
         private const val SubjectField = "sub"
         private const val ExpiryField = "exp"
         private const val NativeHandoffField = "nativeHandoff"
+        private const val PlayerEngineEpochField = "playerEngineEpoch"
+        private const val PlayerAuthenticationEpochField = "playerAuthenticationEpoch"
         private const val StatusField = "status"
         private const val Occurrence = "occurrence"
         private const val Recording = "recording"

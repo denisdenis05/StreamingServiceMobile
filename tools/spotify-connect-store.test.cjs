@@ -27,7 +27,8 @@ const Fixture = Object.freeze({ account: 'synthetic-account', otherAccount: 'rep
     hidden: 'Hidden observer registration accepts an explicit native device-status verification without inventing a cluster device',
     invalidIdentifier: 'A failed identifier factory cannot retire the valid current device or expose its exception',
     detachedObserver: 'A replacement requested by a detached observer waits for the original cleanup',
-    failedObserver: 'A replacement requested by a failed observer cannot overtake native cleanup' } });
+    failedObserver: 'A replacement requested by a failed observer cannot overtake native cleanup',
+    playbackBinding: 'Native playback receives only a ready account-bound handle and generation that retire on reconnect or detach' } });
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); }
 function fixture() {
@@ -75,6 +76,17 @@ test(Fixture.names.start, async () => { const current = fixture(); await current
 test(Fixture.names.account, async () => { const current = fixture(); current.state.credential.accountIdentifier = Fixture.otherAccount;
   await assert.rejects(current.attach(), { code: library.IntegrationFailureCode.Unauthorized });
   assert.deepEqual(current.calls.starts, []); assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Failed);
+});
+test(Fixture.names.playbackBinding, async () => {
+  const current = fixture(); assert.equal(current.store.getPlaybackConnection(Fixture.account), null);
+  await current.attach(); assert.equal(current.store.getPlaybackConnection(Fixture.account), null);
+  current.send(registration());
+  assert.deepEqual(current.store.getPlaybackConnection(Fixture.account), { handle: Fixture.handle, generation: Fixture.generation });
+  assert.equal(current.store.getPlaybackConnection(Fixture.otherAccount), null);
+  current.send({ type: Fixture.reconnecting }); assert.equal(current.store.getPlaybackConnection(Fixture.account), null);
+  current.send(registration(), Fixture.nextGeneration);
+  assert.deepEqual(current.store.getPlaybackConnection(Fixture.account), { handle: Fixture.handle, generation: Fixture.nextGeneration });
+  await current.store.detach(); assert.equal(current.store.getPlaybackConnection(Fixture.account), null);
 });
 test(Fixture.names.registration, async () => { const current = fixture(); await current.attach(); current.send(registration());
   assert.equal(current.store.getSnapshot().deviceIdentifier, Fixture.device); assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready);

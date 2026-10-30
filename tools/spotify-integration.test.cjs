@@ -28,6 +28,7 @@ const Names = Object.freeze({
   noDevice: 'Foreground transition without a selected device performs no network operation',
   accountRefresh: 'Opted-in foreground resumption refreshes account membership without a selected device',
   failedSelection: 'A failing device selection cannot escape the application foreground callback',
+  nativeFollowing: 'Playback routing follows the selected connection type and clears it on disconnect',
 });
 
 function fixture(onForegroundFailure) {
@@ -51,6 +52,13 @@ function fixture(onForegroundFailure) {
 test(Names.dependency, () => {
   assertion.equal(applicationManifest.dependencies[Fixture.packageName], Fixture.dependencyAddress);
   assertion.equal(typeof library.SpotifyJamRuntime, FunctionType);
+});
+test(Names.nativeFollowing, () => {
+  const current = fixture(); assertion.equal(current.connection.usesNativeConnect, false);
+  current.connection.connect(current.dependencies, { getDeviceIdentifier: () => null, nextRequestIdentifier: () => Fixture.recordingIdentifier, useNativeConnect: true });
+  assertion.equal(current.connection.usesNativeConnect, true);
+  current.connection.disconnect(); assertion.equal(current.connection.usesNativeConnect, false);
+  current.connection.dispose();
 });
 const FunctionType = 'function';
 
