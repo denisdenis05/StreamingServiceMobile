@@ -1,3 +1,31 @@
+# Native host coordination — 2026-10-30
+
+Added host coordination over injected player, transport, elapsed clock, scheduler
+and decision executor. An explicit start verifies actual native registration,
+previous host, expected app cursor, real mappings and player readiness. Hosting
+acknowledgement waits for activation and a fresh local-host preflight. A native
+timer publishes actual queue samples with increasing native sequences. Accepted
+command mappings and provenance are retained only for matching actual cursors.
+Startup is bounded; no React timer is required.
+
+Stop removes incoming handling immediately, waits for any dispatched mutation,
+performs a cursor-fenced pause and reads the actual next native sequence before
+fresh demotion. Unknown writes never replay. Foreign host takeover retires the
+host. Unknown app queue mappings fail closed rather than fabricate Spotify IDs.
+A failed cleanup remains an explicit failed barrier; the runtime must not unbind
+or acknowledge complete retirement as successful in that case.
+
+Verification: focused Android host and player-service tests passed 128 cases with
+`./android/gradlew -p android :app:testDebugUnitTest --tests '*SpotifyHost*Test'
+--tests '*SpotifyPlayerServicePortTest' -x :app:buildSpotifyLibrespot --no-daemon
+--console=plain`. SpotifyHostCoordinatorTest has 16 dedicated cases for actual
+acknowledgement, timed publication/sequence order, cursor and authority rejection,
+unknown outcomes, cleanup failure, stop during activation/sampling, foreign host,
+missing mappings, startup expiry and reentrant observers. No live hosting or APK
+result. Next: retained application/session composition, task routing, explicit app
+controls and background reverse mapping. Guest admission and live search remain
+unverified; no running Spotify process was changed.
+
 # Actual host command dispatcher and retirement pause — 2026-10-30
 
 Added an injected native command dispatcher that samples the actual app cursor,

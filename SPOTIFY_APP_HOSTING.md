@@ -82,3 +82,13 @@ actual cursor-fenced safety pause, including newer local controls and uncertain
 receipts. SpotifyHostNativeTransportTest covers membership-independent retirement
 reads. Runtime composition must attach this dispatcher before opening capability
 gates and detach it before cleanup; this chapter does not perform that composition.
+
+## Host coordinator
+
+SpotifyHostCoordinator owns explicit activation, fresh acknowledgement, native
+periodic publication and retirement ordering. SpotifyHostCoordinatorTest maps
+these behaviors to deterministic cases, including reentrant stop and late async
+completion. Unknown queue mappings or uncertain mutation results retire ownership.
+Demotion requires actual fresh queue projection and a current native registration;
+failed cleanup remains a failed barrier. Application composition and reverse
+background mapping still need implementation before app-led hosting is exposed.
