@@ -1,3 +1,36 @@
+# Integrated app hosting and background matching build — 2026-10-31
+
+Current APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.
+35,886,828 bytes; SHA-256
+`7bfcc1ea616f7c0275a811fd1204d30ee95e67501533c1583b6863057730afa0`.
+Source: Mobile `e82ea20`, SpotifyJam `d6eb464`, Player `b28f393`.
+
+Includes retained native app hosting, explicit start/stop controls, real queue and
+player-epoch capture, receipt-based incoming actions, native timed publication,
+queue-independent withdrawal, follower reconnect, scoped authentication renewal
+and headless recording matching in both directions. New local queue recordings
+pause playback while matching; Play afterward remains explicit. Guest playback
+permission guards remain unchanged pending actual second-account evidence.
+
+Verification: release assembly passed with fresh Rust ARM64 and Hermes output;
+APK v2 signature verification and 16 KB ZIP alignment passed. All Spotify native
+ELF LOAD segments have 0x4000 alignment. The packaged Hermes bundle is
+2,206,480 bytes and contains hosting UI, hosting-recording task
+and authentication task markers. Commands: `PATH=/home/denis/.cargo/bin:$PATH
+./android/gradlew -p android :app:assembleRelease --no-daemon --console=plain`;
+Android build-tools 37.0.0 `apksigner verify --verbose` and
+`zipalign -c -P 16 -v 4`; `readelf -lW` on the packaged Spotify library.
+Ignored metadata and logs are under `build/spotify-jam/host-*`.
+
+Source checks: 235 Rust, 409 Android JVM, 451 Spotify Node, 105 Jest,
+329 player/mobile and 619 library tests; full app TypeScript passed. These do not
+prove real Android execution, guest admission/permissions or audible timing.
+No Android device is attached, so the APK has not been installed by the agent.
+A fresh read-only probe is waiting for pairing; catalog success remains unresolved.
+See SPOTIFY_JAM_ACCEPTANCE.md for the remaining device/session checks.
+
+Earlier artifact notes follow and refer to their own source checkpoints.
+
 # Native follower app handoff build — 2026-10-30
 
 Current APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.

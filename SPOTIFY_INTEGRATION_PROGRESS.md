@@ -1,3 +1,21 @@
+# Integrated ARM64 release artifact — 2026-10-31
+
+Source Mobile `e82ea20` has been packaged after source integration. Current artifact
+`build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk` is 35,886,828
+bytes, SHA-256 `7bfcc1ea616f7c0275a811fd1204d30ee95e67501533c1583b6863057730afa0`. Release assembly,
+APK v2 signature, 16 KB ZIP alignment and 0x4000 Spotify ELF LOAD alignment passed.
+The fresh 2,206,480-byte Hermes bundle contains hosting UI and both
+background hosting-recording/authentication task markers. No phone is attached;
+installation and Android behavior are unverified. A newly built read-only probe
+is waiting for user pairing in execution session 31908; preserve it. Earlier
+current-session search backpressure is still unresolved, not reclassified as a
+successful live search by the actor waiting-queue source fix.
+
+Final source checks: 235 Rust, 409 JVM, 451 Spotify Node, 105 Jest,
+329 player/mobile, 619 library cases, and full app TypeScript passed. Commands,
+artifact checks and remaining live/device scenarios are in SPOTIFY_JAM_APK.md and
+SPOTIFY_JAM_ACCEPTANCE.md. No guest permission or synchronized audio claim is made.
+
 # Explicit app hosting and reverse background matching — 2026-10-31
 
 Added Host current app queue / Stop app hosting controls. Preparation retires both
