@@ -81,7 +81,7 @@ class SpotifyJamPlaybackNativeSessionTest {
         fun bind() { bindingCompletion.complete(player); mainQueue.drain() }
         fun completeLatestRead() {
             val request = reads.last()
-            request.second.complete(SpotifyConnectPlaybackObservation(Handle, Generation, HostDevice, QueueRevision, TrackIdentifier, Occurrence,
+            request.second.complete(SpotifyConnectPlaybackObservation(Handle, request.first.generation, HostDevice, QueueRevision, TrackIdentifier, Occurrence,
                 PositionMilliseconds, DurationMilliseconds, false, false, elapsedMilliseconds.toDouble(), elapsedMilliseconds,
                 UncertaintyMilliseconds, ServerMilliseconds, ServerMilliseconds))
             mainQueue.drain()
@@ -100,6 +100,25 @@ class SpotifyJamPlaybackNativeSessionTest {
         fixture.completeLatestRead(); startup.get()
         assertTrue(fixture.actual.hasExternalAuthority)
         assertEquals(SpotifyNativeFollowerStatus.Resolving, fixture.snapshots.last().status)
+    }
+    @Test fun reconnectKeepsPlayerAuthenticationAndRetiresOldRecordingJobs() {
+        val fixture = Fixture(); val startup = fixture.session.start(); fixture.bind()
+        fixture.completeLatestRead(); fixture.completeLatestRead(); startup.get()
+        val oldIdentity = fixture.reads.last().first
+        fixture.session.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.session.reconnect(Generation + SingleCount.toLong()); fixture.mainQueue.drain()
+        assertEquals(Generation + SingleCount.toLong(), fixture.reads.last().first.generation)
+        assertEquals(oldIdentity.playerIdentity, fixture.reads.last().first.playerIdentity)
+        assertEquals(SingleCount, fixture.configuredTokens.size)
+        fixture.completeLatestRead()
+        assertEquals(SpotifyNativeFollowerStatus.Resolving, fixture.snapshots.last().status)
+    }
+    @Test fun reconnectDuringPreflightRetiresStartupBeforeAuthenticationIsChanged() {
+        val fixture = Fixture(); val startup = fixture.session.start(); fixture.bind()
+        fixture.session.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.completeLatestRead()
+        assertTrue(startup.isCompletedExceptionally)
+        assertTrue(fixture.configuredTokens.isEmpty())
     }
     @Test fun claimedHeadlessRecordingIncludesExactNativeCatalogBaseAddress() {
         val fixture = Fixture(); val startup = fixture.session.start(); fixture.bind()

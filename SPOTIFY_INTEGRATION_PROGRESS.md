@@ -1,3 +1,28 @@
+# Native same-Jam reconnect recovery — 2026-10-30
+
+Implemented application-owned native connection recovery and the matching React
+view. Connection gaps fence source intent, pause owned playback and cancel reads,
+resolution jobs and polling. Only a higher actual generation on the same native
+account/handle may recover; fresh membership and playback verify Jam/host before
+resuming. The actual player epochs and valid lease survive. Existing expired
+lease recovery and local safety suspension remain enforced. No mutations replay.
+Pending startup retires on a connection gap. React adoption retains only an
+acknowledged same-scope owner and rejects old observations/late snapshots.
+
+Verification: `npm run test:spotify` passed 418 Node and 95 Jest cases;
+`npx tsc --noEmit` passed; Android `./gradlew :app:testDebugUnitTest --tests
+'*SpotifyNativeFollowerCoordinatorTest' --tests '*SpotifyJamPlayback*Test'
+--tests '*SpotifyJamConnectionRecoveryTest' -x :app:buildSpotifyLibrespot
+--console=plain` passed 62 focused JVM cases. `git diff --check` passed. Dedicated
+mapping and design are in SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md. No APK rebuilt at
+this chapter boundary. These are source tests, not physical network/audio checks.
+
+Continue app-led activation, accepted incoming commands and real player state
+publication, native catalog composition and background credential lifecycle.
+The fresh native probe is waiting for browser pairing approval; preserve it.
+Guest acceptance still needs another account and physical playback checks need
+an Android device. Build the integrated APK after remaining source work.
+
 # Native follower app handoff — 2026-10-30
 
 The existing follow action now selects the native Android runtime for device

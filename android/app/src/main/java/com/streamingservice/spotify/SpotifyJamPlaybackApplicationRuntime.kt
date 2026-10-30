@@ -51,6 +51,9 @@ object SpotifyJamPlaybackApplicationRuntime {
         runtime = SpotifyJamPlaybackRuntime(protocol, factory) { account ->
             SpotifyConnectApplicationRuntime.runtime.ownsNativeConnection(account.spotifyAccountIdentifier, account.handle)
         }
+        val recovery = SpotifyJamConnectionRecovery(decisionExecutor, runtime::connectionUnavailable, runtime::reconnect, runtime::connectionStopped,
+            { runtime.retireFollowing(); Unit })
+        SpotifyConnectApplicationRuntime.runtime.observeNativeConnection(recovery::accept)
         instance = runtime
         return runtime
     }

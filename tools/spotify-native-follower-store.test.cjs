@@ -89,7 +89,7 @@ function fixture(overrides = {}) {
   };
   function observe(selected) { return listener => { selected.add(listener); return () => selected.delete(listener); }; }
   const store = new SpotifyNativeFollowerStore({ native: state.supported ? native : null, observe: observe(listeners.native),
-    getContext: () => state.context, subscribeConnection: observe(listeners.connection), getApplicationAccount: () => state.account,
+    getContext: () => state.context, getRecoveryContext: () => state.recoveryContext ?? null, subscribeConnection: observe(listeners.connection), getApplicationAccount: () => state.account,
     subscribeApplicationAccount: observe(listeners.account),
     async whenPlayerReady() { calls.readiness += Fixture.singleCount; if (state.readiness) await state.readiness.promise; },
     async acknowledgeOwnership(context, identity, isCurrent) {
@@ -332,4 +332,52 @@ test(Names.restoreReadiness, async () => {
   readiness.resolve(); await flush();
   assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Buffering);
   assertion.equal(current.calls.ownership.length, Fixture.singleCount);
+});
+
+const RecoveryNames = Object.freeze({ verified: 'Verified reconnect retains the native owner and adopts its higher generation snapshot',
+  foreign: 'Reconnect cannot retain another host or account', terminal: 'Local suspension remains terminal during a connection gap',
+  late: 'A late reconnect snapshot cannot replace a newer explicit follower' });
+
+test(RecoveryNames.verified, async () => {
+  const current = await following(); const stops = current.calls.stops;
+  const identifier = current.calls.starts[Fixture.emptyCount].identifier;
+  current.state.recoveryContext = { ...context(), generation: Fixture.nextGeneration };
+  current.state.context = null; current.connectionChanged(); await flush();
+  assertion.equal(current.calls.stops, stops);
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Waiting);
+  current.state.retained = wire(identifier, { generation: Fixture.nextGeneration });
+  current.send(current.state.retained); await flush();
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Waiting);
+  current.state.context = current.state.recoveryContext; current.connectionChanged(); await flush();
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Following);
+  assertion.equal(current.calls.stops, stops);
+  assertion.equal(current.calls.starts.length, Fixture.singleCount);
+  assertion.equal(current.calls.ownership.length, Fixture.singleCount);
+  current.send(wire(identifier, { status: Fixture.failed, nativeHandoff: false })); await flush();
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Following);
+});
+test(RecoveryNames.foreign, async () => {
+  const current = await following(); const stops = current.calls.stops;
+  current.state.recoveryContext = { ...context(), hostDeviceIdentifier: Fixture.otherHost, generation: Fixture.nextGeneration };
+  current.state.context = null; current.connectionChanged(); await flush();
+  assertion.equal(current.calls.stops, stops + Fixture.singleCount);
+});
+test(RecoveryNames.terminal, async () => {
+  const current = await following(); const identifier = current.calls.starts[Fixture.emptyCount].identifier;
+  current.state.recoveryContext = context(); current.state.context = null; current.connectionChanged();
+  current.send(wire(identifier, { status: Fixture.suspended, nativeHandoff: false, failure: Fixture.localSuspended })); await flush();
+  current.state.context = { ...context(), generation: Fixture.nextGeneration };
+  current.state.recoveryContext = current.state.context; current.connectionChanged(); await flush();
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Detached);
+  assertion.equal(current.calls.starts.length, Fixture.singleCount);
+});
+test(RecoveryNames.late, async () => {
+  const current = await following(); const identifier = current.calls.starts[Fixture.emptyCount].identifier;
+  const inspection = deferred(); current.state.inspection = inspection;
+  current.state.recoveryContext = { ...context(), generation: Fixture.nextGeneration };
+  current.state.context = current.state.recoveryContext; current.connectionChanged();
+  await current.store.stop(); current.state.context = context(); current.state.recoveryContext = null;
+  await current.store.start(Fixture.market);
+  inspection.resolve(JSON.stringify(wire(identifier, { generation: Fixture.nextGeneration }))); await flush();
+  assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Following);
 });

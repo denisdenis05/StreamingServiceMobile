@@ -4,6 +4,8 @@ import java.util.concurrent.CompletableFuture
 
 interface SpotifyJamPlaybackSession {
     fun start(): CompletableFuture<Unit>
+    fun connectionUnavailable()
+    fun reconnect(generation: Long)
     fun stop(): CompletableFuture<Unit>
     fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit>
     fun claimRecording(requestIdentifier: String): String?
@@ -23,7 +25,7 @@ class SpotifyJamPlaybackRuntime(
 ) {
     class Attachment internal constructor(internal var listener: ((String) -> Unit)?)
     private class Lifetime(val creationConfiguration: SpotifyJamPlaybackConfiguration, var identifier: String, val retirement: CompletableFuture<Unit>) {
-        val account get() = creationConfiguration.account
+        @Volatile var account = creationConfiguration.account
         val started = CompletableFuture<Unit>()
         var session: SpotifyJamPlaybackSession? = null
         var follower: SpotifyNativeFollowerSnapshot? = null
@@ -85,6 +87,25 @@ class SpotifyJamPlaybackRuntime(
             }
         }
         return current.started.thenApply { synchronized(this) { requireAttachment(selected); requireCurrent(current); render(current) } }
+    }
+
+    @Synchronized fun connectionUnavailable(handle: Long, generation: Long) {
+        val current = lifetime ?: return
+        if (current.account.handle != handle || generation < current.account.generation) return
+        current.session?.connectionUnavailable()
+    }
+
+    @Synchronized fun connectionStopped(handle: Long, generation: Long) {
+        val current = lifetime ?: return
+        if (current.account.handle == handle && generation >= current.account.generation) retireFollowing()
+    }
+
+    @Synchronized fun reconnect(handle: Long, generation: Long, accountIdentifier: String) {
+        val current = lifetime ?: return
+        if (current.account.handle != handle || current.account.spotifyAccountIdentifier != accountIdentifier
+            || generation <= current.account.generation || !current.nativeHandoff) return
+        current.account = current.account.copy(generation = generation)
+        current.session?.reconnect(generation)
     }
 
     @Synchronized fun updateApplicationAccount(selected: Attachment, accountIdentifier: String?, accessToken: String?): CompletableFuture<Unit> {

@@ -355,6 +355,70 @@ class SpotifyNativeFollowerCoordinatorTest {
         assertTrue(fixture.operations(PlayerOperation.Replace).isEmpty())
     }
 
+    @Test fun reconnectPausesAndWaitsForVerifiedNewGenerationWithoutReclaimingPlayer() {
+        val fixture = Fixture(); fixture.start()
+        val claims = fixture.operations(PlayerOperation.SetExternalAuthority).size
+        fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        assertFalse(fixture.output.playing)
+        fixture.source.automatic = false
+        fixture.coordinator.reconnect(fixture.identity.copy(generation = ReconnectedGeneration)); fixture.mainQueue.drain()
+        assertFalse(fixture.output.playing)
+        val request = fixture.source.requests.last()
+        assertEquals(ReconnectedGeneration, request.identity.generation)
+        request.result.complete(fixture.source.observation(request.identity)); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        assertEquals(claims, fixture.operations(PlayerOperation.SetExternalAuthority).size)
+        assertEquals(ReconnectedGeneration, fixture.coordinator.snapshot().identity?.generation)
+    }
+    @Test fun disconnectedSourceCannotCompleteOrPollAndOldFailureCannotTerminateRecovery() {
+        val fixture = Fixture(); fixture.start(); fixture.source.automatic = false; fixture.tick()
+        val previous = fixture.source.requests.last()
+        fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        assertTrue(previous.cancelled)
+        val requests = fixture.source.requests.size
+        fixture.tick()
+        assertEquals(requests, fixture.source.requests.size)
+        previous.result.completeExceptionally(SpotifyNativeFollowerFailure(SpotifyNativeFollowerFailureReason.Superseded))
+        fixture.mainQueue.drain()
+        assertEquals(SpotifyNativeFollowerStatus.Stale, fixture.coordinator.snapshot().status)
+    }
+    @Test fun reconnectRejectsForeignHostAndDoesNotRestartTerminalFollower() {
+        val fixture = Fixture(); fixture.start()
+        fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.coordinator.reconnect(fixture.identity.copy(generation = ReconnectedGeneration, hostDeviceIdentifier = OtherHost))
+        fixture.mainQueue.drain()
+        assertEquals(SpotifyNativeFollowerStatus.Failed, fixture.coordinator.snapshot().status)
+        fixture.coordinator.reconnect(fixture.identity.copy(generation = ReconnectedGeneration)); fixture.mainQueue.drain()
+        assertFalse(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Failed, fixture.coordinator.snapshot().status)
+    }
+    @Test fun localPauseDuringReconnectCannotBeOverriddenByFreshSourceOrRegistration() {
+        val fixture = Fixture(); fixture.start(); fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.actual.pause()
+        fixture.coordinator.reconnect(fixture.identity.copy(generation = ReconnectedGeneration)); fixture.mainQueue.drain()
+        assertFalse(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Suspended, fixture.coordinator.snapshot().status)
+        fixture.tick()
+        assertFalse(fixture.output.playing)
+    }
+    @Test fun reconnectCannotUseOldResolutionForAnUnseenOccurrence() {
+        val fixture = Fixture(); fixture.resolver.automatic = false; fixture.start()
+        val previous = fixture.resolver.requests.single()
+        fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        assertTrue(previous.cancelled)
+        fixture.coordinator.reconnect(fixture.identity.copy(generation = ReconnectedGeneration)); fixture.mainQueue.drain()
+        previous.result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertTrue(fixture.operations(PlayerOperation.Replace).isEmpty())
+        fixture.resolver.requests.last().result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+    }
+    @Test fun repeatedAndOlderRegistrationCannotResumeDisconnectedPlayback() {
+        val fixture = Fixture(); fixture.start(); fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.coordinator.reconnect(fixture.identity); fixture.mainQueue.drain()
+        assertFalse(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Stale, fixture.coordinator.snapshot().status)
+    }
+
     companion object {
         private const val EmptyCount = 0
         private const val SingleCount = 1
@@ -363,6 +427,7 @@ class SpotifyNativeFollowerCoordinatorTest {
         private const val FirstIndex = 0
         private const val Handle = 1L
         private const val Generation = 2L
+        private const val ReconnectedGeneration = 3L
         private const val InitialElapsedMilliseconds = 10000L
         private const val InitialPositionMilliseconds = 0L
         private const val SourcePositionMilliseconds = 5000L

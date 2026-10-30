@@ -41,6 +41,42 @@ class SpotifyNativeFollowerCoordinator(
         return next.started
     }
 
+    fun connectionUnavailable() {
+        val current = lifetime ?: return
+        current.connectionAvailable = false
+        enqueue(current) {
+            if (current.terminal) return@enqueue
+            cancelSource(current)
+            drive(current)
+        }
+    }
+
+    fun reconnect(identity: SpotifyNativeFollowerIdentity) {
+        val current = lifetime ?: return
+        enqueue(current) {
+            if (current.terminal) return@enqueue
+            val previous = current.identity
+            if (identity.generation <= previous.generation) return@enqueue
+            if (identity.copy(generation = previous.generation) != previous) {
+                terminate(current, SpotifyNativeFollowerFailureReason.Superseded)
+                return@enqueue
+            }
+            cancelSource(current)
+            current.identity = identity
+            current.connectionAvailable = true
+            read(current)
+        }
+    }
+
+    private fun cancelSource(current: Lifetime) {
+        current.timer?.cancel(); current.timer = null
+        current.readOperation?.cancel(); current.readOperation = null
+        current.resolutionOperation?.cancel(); current.resolutionOperation = null
+        current.resolutionOccurrence = null; current.resolvedRecording = null
+        current.resolutionFailure = null; current.resolutionFailedSequence = null
+        current.target = null; current.sourceHealthy = false
+    }
+
     fun stop(): CompletableFuture<Unit> {
         val previous = synchronized(monitor) { lifetime.also { lifetime = null; events.clear() } }
         currentSnapshot = DetachedSnapshot
@@ -61,7 +97,7 @@ class SpotifyNativeFollowerCoordinator(
     }
 
     private fun read(current: Lifetime) {
-        if (!current(current) || current.readOperation != null || current.terminal) return
+        if (!current(current) || current.readOperation != null || current.terminal || !current.connectionAvailable) return
         val requestStartedMilliseconds = clock.nowElapsedRealtimeMilliseconds()
         val operation = try { source.read(current.identity) }
         catch (failure: Throwable) { readFailed(current, failure); scheduleRead(current); return }
@@ -70,7 +106,8 @@ class SpotifyNativeFollowerCoordinator(
             enqueue(current) {
                 if (current.readOperation !== operation) return@enqueue
                 current.readOperation = null
-                if (failure != null) readFailed(current, failure)
+                if (!current.connectionAvailable) { current.sourceHealthy = false; drive(current) }
+                else if (failure != null) readFailed(current, failure)
                 else {
                     try {
                         SpotifyNativeFollowerTiming.validateObservation(current.identity, observation, requestStartedMilliseconds, clock.nowElapsedRealtimeMilliseconds())
@@ -103,7 +140,7 @@ class SpotifyNativeFollowerCoordinator(
     }
 
     private fun scheduleRead(current: Lifetime) {
-        if (!current(current) || current.terminal) return
+        if (!current(current) || current.terminal || !current.connectionAvailable) return
         current.timer?.cancel()
         current.timer = scheduler.schedule(SpotifyNativeFollowerPolicy.ReconcileIntervalMilliseconds) {
             enqueue(current) { current.timer = null; read(current) }
@@ -115,7 +152,7 @@ class SpotifyNativeFollowerCoordinator(
         if (current.outputBusy) { current.driveRequested = true; return }
         current.driveRequested = false
         val target = current.target
-        if (target == null || !current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(target, clock.nowElapsedRealtimeMilliseconds())) {
+        if (target == null || !current.connectionAvailable || !current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(target, clock.nowElapsedRealtimeMilliseconds())) {
             hold(current, SpotifyNativeFollowerStatus.Stale, SpotifyNativeFollowerFailureReason.SourceUnavailable)
             return
         }
@@ -132,7 +169,7 @@ class SpotifyNativeFollowerCoordinator(
         if (sample.suspended) { suspend(current); return }
         val nowMilliseconds = clock.nowElapsedRealtimeMilliseconds()
         SpotifyNativeFollowerTiming.localPosition(sample, nowMilliseconds)
-        if (!current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(sampledTarget, nowMilliseconds)) { hold(current, SpotifyNativeFollowerStatus.Stale, SpotifyNativeFollowerFailureReason.SourceUnavailable); return }
+        if (!current.connectionAvailable || !current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(sampledTarget, nowMilliseconds)) { hold(current, SpotifyNativeFollowerStatus.Stale, SpotifyNativeFollowerFailureReason.SourceUnavailable); return }
         val lease = requireNotNull(current.lease)
         if (sample.expired) {
             val recoverySequence = current.recoverAfterSequence
@@ -182,7 +219,7 @@ class SpotifyNativeFollowerCoordinator(
     }
 
     private fun applyIntent(current: Lifetime, target: SpotifyConnectPlaybackObservation, playing: Boolean, wasPlaying: Boolean, drift: Double) {
-        if (current.target !== target || !current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(target, clock.nowElapsedRealtimeMilliseconds())) { drive(current); return }
+        if (current.target !== target || !current.connectionAvailable || !current.sourceHealthy || !SpotifyNativeFollowerTiming.fresh(target, clock.nowElapsedRealtimeMilliseconds())) { drive(current); return }
         if (playing != wasPlaying) {
             val lease = requireNotNull(current.lease)
             val operation = if (playing) player.play(lease, target.occurrenceIdentifier) else player.pause(lease, target.occurrenceIdentifier)
@@ -216,6 +253,7 @@ class SpotifyNativeFollowerCoordinator(
             enqueue(current) {
                 if (current.resolutionOperation !== operation) return@enqueue
                 current.resolutionOperation = null
+                if (!current.connectionAvailable) return@enqueue
                 if (current.target?.occurrenceIdentifier != target.occurrenceIdentifier) { drive(current); return@enqueue }
                 if (failure != null) {
                     val failureReason = reason(failure)
@@ -342,7 +380,7 @@ class SpotifyNativeFollowerCoordinator(
         }
     }
 
-    private class Lifetime(val identity: SpotifyNativeFollowerIdentity) {
+    private class Lifetime(var identity: SpotifyNativeFollowerIdentity) {
         val started = CompletableFuture<Unit>()
         @Volatile var retired = false
         @Volatile var lease: SpotifyPlayerLease? = null
@@ -354,6 +392,7 @@ class SpotifyNativeFollowerCoordinator(
         var sequence = SpotifyNativeFollowerPolicy.InitialSequence
         var renewedSequence = SpotifyNativeFollowerPolicy.InitialSequence
         var recoverAfterSequence: Long? = null
+        @Volatile var connectionAvailable = true
         var sourceHealthy = false
         var terminal = false
         var outputBusy = false

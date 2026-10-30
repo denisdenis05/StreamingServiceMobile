@@ -10,8 +10,8 @@ it cannot start the foreground follower automatically.
 The native configuration captures both accounts, server address, Jam, actual host,
 native handle/generation and selected market. `SpotifyConnectStore` exposes a
 read-only handle/generation descriptor only for its ready bound account. Missing
-membership, another host/account, reconnecting registration or a changed native
-generation prevents or retires following. Guest following remains disabled.
+membership or another host/account prevents or retires following. Acknowledged
+following can recover across verified reconnect generations as described below. Guest following remains disabled.
 
 ## Acknowledgement and player ownership
 
@@ -73,3 +73,28 @@ Next: verified same-Jam reconnect recovery after a native generation changes;
 then app-led host activation, accepted incoming player actions and real state
 publication. A new approved probe is still needed for live catalog search, and a
 second Spotify account/device is needed for guest and measured audio acceptance.
+
+## Verified reconnect recovery
+
+The application observes native connection lifecycle events while React is detached.
+A connection gap immediately fences new source/audio intent, cancels old source and
+recording work, pauses owned playback and stops polling. Registration may advance
+only the same native handle/account to a strictly newer actual generation. Fresh
+membership and playback reads must verify the same Jam and host before renewal
+or playback. Player epochs and an unexpired lease are retained; expired leases
+still use the existing fresh-read recovery barrier. Commands are never replayed.
+Local safety pause, failed membership and terminal sessions require explicit restart.
+A gap during unacknowledged startup retires that startup.
+
+The JavaScript view retains only an acknowledged same-scope native owner while
+Connect reconnects. Once the actual descriptor is ready it reads the retained
+native snapshot. Old observations and late inspections cannot replace a newer
+request. No new native start or ownership receipt is needed for the same epochs.
+
+Dedicated tests: `SpotifyNativeFollowerCoordinatorTest` (six reconnect cases),
+`SpotifyJamPlaybackNativeSessionTest` (two lifecycle cases),
+`SpotifyJamPlaybackRuntimeTest` (three scope/acknowledgement cases),
+`SpotifyJamConnectionRecoveryTest` (three native-event cases), and the reconnect
+cases in `tools/spotify-native-follower-store.test.cjs` and
+`tools/spotify-connect-store.test.cjs`. These are source tests; physical network
+loss, screen lock and audible recovery still need a device.

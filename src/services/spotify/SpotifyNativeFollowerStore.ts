@@ -16,6 +16,7 @@ export interface SpotifyNativeFollowerDependencies {
   readonly native: SpotifyJamPlaybackNative | null;
   readonly observe: (listener: (event: unknown) => void) => () => void;
   readonly getContext: () => SpotifyJamPlaybackContext | null;
+  readonly getRecoveryContext?: () => SpotifyJamPlaybackContext | null;
   readonly subscribeConnection: (listener: () => void) => () => void;
   readonly getApplicationAccount: () => SpotifyPlaybackApplicationAccount;
   readonly subscribeApplicationAccount: (listener: () => void) => () => void;
@@ -26,7 +27,7 @@ export interface SpotifyNativeFollowerDependencies {
 
 interface NativeFollowerLifetime {
   readonly identifier: string;
-  readonly context: SpotifyJamPlaybackContext;
+  context: SpotifyJamPlaybackContext;
   readonly market: string;
   acknowledged: boolean;
   terminal: boolean;
@@ -186,7 +187,19 @@ export class SpotifyNativeFollowerStore {
     if (this.disposed) return;
     const context = this.dependencies.getContext();
     if (this.lifetime) {
-      if (!context || !sameSpotifyPlaybackContext(context, this.lifetime.context)) void this.stop().catch(() => undefined);
+      const current = this.lifetime;
+      if (current.terminal) return;
+      if (context && sameSpotifyPlaybackContext(context, current.context)) return;
+      const recovery = this.dependencies.getRecoveryContext?.();
+      if (current.acknowledged && recovery && this.sameRecoveryScope(current.context, recovery)) {
+        this.publish({ ...this.snapshot, status: SharedPlaybackStatus.Waiting });
+        if (context && context.generation > current.context.generation && sameSpotifyPlaybackContext(context, recovery)) {
+          current.context = Object.freeze({ ...context });
+          void this.dependencies.native?.getSnapshot().then(serialized => {
+            if (this.lifetime === current && !current.terminal) this.observe(serialized);
+          }, () => { if (this.lifetime === current) void this.stop().catch(() => undefined); });
+        }
+      } else void this.stop().catch(() => undefined);
       return;
     }
     if (context && this.snapshot.status === SharedPlaybackStatus.Detached) void this.restore(context);
@@ -241,13 +254,19 @@ export class SpotifyNativeFollowerStore {
     }
   }
 
+  private sameRecoveryScope(previous: SpotifyJamPlaybackContext, next: SpotifyJamPlaybackContext): boolean {
+    return next.generation >= previous.generation && sameSpotifyPlaybackContext(previous, { ...next, generation: previous.generation });
+  }
   private matches(current: NativeFollowerLifetime, observation: SpotifyJamPlaybackObservation): boolean {
     return current.identifier === observation.identifier && current.market === observation.market && sameSpotifyPlaybackContext(current.context, observation);
   }
   private async accept(current: NativeFollowerLifetime, observation: SpotifyJamPlaybackObservation): Promise<void> {
     if (current.terminal) return;
     const context = this.dependencies.getContext();
-    if (!context || !sameSpotifyPlaybackContext(current.context, context)) { void this.stop().catch(() => undefined); return; }
+    if (!context || !sameSpotifyPlaybackContext(current.context, context)) {
+      const recovery = this.dependencies.getRecoveryContext?.();
+      if (!observation.terminal || !recovery || !this.sameRecoveryScope(current.context, recovery)) { this.connectionChanged(); return; }
+    }
     const previousIdentity = current.latestObservation?.playerIdentity;
     if (current.ownership !== null && previousIdentity && observation.playerIdentity
       && (previousIdentity.engineEpoch !== observation.playerIdentity.engineEpoch || previousIdentity.authenticationEpoch !== observation.playerIdentity.authenticationEpoch)) {
@@ -267,7 +286,7 @@ export class SpotifyNativeFollowerStore {
       await current.ownership;
       if (this.disposed || this.lifetime !== current || current.terminal || current.latestObservation?.nativeHandoff !== true) return;
       const latestContext = this.dependencies.getContext();
-      if (!latestContext || !sameSpotifyPlaybackContext(current.context, latestContext)) { void this.stop().catch(() => undefined); return; }
+      if (!latestContext || !sameSpotifyPlaybackContext(current.context, latestContext)) { this.connectionChanged(); return; }
       current.acknowledged = true;
       this.publish(current.latestObservation.snapshot);
     } else {

@@ -88,6 +88,29 @@ class SpotifyJamPlaybackNativeSession(
         return started
     }
 
+    override fun connectionUnavailable() = synchronized(monitor) {
+        if (retired) return@synchronized
+        val coordinator = follower
+        if (coordinator == null || !started.isDone || started.isCompletedExceptionally) {
+            stop()
+        } else {
+            coordinator.connectionUnavailable()
+            broker.retire()
+        }
+        Unit
+    }
+
+    override fun reconnect(generation: Long) = synchronized(monitor) {
+        val previous = identity ?: return@synchronized
+        if (retired || generation <= previous.generation || !started.isDone || started.isCompletedExceptionally) return@synchronized
+        val next = previous.copy(generation = generation)
+        if (!isCurrent(next)) return@synchronized
+        identity = next
+        broker.retire()
+        follower?.reconnect(next)
+        Unit
+    }
+
     override fun stop(): CompletableFuture<Unit> = synchronized(monitor) {
         stopped?.let { completion -> return@synchronized completion }
         val completion = CompletableFuture<Unit>()

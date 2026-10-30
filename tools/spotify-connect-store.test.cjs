@@ -420,3 +420,14 @@ test(ShutdownFixture.names.reentrant, async () => { const current = fixture(); a
 test(ShutdownFixture.names.disposal, async () => { const current = fixture(); await current.attach(); await current.store.dispose();
   assert.equal(current.calls.shutdowns, Fixture.zero); assert.equal(current.calls.closes.length, Fixture.one);
 });
+
+const RecoveryDescriptorName = 'Recovering descriptor retains only the bound account and actual native generation until detach';
+test(RecoveryDescriptorName, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  current.send({ type: Fixture.reconnecting });
+  assert.deepEqual(current.store.getRecoveringPlaybackConnection(Fixture.account), { handle: Fixture.handle, generation: Fixture.generation });
+  assert.equal(current.store.getRecoveringPlaybackConnection(Fixture.otherAccount), null);
+  current.send({ type: Fixture.connecting }, Fixture.nextGeneration);
+  assert.deepEqual(current.store.getRecoveringPlaybackConnection(Fixture.account), { handle: Fixture.handle, generation: Fixture.nextGeneration });
+  await current.store.detach(); assert.equal(current.store.getRecoveringPlaybackConnection(Fixture.account), null);
+});

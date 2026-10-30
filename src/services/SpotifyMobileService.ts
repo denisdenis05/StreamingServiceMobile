@@ -193,6 +193,18 @@ const foregroundPlaybackFollower = new SpotifyPlaybackFollowerStore({
     },
   }),
 });
+function nativePlaybackContext(getConnection: (accountIdentifier: string) => Readonly<{ handle: number; generation: number }> | null) {
+  const runtime = spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime : null;
+  const snapshot = runtime?.sessions.getSnapshot();
+  const account = authenticationSession.getSnapshot();
+  const session = snapshot?.session;
+  if (!spotifyIntegration.usesNativeConnect || !snapshot || snapshot.accountIdentifier === null || snapshot.status !== JamConnectionStatus.Ready || !session?.ownedByCurrentAccount
+    || !session.active || !session.hostDeviceIdentifier || !account.isLoggedIn || account.accountIdentifier === null) return null;
+  const connection = getConnection(snapshot.accountIdentifier);
+  return connection === null ? null : Object.freeze({ streamingServiceAccountIdentifier: account.accountIdentifier,
+    baseAddress: TEMPORARY_API_URL, spotifyAccountIdentifier: snapshot.accountIdentifier,
+    jamSessionIdentifier: session.identifier, hostDeviceIdentifier: session.hostDeviceIdentifier, ...connection });
+}
 const nativePlaybackFollower = new SpotifyNativeFollowerStore({
   native: spotifyJamPlaybackNative(), observe: observeSpotifyJamPlayback,
   getApplicationAccount: authenticationSession.getSnapshot, subscribeApplicationAccount: authenticationSession.subscribe,
@@ -201,18 +213,8 @@ const nativePlaybackFollower = new SpotifyNativeFollowerStore({
     serverAddress: context.baseAddress, accountIdentifier: context.streamingServiceAccountIdentifier,
     engineEpoch: identity.engineEpoch, authenticationEpoch: identity.authenticationEpoch,
   }, isCurrent),
-  getContext: () => {
-    const runtime = spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime : null;
-    const snapshot = runtime?.sessions.getSnapshot();
-    const account = authenticationSession.getSnapshot();
-    const session = snapshot?.session;
-    if (!spotifyIntegration.usesNativeConnect || !snapshot || snapshot.accountIdentifier === null || snapshot.status !== JamConnectionStatus.Ready || !session?.ownedByCurrentAccount
-      || !session.active || !session.hostDeviceIdentifier || !account.isLoggedIn || account.accountIdentifier === null) return null;
-    const connection = spotifyConnect.getPlaybackConnection(snapshot.accountIdentifier);
-    return connection === null ? null : Object.freeze({ streamingServiceAccountIdentifier: account.accountIdentifier,
-      baseAddress: TEMPORARY_API_URL, spotifyAccountIdentifier: snapshot.accountIdentifier,
-      jamSessionIdentifier: session.identifier, hostDeviceIdentifier: session.hostDeviceIdentifier, ...connection });
-  },
+  getContext: () => nativePlaybackContext(accountIdentifier => spotifyConnect.getPlaybackConnection(accountIdentifier)),
+  getRecoveryContext: () => nativePlaybackContext(accountIdentifier => spotifyConnect.getRecoveringPlaybackConnection(accountIdentifier)),
   subscribeConnection: listener => {
     const stopMobile = spotifyMobile.subscribe(listener);
     const stopConnect = spotifyConnect.subscribe(listener);

@@ -13,6 +13,10 @@ import java.util.concurrent.ExecutionException
 
 class SpotifyJamPlaybackRuntimeTest {
     private class Session : SpotifyJamPlaybackSession {
+        var interruptions = EmptyCount
+        val generations = mutableListOf<Long>()
+        override fun connectionUnavailable() { interruptions += SingleCount }
+        override fun reconnect(generation: Long) { generations.add(generation) }
         val startup = CompletableFuture<Unit>()
         var cleanup = CompletableFuture.completedFuture(Unit)
         var stops = EmptyCount
@@ -43,6 +47,33 @@ class SpotifyJamPlaybackRuntimeTest {
         val attachment = runtime.attach(events::add)
         fun begin(selected: SpotifyJamPlaybackRuntime.Attachment = attachment, account: String = AppAccount, expiry: Long = InitialExpiry): CompletableFuture<String> = runtime.startFollowing(selected, Identifier, configuration(account, expiry))
         fun start(): String { val pending = begin(); sessions.single().startup.complete(Unit); return pending.get() }
+    }
+    @Test fun acknowledgedReconnectChangesOnlyGenerationAndPreservesTheNativeSession() {
+        val fixture = Fixture(); fixture.start()
+        val account = fixture.configurations.single().account
+        fixture.runtime.connectionUnavailable(account.handle, account.generation)
+        fixture.runtime.reconnect(account.handle, account.generation + SingleCount.toLong(), account.spotifyAccountIdentifier)
+        assertEquals(SingleCount, fixture.sessions.single().interruptions)
+        assertEquals(listOf(account.generation + SingleCount.toLong()), fixture.sessions.single().generations)
+        val snapshot = JSONObject(fixture.runtime.getSnapshot(fixture.attachment))
+        assertEquals(account.generation + SingleCount.toLong(), snapshot.getLong(SpotifyJamPlaybackProtocol.GenerationField))
+        assertEquals(EmptyCount, fixture.sessions.single().stops)
+    }
+    @Test fun oldAndForeignRegistrationsAndStopsCannotAffectCurrentFollowing() {
+        val fixture = Fixture(); fixture.start()
+        val account = fixture.configurations.single().account
+        fixture.runtime.reconnect(account.handle, account.generation, account.spotifyAccountIdentifier)
+        fixture.runtime.reconnect(account.handle, account.generation + SingleCount.toLong(), OtherAppAccount)
+        fixture.runtime.connectionStopped(account.handle + SingleCount.toLong(), account.generation)
+        fixture.runtime.connectionStopped(account.handle, account.generation - SingleCount.toLong())
+        assertTrue(fixture.sessions.single().generations.isEmpty())
+        assertEquals(EmptyCount, fixture.sessions.single().stops)
+    }
+    @Test fun unacknowledgedStartupCannotAdoptAnotherNativeGeneration() {
+        val fixture = Fixture(); fixture.begin()
+        val account = fixture.configurations.single().account
+        fixture.runtime.reconnect(account.handle, account.generation + SingleCount.toLong(), account.spotifyAccountIdentifier)
+        assertTrue(fixture.sessions.single().generations.isEmpty())
     }
     private fun failure(code: String, operation: () -> Any?) {
         try { operation(); throw AssertionError(MissingFailure) }

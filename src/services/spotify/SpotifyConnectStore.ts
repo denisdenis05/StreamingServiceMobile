@@ -92,6 +92,12 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
       || binding.handle === null || this.snapshot.status !== SpotifyConnectStatus.Ready) return null;
     return Object.freeze({ handle: binding.handle, generation: this.snapshot.generation });
   }
+  getRecoveringPlaybackConnection(accountIdentifier: string): Readonly<{ handle: number; generation: number }> | null {
+    const binding = this.binding;
+    if (this.disposed || !binding || binding.accountIdentifier !== accountIdentifier || binding.cancellation.signal.aborted
+      || binding.handle === null || ![SpotifyConnectStatus.Ready, SpotifyConnectStatus.Connecting, SpotifyConnectStatus.Reconnecting].includes(this.snapshot.status)) return null;
+    return Object.freeze({ handle: binding.handle, generation: this.snapshot.generation });
+  }
   readonly subscribe = (listener: () => void): (() => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
 
   async attach(provider: SpotifyLoginProvider, accountIdentifier: string, cancellation: AbortSignal): Promise<void> {
