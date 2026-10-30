@@ -142,3 +142,13 @@ fn hosting_identity_reads_are_generation_checked_and_publication_requires_a_type
         Ok(ConnectControl::Publish { .. })));
     assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): PUBLISH, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): {} }).to_string()), Err(Failure::InvalidInput)));
 }
+
+const DEACTIVATE: &str = "deactivate";
+
+#[test]
+fn deactivation_uses_the_same_strict_generation_and_actual_player_snapshot_contract() {
+    let snapshot = serde_json::to_value(publication::snapshot()).unwrap();
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): DEACTIVATE, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): snapshot }).to_string()),
+        Ok(ConnectControl::Deactivate { .. })));
+    assert!(matches!(decode_control(&json!({ (OPERATION_FIELD): DEACTIVATE, (GENERATION_FIELD): VALID_GENERATION, (SNAPSHOT_FIELD): {} }).to_string()), Err(Failure::InvalidInput)));
+}

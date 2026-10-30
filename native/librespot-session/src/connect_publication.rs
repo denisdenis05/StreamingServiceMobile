@@ -15,6 +15,8 @@ const TRACK_IDENTIFIER_CHARACTERS: usize = 22;
 const NORMAL_PLAYBACK_SPEED: f64 = 1.0;
 const PAUSED_PLAYBACK_SPEED: f64 = 0.0;
 const INITIAL_SEQUENCE: u64 = 0;
+const SEQUENCE_INCREMENT: u64 = 1;
+const MAXIMUM_PUBLICATION_SEQUENCE: u64 = 9007199254740991;
 const MINIMUM_DURATION_MILLISECONDS: u64 = 1;
 const MINIMUM_SERVER_TIMESTAMP_MILLISECONDS: u64 = 1;
 pub const MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS: u64 = 15000;
@@ -130,12 +132,27 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
     Ok(publication)
 }
 
+pub fn build_deactivation(registration: &PutStateRequest, snapshot: &ConnectPublicationSnapshot,
+    publication_server_timestamp_milliseconds: u64) -> Result<PutStateRequest, Failure> {
+    let mut publication = build_publication(registration, snapshot, publication_server_timestamp_milliseconds)?;
+    publication.is_active = false;
+    let device = publication.device.mut_or_insert_default().device_info.mut_or_insert_default();
+    device.can_play = false;
+    let capabilities = device.capabilities.mut_or_insert_default();
+    capabilities.can_be_player = false;
+    capabilities.is_controllable = false;
+    capabilities.hidden = true;
+    Ok(publication)
+}
+
 #[derive(Default)]
 pub struct ConnectPublicationOrder { last_sequence: u64 }
 
 impl ConnectPublicationOrder {
+    pub fn next_sequence(&self) -> Result<u64, Failure> { self.last_sequence.checked_add(SEQUENCE_INCREMENT).filter(|sequence| *sequence <= MAXIMUM_PUBLICATION_SEQUENCE).ok_or(Failure::InvalidInput) }
+
     pub fn acquire(&mut self, sequence: u64) -> Result<(), Failure> {
-        if sequence <= self.last_sequence { return Err(Failure::Canceled); }
+        if sequence <= self.last_sequence || sequence > MAXIMUM_PUBLICATION_SEQUENCE { return Err(Failure::Canceled); }
         self.last_sequence = sequence;
         Ok(())
     }
@@ -148,6 +165,8 @@ pub struct ConnectPublicationState {
 }
 
 impl ConnectPublicationState {
+    pub fn complete_deactivation(&mut self) { self.started = false; }
+
     pub fn permits_observer_registration(&self) -> bool { !self.started }
 
     pub fn begin_dispatch(&mut self, sequence: u64) -> Result<(), Failure> {

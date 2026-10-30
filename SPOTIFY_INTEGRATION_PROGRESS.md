@@ -1,3 +1,21 @@
+# Native host demotion and repeated explicit activation — 2026-10-30
+
+Added a typed, bounded native deactivation operation through JNI, the responsive
+actor and HTTP worker. It publishes the real player state as inactive, hides the
+local device and removes playable/control capabilities. Only known demotion
+permits another explicit activation. Sequence order survives this boundary and
+the actor exposes its actual next sequence; overflow never invents a safe value.
+Unknown outcomes retain the activation fence and never replay. Stale demotion
+acknowledgements cannot replace a newer local host observation. Cleanup may hide
+the local device after another host has taken over without taking that host over.
+
+Verification: complete `cargo test --manifest-path native/librespot-session/
+Cargo.toml --locked --quiet` passed 220 cases, including dedicated deactivation,
+actor ordering, uncertainty, generation/cancellation, sequence exhaustion and
+bridge-decoding cases. `git diff --check` passed. No device, hosting UI, native
+activation or demotion has been exercised live. The Kotlin native host transport
+and actual application host runtime are still being composed. No APK rebuilt.
+
 # Real host queue and publication projection — 2026-10-30
 
 Added bounded actual-player queue sampling, complete cursor validation, resolved

@@ -152,3 +152,31 @@ fn accepted_command_without_an_optional_session_identifier_keeps_real_message_pr
     assert_eq!(published.last_command_sent_by_device_id, COMMAND_SENDER);
     assert!(published.device.player_state.session_command_id.is_empty());
 }
+
+#[test]
+fn deactivation_preserves_actual_paused_state_while_retiring_playable_device_capabilities() {
+    let mut sample = snapshot(); sample.playback = ConnectPublicationPlayback::Paused;
+    let inactive = streaming_spotify_session::connect_publication::build_deactivation(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(!inactive.is_active); assert!(!inactive.device.device_info.can_play);
+    assert!(!inactive.device.device_info.capabilities.can_be_player); assert!(inactive.device.device_info.capabilities.hidden);
+    assert_eq!(inactive.device.player_state.track.uid, OCCURRENCE); assert!(inactive.device.player_state.is_paused);
+}
+
+#[test]
+fn known_deactivation_allows_observer_state_without_resetting_sequence_order() {
+    let mut state = ConnectPublicationState::default(); state.begin_dispatch(FIRST_SEQUENCE).unwrap();
+    state.complete_deactivation(); assert!(state.permits_observer_registration());
+    assert_eq!(state.begin_dispatch(FIRST_SEQUENCE), Err(Failure::Canceled)); state.begin_dispatch(SECOND_SEQUENCE).unwrap();
+    let mut order = ConnectPublicationOrder::default(); assert_eq!(order.next_sequence().unwrap(), FIRST_SEQUENCE);
+    order.acquire(SECOND_SEQUENCE).unwrap(); assert!(order.next_sequence().unwrap() > SECOND_SEQUENCE);
+}
+
+const MAXIMUM_SEQUENCE: u64 = 9007199254740991;
+const UNSAFE_SEQUENCE: u64 = 9007199254740992;
+
+#[test]
+fn publication_sequence_exhaustion_never_fabricates_another_safe_sequence() {
+    let mut order = ConnectPublicationOrder::default();
+    assert_eq!(order.acquire(UNSAFE_SEQUENCE), Err(Failure::Canceled));
+    order.acquire(MAXIMUM_SEQUENCE).unwrap(); assert_eq!(order.next_sequence(), Err(Failure::InvalidInput));
+}

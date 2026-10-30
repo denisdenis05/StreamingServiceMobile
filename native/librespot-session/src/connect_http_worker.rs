@@ -49,6 +49,7 @@ pub(crate) enum HttpWork {
     CheckedMutation { command: CheckedHttpCommand, body: Value },
     Activate { snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness,
         cluster: ConnectCluster, generation: u64, cancellation: CancellationToken, response: PendingHttpResponse<ConnectCluster> },
+    Deactivate { snapshot: ConnectPublicationSnapshot, cancellation: CancellationToken, response: PendingHttpResponse<ConnectCluster> },
     Publish { snapshot: ConnectPublicationSnapshot, cancellation: CancellationToken, response: PendingHttpResponse<ConnectCluster> },
 }
 
@@ -62,6 +63,7 @@ pub(crate) enum HttpCompletion {
     Command { result: Result<(), Failure>, response: PendingHttpResponse<()> },
     Prepared { result: Result<(Value, ConnectCluster), Failure>, command: CheckedHttpCommand },
     CheckedMutation { result: Result<ConnectCommandAcknowledgement, Failure>, command: CheckedHttpCommand },
+    Deactivated { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
     Activated { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
     Published { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
 }
@@ -140,6 +142,12 @@ async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMeta
                 execute(session.activate(snapshot, activation, readiness, cluster, generation), cancellation, &activation_cancellation, true).await
             };
             HttpCompletion::Activated { result, response }
+        },
+        HttpWork::Deactivate { snapshot, cancellation: deactivation_cancellation, mut response } => {
+            let result = if response.is_closed() || deactivation_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {
+                response.mark_dispatched(); execute(session.deactivate(snapshot), cancellation, &deactivation_cancellation, true).await
+            };
+            HttpCompletion::Deactivated { result, response }
         },
         HttpWork::Publish { snapshot, cancellation: publication_cancellation, mut response } => {
             let result = if response.is_closed() || publication_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {

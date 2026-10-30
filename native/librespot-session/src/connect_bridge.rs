@@ -30,6 +30,7 @@ pub struct ConnectStartInput {
 pub enum ConnectControl {
     HostIdentity { generation: u64 },
     Activate { generation: u64, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation, readiness: ConnectActivationPlayerReadiness },
+    Deactivate { generation: u64, snapshot: ConnectPublicationSnapshot },
     Publish { generation: u64, snapshot: ConnectPublicationSnapshot },
     Refresh { generation: u64 },
     Reply { generation: u64, key: String, accepted: bool },
@@ -102,7 +103,7 @@ struct ConnectReceipt {
     failure: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     acknowledgement: Option<ConnectCommandAcknowledgement>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "hostingIdentity", skip_serializing_if = "Option::is_none")]
     hosting_identity: Option<ConnectHostIdentity>,
 }
 
@@ -128,7 +129,7 @@ pub fn decode_control(serialized: &str) -> Result<ConnectControl, Failure> {
     let control: ConnectControl = serde_json::from_str(serialized).map_err(|_| Failure::InvalidInput)?;
     let generation = match &control {
         ConnectControl::HostIdentity { generation } | ConnectControl::Activate { generation, .. }
-        | ConnectControl::Publish { generation, .. } | ConnectControl::Refresh { generation } => generation,
+        | ConnectControl::Deactivate { generation, .. } | ConnectControl::Publish { generation, .. } | ConnectControl::Refresh { generation } => generation,
         ConnectControl::Command { generation, request_identifier, target_device_identifier, command } => {
             command.validate(request_identifier, target_device_identifier)?; generation
         },
@@ -164,6 +165,14 @@ async fn execute(handle: u64, control: ConnectControl) -> Result<ConnectReceipt,
             let cancellation = SearchCancellation(CancellationToken::new());
             let (result, response) = oneshot::channel();
             actions.try_send(ConnectAction::Activate { generation, snapshot, activation, readiness, activation_cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
+            let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
+                .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
+            receipt(response.map(|_| ()))
+        },
+        ConnectControl::Deactivate { generation, snapshot } => {
+            let cancellation = SearchCancellation(CancellationToken::new());
+            let (result, response) = oneshot::channel();
+            actions.try_send(ConnectAction::Deactivate { generation, snapshot, cancellation: cancellation.0.clone(), result }).map_err(|_| Failure::Backpressure)?;
             let response = tokio::time::timeout(Duration::from_secs(ACTION_TIMEOUT_SECONDS), response).await
                 .map_err(|_| Failure::UnknownOutcome)?.map_err(|_| Failure::UnknownOutcome)?;
             receipt(response.map(|_| ()))

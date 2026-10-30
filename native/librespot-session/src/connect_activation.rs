@@ -63,6 +63,7 @@ pub struct ConnectActivationDispatchGuard {
 }
 
 impl ConnectActivationDispatchGuard {
+    pub fn complete_deactivation(&mut self) { self.dispatched = false; }
     pub fn acquire(&mut self, canceled: bool) -> Result<(), Failure> {
         if canceled { return Err(Failure::Canceled); }
         if self.dispatched { return Err(Failure::UnknownOutcome); }

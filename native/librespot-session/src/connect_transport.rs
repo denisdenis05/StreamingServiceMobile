@@ -38,6 +38,7 @@ pub struct OutgoingFrame {
 }
 
 pub enum ConnectAction {
+    Deactivate { generation: u64, snapshot: ConnectPublicationSnapshot, cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
     HostIdentity { generation: u64, result: ActionResult<ConnectHostIdentity> },
     Activate { generation: u64, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation,
         readiness: ConnectActivationPlayerReadiness, activation_cancellation: CancellationToken, result: ActionResult<ConnectCluster> },
@@ -59,6 +60,7 @@ pub enum ConnectAction {
 pub struct ConnectHostIdentity {
     pub device_identifier: String,
     pub session_identifier: String,
+    pub next_publication_sequence: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -153,6 +155,7 @@ fn retire_action(action: ConnectAction) {
         ConnectAction::Metadata { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Membership { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Read { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
+        ConnectAction::Deactivate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::HostIdentity { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Activate { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
         ConnectAction::Publish { result, .. } => { let _ = result.send(Err(Failure::Canceled)); },
@@ -249,11 +252,19 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     },
                     HttpCompletion::Command { result, response } => response.complete(result),
                     HttpCompletion::Activated { mut result, response } => {
+                        if result.as_ref().is_ok_and(|cluster| cluster.active_device_identifier != identity.device_identifier) { result = Err(Failure::UnknownOutcome); }
                         let expected_host = activation_previous_host.take();
                         if authority.current_host != expected_host && authority.current_host.as_deref() != Some(identity.device_identifier.as_str()) {
                             result = Err(Failure::UnknownOutcome);
                         }
-                        if let Ok(cluster) = &result { authority.observe(cluster); }
+                        if let Ok(cluster) = &result { authority.observe(cluster); authority.publication_retired = false; }
+                        response.complete(result);
+                    },
+                    HttpCompletion::Deactivated { mut result, response } => {
+                        if result.as_ref().is_ok_and(|cluster| cluster.active_device_identifier == identity.device_identifier
+                            || authority.current_host.as_deref() == Some(identity.device_identifier.as_str())
+                                && authority.timestamp > (cluster.server_at_milliseconds, cluster.changed_at_milliseconds)) { result = Err(Failure::UnknownOutcome); }
+                        if let Ok(cluster) = &result { authority.observe(cluster); activation_guard.complete_deactivation(); }
                         response.complete(result);
                     },
                     HttpCompletion::Published { result, response } => {
@@ -361,9 +372,11 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     },
                     ConnectAction::HostIdentity { generation: expected, result } => {
                         if let Some(failure) = http_action_failure(expected, generation, registered, false, cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
-                        let response = identity.playback_session_identifier.as_ref().map(|session_identifier| ConnectHostIdentity {
-                            device_identifier: identity.device_identifier.clone(), session_identifier: session_identifier.clone()
-                        }).ok_or(Failure::Unsupported);
+                        let response = identity.playback_session_identifier.as_ref().ok_or(Failure::Unsupported).and_then(|session_identifier| {
+                            publication_order.next_sequence().map(|next_publication_sequence| ConnectHostIdentity {
+                                device_identifier: identity.device_identifier.clone(), session_identifier: session_identifier.clone(), next_publication_sequence
+                            })
+                        });
                         let _ = result.send(response);
                     },
                     ConnectAction::Activate { generation: expected, snapshot, activation, readiness, activation_cancellation, result } => {
@@ -382,6 +395,16 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         activation_previous_host = Some(activation.expected_previous_host_device_identifier.clone());
                         submit_http_work(&work, HttpWork::Activate { snapshot, activation, readiness, cluster: reading.cluster.clone(), generation,
                             cancellation: activation_cancellation, response: PendingHttpResponse::new(result) })?; busy = true;
+                    },
+                    ConnectAction::Deactivate { generation: expected, snapshot, cancellation: deactivation_cancellation, result } => {
+                        if result.is_closed() { continue; }
+                        if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled() || deactivation_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if snapshot.device_identifier != identity.device_identifier || identity.playback_session_identifier.as_deref() != Some(snapshot.session_identifier.as_str()) {
+                            let _ = result.send(Err(Failure::Canceled)); continue;
+                        }
+                        if let Err(failure) = publication_order.acquire(snapshot.sequence) { let _ = result.send(Err(failure)); continue; }
+                        submit_http_work(&work, HttpWork::Deactivate { snapshot, cancellation: deactivation_cancellation,
+                            response: PendingHttpResponse::new(result) })?; busy = true;
                     },
                     ConnectAction::Publish { generation: expected, snapshot, publication_cancellation, result } => {
                         if result.is_closed() { continue; }

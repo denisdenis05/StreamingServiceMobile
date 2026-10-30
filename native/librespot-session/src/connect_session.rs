@@ -9,7 +9,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_activation::{build_explicit_activation, ConnectActivationPlayerReadiness, ConnectExplicitActivation}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack, search_request, search_address, decode_search_response}, connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_activation::{build_explicit_activation, ConnectActivationPlayerReadiness, ConnectExplicitActivation}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack, search_request, search_address, decode_search_response}, connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_deactivation, build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -91,6 +91,7 @@ pub trait ConnectSessionOperations: Send {
     fn current_membership(&mut self) -> impl Future<Output = Result<Option<ConnectJamMembership>, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn activate(&mut self, _snapshot: ConnectPublicationSnapshot, _activation: ConnectExplicitActivation,
         _readiness: ConnectActivationPlayerReadiness, _cluster: ConnectCluster, _generation: u64) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { async { Err(Failure::Unsupported) } }
+    fn deactivate(&mut self, _snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn publish(&mut self, _snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { async { Err(Failure::Unsupported) } }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send;
 }
@@ -230,10 +231,25 @@ impl NativeConnectSession {
         let body = publication.write_to_bytes().map_err(|_| Failure::InvalidInput)?;
         let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
         self.publication_state.begin_dispatch(snapshot.sequence)?;
+        self.registration = registration;
         let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Publication).await?;
         let observed = decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)?;
         if observed.active_device_identifier != self.device_identifier() { return Err(Failure::UnknownOutcome); }
-        self.registration = registration;
+        Ok(observed)
+    }
+
+    pub async fn deactivate(&mut self, snapshot: ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
+        if !self.registered { return Err(Failure::Canceled); }
+        let timestamp = publication_server_timestamp(&snapshot, crate::connect_transport::native_monotonic_milliseconds())?;
+        let publication = build_deactivation(&self.registration, &snapshot, timestamp)?;
+        let body = publication.write_to_bytes().map_err(|_| Failure::InvalidInput)?;
+        let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
+        self.publication_state.begin_dispatch(snapshot.sequence)?;
+        let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Publication).await?;
+        let observed = decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)?;
+        if observed.active_device_identifier == self.device_identifier() { return Err(Failure::UnknownOutcome); }
+        self.registration = publication;
+        self.publication_state.complete_deactivation();
         Ok(observed)
     }
 
@@ -281,6 +297,9 @@ impl ConnectSessionOperations for NativeConnectSession {
     fn activate(&mut self, snapshot: ConnectPublicationSnapshot, activation: ConnectExplicitActivation,
         readiness: ConnectActivationPlayerReadiness, cluster: ConnectCluster, generation: u64) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send {
         NativeConnectSession::activate(self, snapshot, activation, readiness, cluster, generation)
+    }
+    fn deactivate(&mut self, snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send {
+        NativeConnectSession::deactivate(self, snapshot)
     }
     fn publish(&mut self, snapshot: ConnectPublicationSnapshot) -> impl Future<Output = Result<ConnectCluster, Failure>> + Send { NativeConnectSession::publish(self, snapshot) }
     fn command(&mut self, target_device_identifier: &str, body: Value) -> impl Future<Output = Result<ConnectCommandAcknowledgement, Failure>> + Send {

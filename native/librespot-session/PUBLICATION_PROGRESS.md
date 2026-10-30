@@ -1,3 +1,19 @@
+# Host demotion — 2026-10-30
+
+Deactivation now travels through the typed JNI controls and bounded actor HTTP
+worker. It preserves real player state while marking the device inactive and
+hidden with no playable/control capability. Confirmed demotion permits a new
+explicit activation without resetting sequence order. Uncertain or stale results
+do not reset authority protections; mutations never replay. The actual next
+publication sequence is available with native device/session identity.
+
+Complete locked native tests: 220 passed. Dedicated mapping:
+`connect_publication` (inactive state, order and exhaustion), `connect_activation`
+(explicit dispatch boundary), `connect_actor` (known/unknown demotion, cancellation,
+remote host replacement and late result ordering), `connect_bridge` (strict
+snapshot/generation decoding). Android/app composition and live behavior remain
+separate pending work; no APK has been rebuilt for this chapter.
+
 # Explicit activation transport — 2026-10-30
 
 The native actor now exposes actual device/player-session identity and explicit

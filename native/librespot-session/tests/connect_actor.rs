@@ -38,7 +38,7 @@ const OTHER_TARGET: &str = "replacement-host-device";
 const COMMAND_FIELD: &str = "command";
 
 #[derive(Default)]
-struct Calls { search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
+struct Calls { deactivation_sequences: Vec<u64>, deactivation_failure: Option<Failure>, search_requests: Vec<ConnectSearchInput>, membership_requests: usize, connections: Vec<String>, commands: Vec<(String, Value)>, refreshes: usize, metadata_requests: Vec<Vec<String>>, publication_sequences: Vec<u64> }
 
 struct FakeSession {
     calls: Arc<Mutex<Calls>>, registration_failure: Option<Failure>, snapshot: Arc<Mutex<ConnectCluster>>,
@@ -96,6 +96,15 @@ impl ConnectSessionOperations for FakeSession {
         published.server_at_milliseconds = cluster.server_at_milliseconds;
         published.changed_at_milliseconds = cluster.changed_at_milliseconds;
         Ok(published)
+    }
+    async fn deactivate(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
+        {
+            let mut calls = self.calls.lock().unwrap(); calls.deactivation_sequences.push(snapshot.sequence);
+            if let Some(failure) = calls.deactivation_failure { return Err(failure); }
+        }
+        if let Some(started) = self.publication_started.take() { let _ = started.send(()); }
+        if let Some(gate) = self.publication_gate.take() { gate.await.map_err(|_| Failure::UnknownOutcome)?; }
+        Ok(self.snapshot.lock().unwrap().clone())
     }
     async fn publish(&mut self, snapshot: streaming_spotify_session::connect_publication::ConnectPublicationSnapshot) -> Result<ConnectCluster, Failure> {
         self.calls.lock().unwrap().publication_sequences.push(snapshot.sequence);
@@ -733,7 +742,10 @@ async fn activation_read(harness: &Harness) -> streaming_spotify_session::connec
 async fn activate_sample(actions: &mpsc::Sender<ConnectAction>, reading: &streaming_spotify_session::connect_transport::ConnectReading,
     generation: u64, previous_host: &str, playback_output_ready: bool) -> Result<ConnectCluster, Failure> {
     let native_now = streaming_spotify_session::connect_transport::native_monotonic_milliseconds();
-    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    let (result, receipt) = oneshot::channel();
+    actions.send(ConnectAction::HostIdentity { generation: GENERATION, result }).await.unwrap();
+    let next_sequence = receipt.await.unwrap()?.next_publication_sequence;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.sequence = next_sequence;
     snapshot.sampled_native_monotonic_milliseconds = native_now;
     snapshot.sampled_server_timestamp_milliseconds = reading.cluster.server_at_milliseconds as u64
         + native_now - reading.request_completed_native_monotonic_milliseconds;
@@ -825,5 +837,76 @@ async fn a_host_change_during_activation_prevents_late_success_from_restoring_pu
     release.send(()).unwrap();
     assert!(matches!(activation.await, Err(Failure::UnknownOutcome)));
     assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    harness.stop().await;
+}
+
+async fn deactivate_sample(actions: &mpsc::Sender<ConnectAction>, generation: u64, sequence: u64, cancellation: CancellationToken) -> Result<ConnectCluster, Failure> {
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned(); snapshot.sequence = sequence;
+    let (result, receipt) = oneshot::channel();
+    actions.send(ConnectAction::Deactivate { generation, snapshot, cancellation, result }).await.unwrap();
+    receipt.await.unwrap()
+}
+
+#[tokio::test]
+async fn known_deactivation_retires_publication_and_allows_a_new_explicit_activation_with_a_fresh_sequence() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    deactivate_sample(&harness.actions, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await.unwrap();
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    assert_eq!(harness.calls.lock().unwrap().deactivation_sequences, [publication::SECOND_SEQUENCE]);
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn unknown_deactivation_never_resets_the_activation_fence_or_replays_its_sequence() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    harness.calls.lock().unwrap().deactivation_failure = Some(Failure::UnknownOutcome);
+    assert!(matches!(deactivate_sample(&harness.actions, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::UnknownOutcome)));
+    assert!(matches!(deactivate_sample(&harness.actions, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    let reading = activation_read(&harness).await;
+    assert!(matches!(activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await, Err(Failure::UnknownOutcome)));
+    assert_eq!(harness.calls.lock().unwrap().deactivation_sequences.len(), ONE_CALL);
+    harness.stop().await;
+}
+
+#[tokio::test]
+async fn stale_and_canceled_deactivation_cannot_touch_the_registered_device() {
+    let mut harness = Harness::start(None); harness.register().await;
+    assert!(matches!(deactivate_sample(&harness.actions, STALE_GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
+    let cancellation = CancellationToken::new(); cancellation.cancel();
+    assert!(matches!(deactivate_sample(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, cancellation).await, Err(Failure::Canceled)));
+    assert!(harness.calls.lock().unwrap().deactivation_sequences.is_empty()); harness.stop().await;
+}
+
+#[tokio::test]
+async fn deactivation_can_hide_the_local_device_after_a_remote_host_has_replaced_it() {
+    let mut harness = Harness::start(None); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    observe_publication_host(&mut harness, TARGET).await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let cluster = deactivate_sample(&harness.actions, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new()).await.unwrap();
+    assert_eq!(cluster.active_device_identifier, TARGET);
+    assert_eq!(harness.calls.lock().unwrap().deactivation_sequences.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn a_newer_local_host_observation_prevents_old_demotion_acknowledgement_from_resetting_authority() {
+    let (release, gate) = oneshot::channel(); let (started, observed_start) = oneshot::channel();
+    let mut harness = Harness::with_publication(None, None, None, None, None, Some(gate), Some(started)); harness.register().await;
+    observe_publication_host(&mut harness, DEVICE).await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let actions = harness.actions.clone();
+    let deactivation = deactivate_sample(&actions, GENERATION, publication::FIRST_SEQUENCE, CancellationToken::new());
+    tokio::pin!(deactivation);
+    tokio::select! { _result = &mut deactivation => panic!("{EARLY_ACTIVATION_MESSAGE}"), result = observed_start => result.unwrap() }
+    let mut changed = playable_cluster(DEVICE); changed.server_at_milliseconds = publication::SERVER_TIMESTAMP_MILLISECONDS as i64;
+    harness.incoming.send(DealerInput::Cluster(changed)).await.unwrap(); harness.events.recv().await.unwrap();
+    release.send(()).unwrap(); assert!(matches!(deactivation.await, Err(Failure::UnknownOutcome)));
     harness.stop().await;
 }

@@ -79,3 +79,11 @@ fn cached_server_timestamps_do_not_pass_a_fresh_native_observation_bracket() {
     let mut cached = cluster(); cached.server_at_milliseconds = OLD_SERVER_TIMESTAMP_MILLISECONDS;
     assert!(matches!(build_explicit_activation(&registration(), &snapshot(), &activation(), &readiness(), &cached, GENERATION, CURRENT_MILLISECONDS), Err(Failure::Canceled)));
 }
+
+#[test]
+fn only_a_known_deactivation_boundary_allows_a_new_explicit_activation_dispatch() {
+    let mut guard = ConnectActivationDispatchGuard::default(); guard.acquire(false).unwrap();
+    assert_eq!(guard.acquire(false), Err(Failure::UnknownOutcome));
+    guard.complete_deactivation(); guard.acquire(false).unwrap();
+    assert_eq!(guard.acquire(false), Err(Failure::UnknownOutcome));
+}
