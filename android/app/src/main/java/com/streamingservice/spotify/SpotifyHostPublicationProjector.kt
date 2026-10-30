@@ -1,7 +1,6 @@
 package com.streamingservice.spotify
 
 import com.streamingservice.player.queue.RepeatMode
-import com.streamingservice.player.queue.QueueNumbers
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,7 +22,7 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         val snapshot = queue.snapshot
         val duration = snapshot.durationMilliseconds ?: unavailable()
         val now = clock.nowElapsedRealtimeMilliseconds()
-        if (snapshot.identity != anchor.identity || snapshot.identity.deviceIdentifier != nativeIdentity.deviceIdentifier
+        if (!snapshot.externalAuthorityAbsent || snapshot.identity != anchor.identity || snapshot.identity.deviceIdentifier != nativeIdentity.deviceIdentifier
             || !identifier(nativeIdentity.deviceIdentifier) || !identifier(nativeIdentity.sessionIdentifier)
             || sequence !in FirstSequence..MaximumSafeInteger || queue.entries.isEmpty() || queue.entries.size > MaximumQueueTracks
             || queue.entries.map { entry -> entry.occurrenceIdentifier }.toSet().size != queue.entries.size
@@ -64,7 +63,7 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
     }
 
     fun activation(requestIdentifier: String, anchor: SpotifyHostClockAnchor): JSONObject {
-        if (!identifier(requestIdentifier) || !identifier(anchor.previousHostDeviceIdentifier)) unavailable()
+        if (!identifier(requestIdentifier) || anchor.previousHostDeviceIdentifier.isNotEmpty() && !identifier(anchor.previousHostDeviceIdentifier)) unavailable()
         return JSONObject().put(RequestField, requestIdentifier).put(GenerationField, anchor.identity.generation)
             .put(PreviousHostField, anchor.previousHostDeviceIdentifier)
             .put(ReadStartedField, anchor.nativeReadStartedMilliseconds).put(ReadCompletedField, anchor.nativeReadCompletedMilliseconds)
@@ -108,8 +107,8 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         private const val MinimumMilliseconds = 0L
         private const val MinimumDurationMilliseconds = 1L
         private const val MinimumServerMilliseconds = 1L
-        private const val MaximumSafeInteger = QueueNumbers.MaximumSafeInteger
-        private const val MaximumUncertaintyMilliseconds = 2000L
+        private const val MaximumSafeInteger = SpotifyHostingPolicy.MaximumSafeInteger
+        private const val MaximumUncertaintyMilliseconds = SpotifyHostingPolicy.MaximumClockUncertaintyMilliseconds
         private const val MaximumPlayerSampleAgeMilliseconds = 1500L
         private const val MaximumAnchorAgeMilliseconds = 15000L
         private const val MinimumMessageIdentifier = 0L

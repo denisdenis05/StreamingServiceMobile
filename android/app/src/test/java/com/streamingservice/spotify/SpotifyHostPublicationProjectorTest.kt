@@ -12,7 +12,7 @@ class SpotifyHostPublicationProjectorTest {
         val identity = SpotifyHostIdentity(AppAccount, SpotifyAccount, Jam, Device, Handle, Generation, SpotifyPlayerIdentity(Engine, Authentication))
         val cursor = SpotifyHostPlayerCursor(Queue, QueueRevision, ContentRevision, ControlRevision)
         val snapshot = SpotifyHostPlayerSnapshot(identity, cursor, SecondOccurrence, PositionMilliseconds, DurationMilliseconds,
-            SampleElapsedMilliseconds, true, false, false)
+            SampleElapsedMilliseconds, true, false, false, true)
         val queue = SpotifyHostPlayerQueue(snapshot, listOf(SpotifyHostQueueEntry(FirstOccurrence, Recording), SpotifyHostQueueEntry(SecondOccurrence, Recording)),
             false, RepeatMode.Off.protocolValue, NormalRate)
         val mappings = listOf(SpotifyHostRecordingMapping(FirstOccurrence, Recording, Track), SpotifyHostRecordingMapping(SecondOccurrence, Recording, Track))
@@ -89,11 +89,17 @@ class SpotifyHostPublicationProjectorTest {
         assertEquals(PreviousHost, activation.getString(PreviousHostField))
         assertEquals(Generation, activation.getLong(GenerationField))
     }
+    @Test fun initialActivationAllowsTheObservedAbsenceOfAPreviousActiveHost() {
+        val fixture = Fixture()
+        val activation = fixture.projector.activation(Request, fixture.anchor.copy(previousHostDeviceIdentifier = EmptyHost))
+        assertEquals(EmptyHost, activation.getString(PreviousHostField))
+    }
     private fun unavailable(operation: () -> Any?) {
         try { operation(); throw AssertionError(ExpectedFailure) }
         catch (failure: SpotifyPlayerFailure) { assertEquals(SpotifyPlayerFailureReason.Unavailable, failure.reason) }
     }
     companion object {
+        private const val EmptyHost = ""
         private const val EmptyCount = 0
         private const val FirstIndex = 0
         private const val Sequence = 1L

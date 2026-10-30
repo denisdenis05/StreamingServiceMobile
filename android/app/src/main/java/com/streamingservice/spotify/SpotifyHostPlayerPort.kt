@@ -36,7 +36,8 @@ data class SpotifyHostPlayerSnapshot(
     val sampledAtElapsedMilliseconds: Long,
     val ready: Boolean,
     val paused: Boolean,
-    val buffering: Boolean
+    val buffering: Boolean,
+    val externalAuthorityAbsent: Boolean
 )
 data class SpotifyHostQueueEntry(val occurrenceIdentifier: String, val recordingIdentifier: String)
 data class SpotifyHostPlayerQueue(val snapshot: SpotifyHostPlayerSnapshot, val entries: List<SpotifyHostQueueEntry>,
@@ -240,7 +241,7 @@ class SpotifyHostPlayerPort(
         val paused = value.getString(ProtocolFields.PlaybackIntent) == PauseIntent
         return SpotifyHostPlayerSnapshot(identity, cursor(value), value.optJSONObject(ProtocolFields.CurrentEntry)?.getString(ProtocolFields.EntryIdentifier),
             integer(value, ProtocolFields.PositionMilliseconds), if (value.isNull(ProtocolFields.DurationMilliseconds)) null else integer(value, ProtocolFields.DurationMilliseconds),
-            integer(value, ProtocolFields.SampledAtMonotonicMilliseconds), ready, paused, state == PlayerProtocol.BufferingState || state == PlayerProtocol.ResolvingState)
+            integer(value, ProtocolFields.SampledAtMonotonicMilliseconds), ready, paused, state == PlayerProtocol.BufferingState || state == PlayerProtocol.ResolvingState, value.isNull(ProtocolFields.ExternalAuthorityIdentifier))
     }
     private fun requireCursor(value: JSONObject, job: Job) { requireIdentity(value, job.identity); if (cursor(value) != job.expected) fail(SpotifyPlayerFailureReason.Conflict) }
     private fun requireIdentity(value: JSONObject, identity: SpotifyHostIdentity) {

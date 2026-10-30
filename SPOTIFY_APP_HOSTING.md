@@ -39,3 +39,21 @@ app controls still need composition. Raw playable registration remains disabled.
 No current APK or live probe demonstrates app-led hosting. Current native catalog
 search returned backpressure, which also leaves live local-to-Spotify matching
 unverified. Keep these source tests separate from phone/audio acceptance.
+
+## Kotlin native host transport
+
+`SpotifyHostNativeTransport` reads actual native device/session/next-sequence
+identity, verifies owned Jam membership before and after a fresh source read,
+and captures the real native/server/elapsed clock bracket. Guest ownership,
+account or host replacement, malformed responses and excessive uncertainty fail
+before activation. Initial activation may observe no previous active host.
+
+Activation receives the actual sampled player readiness and absence of external
+authority. Publication, demotion and Dealer replies use bounded typed native
+controls. Queued cancellation prevents dispatch; replacement or malformed replies
+after a mutation begins remain uncertain and never retry. Native errors expose
+only known failure codes. `SpotifyHostNativeTransportTest.kt` provides dedicated
+registration, clock/membership, cancellation, uncertainty and readiness cases.
+
+This adapter is still a source component. The retained app host runtime, native
+incoming dispatcher, periodic publication and app controls remain to be wired.

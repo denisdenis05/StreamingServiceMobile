@@ -1,3 +1,21 @@
+# Kotlin native host transport — 2026-10-30
+
+Added bounded native host identity/preflight/control composition. Fresh owned
+membership brackets the native read; actual handle/generation, previous host and
+native/server/elapsed clock ranges are validated. Activation uses actual player
+readiness and external-authority evidence. Queue cancellation prevents dispatch;
+uncertain mutation replies or replacement never trigger replay. Safe native
+failure categories remain visible. Initial hosting can observe no previous host.
+
+Verification: Android `./android/gradlew -p android :app:testDebugUnitTest --tests
+'*SpotifyHost*Test' --tests '*SpotifyPlayerServicePortTest'
+-x :app:buildSpotifyLibrespot --console=plain` passed 86 JVM cases;
+`git diff --check` passed. Dedicated tests: SpotifyHostNativeTransportTest.kt,
+plus the no-previous-host case in SpotifyHostPublicationProjectorTest.kt. No new
+live/session/device results or APK packaging. Continue retained host runtime,
+incoming command handling, real state publication and app controls; source
+transport/codec tests do not establish working app-led hosting.
+
 # Native host demotion and repeated explicit activation — 2026-10-30
 
 Added a typed, bounded native deactivation operation through JNI, the responsive
