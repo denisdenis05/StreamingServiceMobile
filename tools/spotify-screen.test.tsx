@@ -33,6 +33,8 @@ const controller = {
   reconcileSharedState: jest.fn(), createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
+const HostingScreen = '../src/pages/SpotifyJam/SpotifyHosting.render';
+jest.doMock(HostingScreen, () => ({ __esModule: true, default: () => null }));
 const SharedPlaybackScreen = '../src/pages/SpotifyJam/SpotifySharedPlayback.render';
 const PlaybackControlScreen = '../src/pages/SpotifyJam/SpotifyPlaybackControls.render';
 jest.doMock(PlaybackControlScreen, () => ({ __esModule: true, default: () => null }));

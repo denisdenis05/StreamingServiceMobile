@@ -15,7 +15,9 @@ class SpotifyHostCoordinatorTest {
         fun drain() { while (pending.isNotEmpty()) pending.removeFirst().run() }
     }
     private class Timer(val action: () -> Unit, var cancelled: Boolean = false)
-    private class Fixture {
+    private class Fixture(mappingEnabled: Boolean = false) {
+        val mapping = CompletableFuture<String>()
+        var mappingCancellations = EmptyCount
         val decisions = Decisions()
         val timers = mutableListOf<Timer>()
         var now = ElapsedMilliseconds
@@ -77,12 +79,28 @@ class SpotifyHostCoordinatorTest {
         fun anchor() = SpotifyHostClockAnchor(identity, NativeMilliseconds, NativeMilliseconds, now, ServerMilliseconds + now, PrecisionMilliseconds, host)
         val coordinator = SpotifyHostCoordinator(identity, player, transport, { now },
             { _, action -> val timer = Timer(action); timers.add(timer); SpotifyNativeFollowerCancellation { timer.cancelled = true } },
-            decisions, { Request }, { current }, { snapshot -> snapshots.add(snapshot); onSnapshot(snapshot) })
+            decisions, { Request }, { current }, { snapshot -> snapshots.add(snapshot); onSnapshot(snapshot) },
+            if (!mappingEnabled) null else object : SpotifyHostQueueMappingSource {
+                override fun resolve(identity: SpotifyHostIdentity, recordingIdentifier: String): SpotifyPlayerOperation<String> = SpotifyPlayerOperation(mapping) {
+                    mappingCancellations += SingleCount; mapping.completeExceptionally(SpotifyConnectFailure(Superseded))
+                }
+            })
         fun start(): CompletableFuture<SpotifyHostSnapshot> { val result = coordinator.start(PreviousHost, cursor, mappings); decisions.drain(); return result }
         fun tick() { now += PublishIntervalMilliseconds; timers.last().action(); decisions.drain() }
         fun stop(): CompletableFuture<Unit> { val result = coordinator.stop(); decisions.drain(); return result }
         fun <Response> operation(value: Response) = SpotifyPlayerOperation(CompletableFuture.completedFuture(value)) {}
         fun <Response> failed(failure: Throwable) = CompletableFuture<Response>().also { completion -> completion.completeExceptionally(failure) }
+    }
+    @Test fun newQueueEntriesPauseAndResolveThroughBackgroundWorkBeforeFreshPublication() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.recording = OtherRecording; fixture.tick()
+        assertEquals(SpotifyHostStatus.Resolving, fixture.coordinator.snapshot().status); assertEquals(SingleCount, fixture.pauseCount)
+        assertTrue(fixture.publications.isEmpty()); fixture.mapping.complete(Track); fixture.decisions.drain()
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status); assertEquals(SingleCount, fixture.publications.size)
+    }
+    @Test fun stoppingBackgroundMappingCancelsTheJobAndStillWithdraws() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.recording = OtherRecording; fixture.tick()
+        fixture.stop().get(); assertEquals(SingleCount, fixture.mappingCancellations); assertEquals(SingleCount, fixture.deactivations.size)
+        assertTrue(fixture.publications.isEmpty())
     }
     @Test fun hostChangeBeforeActivationConfirmationNeverReportsHosting() {
         val fixture = Fixture(); fixture.activatedHost = ForeignHost

@@ -116,3 +116,20 @@ for a still-owned native connection. Actual connection/generation replacement ca
 still reject cleanup and must remain a failed barrier until native retirement.
 Dedicated suites: native connect_publication/connect_actor/connect_bridge and
 Kotlin SpotifyHostNativeTransportTest/SpotifyHostCoordinatorTest.
+
+## Integrated app action and background mapping
+
+SpotifyHostApplicationRuntime now composes the retained native owner, real player,
+Connect transport, command observer, metadata broker and authentication renewal.
+SpotifyJamPlayback routes unique headless authentication/recording jobs to the
+correct host or follower. Connect shutdown attempts withdrawal before native
+retirement and releases retained bindings after actual connection removal.
+
+SpotifyHostingStore and SpotifyHostingQueue capture and recheck the actual queue
+for the explicit app action. Starting either following route waits for host
+retirement. New local recordings use SpotifyHostRecordingBroker and
+SpotifyBackgroundHostingTask with native job-bound search. Playback pauses while
+matching; a later Play remains explicit. The feature tests listed in the latest
+progress chapter cover these behaviors. Earlier sections describe historical
+composition gaps; this section supersedes those source statuses. Live app hosting,
+second-account admission and measured audio/background behavior remain unverified.

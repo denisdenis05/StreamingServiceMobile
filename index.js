@@ -1,6 +1,8 @@
 import 'react-native-url-polyfill/auto';
 import { AppRegistry } from 'react-native';
 import App from './App';
+import { executeSpotifyBackgroundHosting } from './src/services/SpotifyBackgroundHostingHeadless';
+import { SpotifyBackgroundHostingPolicy } from './src/services/spotify/SpotifyBackgroundHostingTask';
 import { name as appName } from './app.json';
 import './src/services/SpotifyIntegration';
 import { executeSpotifyBackgroundAuthentication } from './src/services/SpotifyBackgroundAuthenticationHeadless';
@@ -16,4 +18,9 @@ AppRegistry.registerHeadlessTask('StreamingServiceSpotifyRecording', () => async
 AppRegistry.registerHeadlessTask(SpotifyBackgroundAuthenticationPolicy.taskName, () => async taskData => {
   if (typeof taskData?.requestIdentifier !== SpotifyBackgroundAuthenticationPolicy.stringType) return;
   await executeSpotifyBackgroundAuthentication(taskData.requestIdentifier);
+});
+
+AppRegistry.registerHeadlessTask(SpotifyBackgroundHostingPolicy.taskName, () => async taskData => {
+  if (typeof taskData?.requestIdentifier !== SpotifyBackgroundHostingPolicy.stringType) return;
+  await executeSpotifyBackgroundHosting(taskData.requestIdentifier);
 });

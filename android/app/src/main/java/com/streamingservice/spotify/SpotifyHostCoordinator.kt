@@ -4,7 +4,7 @@ import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
-enum class SpotifyHostStatus { Starting, Hosting, Stopping, Stopped, Failed }
+enum class SpotifyHostStatus { Starting, Resolving, Hosting, Stopping, Stopped, Failed }
 data class SpotifyHostSnapshot(val identity: SpotifyHostIdentity, val status: SpotifyHostStatus, val failure: String? = null)
 
 class SpotifyHostCoordinator(
@@ -16,7 +16,8 @@ class SpotifyHostCoordinator(
     private val executor: Executor,
     private val identifiers: SpotifyPlayerIdentifierSource,
     private val isCurrent: (SpotifyHostIdentity) -> Boolean,
-    private val observer: (SpotifyHostSnapshot) -> Unit = {}
+    private val observer: (SpotifyHostSnapshot) -> Unit = {},
+    private val mappingSource: SpotifyHostQueueMappingSource? = null
 ) : SpotifyHostSessionCoordinator {
     private val projector = SpotifyHostPublicationProjector(clock)
     private val started = CompletableFuture<SpotifyHostSnapshot>()
@@ -35,10 +36,11 @@ class SpotifyHostCoordinator(
     private var mutationPending = false
     private var startupTimer: SpotifyNativeFollowerCancellation? = null
     private var timer: SpotifyNativeFollowerCancellation? = null
+    @Volatile private var resolving = false
     @Volatile private var failure: String? = null
     @Volatile private var currentSnapshot = SpotifyHostSnapshot(identity, SpotifyHostStatus.Stopped)
     private val dispatcher = SpotifyHostCommandDispatcher(identity, player, transport, SpotifyHostCommandEventDecoder(clock), clock, scheduler,
-        { selected -> selected == identity && current() }, { receipt -> decide { remember(receipt) } }, { decide { terminate(CommandFailed) } })
+        { selected -> selected == identity && !resolving && current() }, { receipt -> decide { remember(receipt) } }, { decide { terminate(CommandFailed) } })
 
     override fun snapshot(): SpotifyHostSnapshot = currentSnapshot
     override fun commandHandlingReady(selected: SpotifyHostIdentity): Boolean = selected == identity && !closing && requested && dispatcher.isReady(selected)
@@ -119,6 +121,10 @@ class SpotifyHostCoordinator(
         perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
             sample { queue ->
                 lastCursor = queue.snapshot.cursor
+                val missing = queue.entries.firstOrNull { entry -> mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
+                if (missing != null && mappingSource != null) {
+                    resolve(queue, missing); return@sample
+                }
                 val publication = project(queue, anchor)
                 val provenance = acceptedCommand
                 perform(transport.publish(identity, publication), true) {
@@ -127,6 +133,19 @@ class SpotifyHostCoordinator(
                     mappings = mappings.filter { mapping -> mapping.recordingIdentifier in recordings }
                     schedule()
                 }
+            }
+        }
+    }
+    private fun resolve(queue: SpotifyHostPlayerQueue, entry: SpotifyHostQueueEntry) {
+        resolving = true
+        publish(SpotifyHostStatus.Resolving)
+        val pause = player.pause(identity, queue.snapshot.cursor)
+        performFuture(pause, {}, false) {
+            perform(requireNotNull(mappingSource).resolve(identity, entry.recordingIdentifier)) { track ->
+                mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
+                resolving = false
+                publish(SpotifyHostStatus.Hosting)
+                refresh()
             }
         }
     }

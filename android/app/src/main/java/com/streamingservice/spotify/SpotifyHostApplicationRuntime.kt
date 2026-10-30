@@ -15,16 +15,16 @@ object SpotifyHostApplicationRuntime {
     @Volatile private var instance: SpotifyHostRuntime? = null
     @UnstableApi @Synchronized fun get(application: Application): SpotifyHostRuntime {
         instance?.let { runtime -> return runtime }
-        val main = SpotifyPlayerMainExecutor()
+        val mainExecutor = SpotifyPlayerMainExecutor()
         val identifiers = SpotifyPlayerIdentifierSource { UUID.randomUUID().toString() }
         val clock = SpotifyNativeFollowerClock { SystemClock.elapsedRealtime() }
-        val decisions = executor(DecisionWorkers, DecisionCapacity)
-        val network = executor(NetworkWorkers, NetworkCapacity)
-        val scheduled = ScheduledThreadPoolExecutor(SchedulerWorkers).apply {
+        val decisionExecutor = executor(DecisionWorkers, DecisionCapacity)
+        val networkExecutor = executor(NetworkWorkers, NetworkCapacity)
+        val schedulerExecutor = ScheduledThreadPoolExecutor(SchedulerWorkers).apply {
             setKeepAliveTime(IdleTimeoutSeconds, TimeUnit.SECONDS); allowCoreThreadTimeOut(true); removeOnCancelPolicy = true
         }
         val scheduler = SpotifyNativeFollowerScheduler { delayMilliseconds, action ->
-            val future = scheduled.schedule(action, delayMilliseconds, TimeUnit.MILLISECONDS)
+            val future = schedulerExecutor.schedule(action, delayMilliseconds, TimeUnit.MILLISECONDS)
             SpotifyNativeFollowerCancellation { future.cancel(false) }
         }
         val tokens = SpotifyJamPlaybackProtocol(object : SpotifyJamPlaybackTokenDecoder {
@@ -37,8 +37,8 @@ object SpotifyHostApplicationRuntime {
             val active: (SpotifyHostIdentity) -> Boolean = { selected -> runtime.isActiveConfiguration(configuration, selected) }
             val owned: (SpotifyHostIdentity) -> Boolean = { selected -> runtime.ownsConfiguration(configuration, selected) }
             val recordingCurrent: (SpotifyNativeFollowerIdentity) -> Boolean = { selected -> selected == follower && active(identity) }
-            val runner = SpotifyHeadlessRecordingRunner(main, SpotifyAndroidHeadlessRecordingDispatch(application))
-            val broker = SpotifyBackgroundRecordingBroker(SpotifyConnectFollowerMetadataSource(network, recordingCurrent), runner, scheduler, identifiers,
+            val runner = SpotifyHeadlessRecordingRunner(mainExecutor, SpotifyAndroidHeadlessRecordingDispatch(application))
+            val broker = SpotifyBackgroundRecordingBroker(SpotifyConnectFollowerMetadataSource(networkExecutor, recordingCurrent), runner, scheduler, identifiers,
                 { configuration.playback.account.market }, recordingCurrent, { selected, token -> runtime.synchronizeAuthentication(configuration, selected, token) })
             val resolver = object : SpotifyHostRecordingResolver {
                 override fun resolve(identity: SpotifyHostIdentity, spotifyTrackIdentifier: String): SpotifyPlayerOperation<SpotifyHostRecordingResolution> {
@@ -54,25 +54,28 @@ object SpotifyHostApplicationRuntime {
                     return SpotifyPlayerOperation(result, resolution::cancel)
                 }
             }
+            val hostingRunner = SpotifyHeadlessRecordingRunner(mainExecutor, SpotifyAndroidHeadlessRecordingDispatch(application, SpotifyHostRecordingBroker.TaskName))
+            val hostingBroker = SpotifyHostRecordingBroker(configuration, hostingRunner, scheduler, identifiers, networkExecutor,
+                { handle, generation, serialized -> SpotifyConnectNativeExecution().search(handle, generation, serialized) }, { active(identity) })
             val binding = SpotifyPlayerServiceBinding(application, identifiers)
             val session = SpotifyHostNativeSession(configuration, object : SpotifyJamPlaybackPlayerBinding {
                 override fun bind() = binding.bind()
                 override fun unbind() = binding.unbind()
             }, resolver, scheduler, clock, { listener -> SpotifyConnectApplicationRuntime.runtime.observeNativeConnection(listener) },
                 { player, commandReady -> SpotifyHostCoordinator(identity, player,
-                    SpotifyHostNativeTransport(PlatformSpotifyHostingNativeCalls, network, clock, owned, commandReady), clock, scheduler,
-                    decisions, identifiers, active, observer) }, owned, active)
-            SpotifyHostSessionResources(session, broker)
+                    SpotifyHostNativeTransport(PlatformSpotifyHostingNativeCalls, networkExecutor, clock, owned, commandReady), clock, scheduler,
+                    decisionExecutor, identifiers, active, observer, hostingBroker) }, owned, active)
+            SpotifyHostSessionResources(session, broker, hostingBroker)
         }
         val authenticationFactory = SpotifyJamAuthenticationRenewalFactory { configuration, failed ->
             val host = runtime.configurationFor(configuration) ?: throw SpotifyConnectFailure(Superseded)
-            val runner = SpotifyHeadlessRecordingRunner(main, SpotifyAndroidHeadlessRecordingDispatch(application, SpotifyJamAuthenticationRenewal.TaskName))
+            val runner = SpotifyHeadlessRecordingRunner(mainExecutor, SpotifyAndroidHeadlessRecordingDispatch(application, SpotifyJamAuthenticationRenewal.TaskName))
             SpotifyJamAuthenticationRenewal(scheduler, runner, identifiers,
                 { System.currentTimeMillis() / SpotifyJamAuthenticationRenewal.MillisecondsPerSecond }, configuration.account.baseAddress,
                 { identity -> identity == SpotifyHostRuntime.follower(host.identity) && runtime.isActiveConfiguration(host, host.identity) },
-                { identity, token -> runtime.synchronizeAuthentication(host, identity, token) }, decisions, failed)
+                { identity, token -> runtime.synchronizeAuthentication(host, identity, token) }, decisionExecutor, failed)
         }
-        runtime = SpotifyHostRuntime(SpotifyHostConfigurationProtocol(tokens), tokens, factory, decisions,
+        runtime = SpotifyHostRuntime(SpotifyHostConfigurationProtocol(tokens), tokens, factory, decisionExecutor,
             { identity -> SpotifyConnectApplicationRuntime.runtime.ownsNativeConnection(identity.spotifyAccountIdentifier, identity.handle) },
             SpotifyJamPlaybackApplicationRuntime::retireFollowing, authenticationFactory)
         instance = runtime

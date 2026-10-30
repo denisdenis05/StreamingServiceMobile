@@ -29,9 +29,9 @@ function control() {
     setActive(active) { calls.active.push(active); }, dispose() { calls.disposals += Fixture.singleCount; listeners.clear(); },
   };
 }
-function fixture(nativeSelected = true) {
+function fixture(nativeSelected = true, stopHosting) {
   const native = control(); const foreground = control(); const state = { nativeSelected };
-  const controller = new SpotifyPlaybackController({ native, foreground, useNative: () => state.nativeSelected });
+  const controller = new SpotifyPlaybackController({ native, foreground, useNative: () => state.nativeSelected, ...(stopHosting ? { stopHosting } : {}) });
   return { native, foreground, state, controller };
 }
 test(Names.selected, async () => {
@@ -86,4 +86,11 @@ test(Names.stop, async () => {
   const stopped = current.controller.stop(); current.native.state.stop.reject(new Error(Fixture.privateFailure)); await assertion.rejects(stopped);
   assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.Network);
   assertion.equal(JSON.stringify(current.controller.getSnapshot()).includes(Fixture.privateFailure), false);
+});
+
+test('Starting a follower waits for actual host retirement', async () => {
+  const cleanup = deferred(); const current = fixture(true, () => cleanup.promise);
+  const started = current.controller.start(Fixture.market); await flush();
+  assertion.equal(current.native.calls.starts.length, Fixture.emptyCount);
+  cleanup.resolve(); await started; assertion.equal(current.native.calls.starts.length, Fixture.singleCount);
 });

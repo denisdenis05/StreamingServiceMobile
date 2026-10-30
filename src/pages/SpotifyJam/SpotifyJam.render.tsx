@@ -13,6 +13,7 @@ import SpotifyRecordingQueue from './SpotifyRecordingQueue.render';
 import SpotifyHostedQueue from './SpotifyHostedQueue.render';
 import SpotifyJamMembership from './SpotifyJamMembership.render';
 import SpotifySharedPlayback from './SpotifySharedPlayback.render';
+import SpotifyHosting from './SpotifyHosting.render';
 import SpotifyPlaybackControls from './SpotifyPlaybackControls.render';
 import { spotifyRouteSongSelection } from '../../services/spotify/SpotifySongSelection';
 import { SpotifyConnectStatus } from '../../services/spotify/SpotifyConnectStore';
@@ -176,6 +177,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
         <SpotifyJamMembership />
         {snapshot.canReconcileSharedState === true && session?.ownedByCurrentAccount && session.active && session.hostDeviceIdentifier && <DefaultButton title={SpotifyJamCopy.reconcileSharedState}
           onPress={() => { void spotifyMobile.reconcileSharedState(); }} disabled={busy} />}
+        <SpotifyHosting />
         <SpotifySharedPlayback />
         <SpotifyPlaybackControls />
         <SpotifyHostedQueue />

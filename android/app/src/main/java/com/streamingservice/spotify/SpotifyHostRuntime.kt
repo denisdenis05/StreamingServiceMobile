@@ -9,7 +9,7 @@ interface SpotifyHostRuntimeSession {
     fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit>
     fun releaseAfterConnectionRetired(): CompletableFuture<Unit>
 }
-data class SpotifyHostSessionResources(val session: SpotifyHostRuntimeSession, val recordings: SpotifyBackgroundRecordingBroker? = null)
+data class SpotifyHostSessionResources(val session: SpotifyHostRuntimeSession, val recordings: SpotifyBackgroundRecordingBroker? = null, val hostingRecordings: SpotifyHostRecordingBroker? = null)
 fun interface SpotifyHostRuntimeSessionFactory {
     fun create(configuration: SpotifyHostConfiguration, observer: (SpotifyHostSnapshot) -> Unit): SpotifyHostSessionResources
 }
@@ -55,6 +55,7 @@ class SpotifyHostRuntime(
         return request {
             requireAttachment(selected)
             if (!connected(configuration.identity) || !accountMatches(configuration.identity)) throw SpotifyConnectFailure(Superseded)
+            if (cleanup.isCompletedExceptionally) throw SpotifyConnectFailure(CleanupFailed)
             val previous = lifetime
             if (previous != null && active(previous) && previous.configuration.identity == configuration.identity) return@request previous.started
             val retirement = retire(previous)
@@ -124,6 +125,11 @@ class SpotifyHostRuntime(
     fun completeAuthentication(identifier: String, accountIdentifier: String, token: String): CompletableFuture<Unit> =
         lifetime?.authentication?.complete(identifier, accountIdentifier, token) ?: failed(Superseded)
     fun failAuthentication(identifier: String) { lifetime?.authentication?.fail(identifier) }
+    fun claimHostingRecording(identifier: String): String? = lifetime?.resources?.hostingRecordings?.claim(identifier)
+    fun isHostingRecordingPending(identifier: String): Boolean = lifetime?.resources?.hostingRecordings?.isPending(identifier) == true
+    fun completeHostingRecording(identifier: String, track: String) { lifetime?.resources?.hostingRecordings?.complete(identifier, track) ?: throw SpotifyConnectFailure(Superseded) }
+    fun failHostingRecording(identifier: String) { lifetime?.resources?.hostingRecordings?.fail(identifier) }
+    fun searchHostingRecording(identifier: String, serialized: String): CompletableFuture<String> = lifetime?.resources?.hostingRecordings?.search(identifier, serialized) ?: failed(Superseded)
     fun claimRecording(identifier: String): String? = lifetime?.resources?.recordings?.claim(identifier)
     fun isRecordingPending(identifier: String): Boolean = lifetime?.resources?.recordings?.isPending(identifier) == true
     fun completeRecording(identifier: String, serialized: String) { lifetime?.resources?.recordings?.complete(identifier, serialized) ?: throw SpotifyConnectFailure(Superseded) }
@@ -133,7 +139,7 @@ class SpotifyHostRuntime(
 
     fun releaseRetiredConnections(): CompletableFuture<Unit> = request {
         val expired = owned.filter { current -> !connected(current.configuration.identity) }
-        expired.forEach { current -> current.allowed = false; current.authentication?.stop(); current.resources?.recordings?.retire() }
+        expired.forEach { current -> current.allowed = false; current.authentication?.stop(); current.resources?.recordings?.retire(); current.resources?.hostingRecordings?.retire() }
         val releases = expired.map { current -> current.resources?.session?.releaseAfterConnectionRetired() ?: CompletableFuture.completedFuture(Unit) }
         CompletableFuture.allOf(*releases.toTypedArray()).thenApply {
             decisions.execute {
@@ -173,7 +179,7 @@ class SpotifyHostRuntime(
         if (current == null) return cleanup
         current.retirement?.let { completion -> return completion }
         current.allowed = false; current.retiring = true
-        current.authentication?.stop(); current.resources?.recordings?.retire()
+        current.authentication?.stop(); current.resources?.recordings?.retire(); current.resources?.hostingRecordings?.retire()
         current.started.completeExceptionally(SpotifyConnectFailure(Canceled))
         val completion = CompletableFuture<Unit>(); current.retirement = completion
         val previous = cleanup; cleanup = completion

@@ -22,6 +22,7 @@ export interface SpotifyPlaybackControllerDependencies {
   readonly native: NativePlaybackControl;
   readonly foreground: ForegroundPlaybackControl;
   readonly useNative: () => boolean;
+  readonly stopHosting?: () => Promise<void>;
 }
 
 export class SpotifyPlaybackController {
@@ -53,6 +54,7 @@ export class SpotifyPlaybackController {
     this.publish({ ...EmptySpotifyPlaybackSnapshot, status: SharedPlaybackStatus.Waiting });
     try {
       await stopped;
+      await this.dependencies.stopHosting?.();
       if (!this.current(intent)) return;
       if (!this.active) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
       this.selected = selected;

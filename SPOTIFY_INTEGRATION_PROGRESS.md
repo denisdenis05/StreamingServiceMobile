@@ -1,3 +1,35 @@
+# Explicit app hosting and reverse background matching — 2026-10-31
+
+Added Host current app queue / Stop app hosting controls. Preparation retires both
+following routes, waits for actual player readiness, captures bounded native queue
+pages and epochs, matches real app recordings, then rechecks the entire cursor and
+queue before native activation. Matching preserves repeated actual occurrences.
+Guest accounts cannot activate hosting. Browser following also waits for host
+retirement. React view disposal retains acknowledged native ownership.
+
+New local queue recordings use a bounded native broker and the registered
+StreamingServiceSpotifyHostingRecording headless task. The job captures account,
+server, Jam, native generation and recording; native search is available only to
+its one-use claim. The task restores the actual app account, reads app recording
+metadata, decodes the scoped native catalog response and applies the existing
+conservative matcher. Ambiguity, expiry, replacement and malformed responses never
+invent a Spotify identity. The coordinator pauses while matching new entries,
+then publishes a fresh actual sample. It does not resume playback automatically;
+use the app Play control after matching. Stop cancels jobs and withdraws ownership.
+
+Verification: `npm run test:spotify` passed 451 Node and 105 Jest cases; full
+`npx tsc --noEmit` passed. All Android app JVM suites passed 409 cases with
+`./android/gradlew -p android :app:testDebugUnitTest
+-x :app:buildSpotifyLibrespot --no-daemon --console=plain`. Dedicated suites:
+spotify-hosting, spotify-hosting-queue, spotify-hosting-screen,
+spotify-background-hosting, spotify-background-hosting-headless,
+SpotifyHostRecordingBrokerTest and new background coordinator cases. A controller
+regression covers exclusive hosting/following cleanup. `git diff --check` passed.
+Native 235-case verification belongs to the previous chapter. No live host,
+guest or physical-device playback success is claimed. Source integration is ready
+for release packaging; actual second-account and Android lifecycle acceptance
+remain required, and the earlier paired probe is absent.
+
 # Bounded native HTTP contention handling — 2026-10-31
 
 Native reads, catalog searches and host publication/demotion can wait behind an
