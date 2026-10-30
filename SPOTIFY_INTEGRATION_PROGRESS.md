@@ -1,3 +1,38 @@
+# Host native session and exact configuration — 2026-10-31
+
+Added an exact bounded host configuration carrying actual player epochs, cursor,
+previous native host and known recording mappings. Unknown fields, duplicate
+occurrences, malformed Spotify identifiers and coerced revisions are rejected.
+The actual player is configured without clearing authentication or replacing its
+queue. Native connection observation attaches before host activation and survives
+without a React attachment. Lost connections, higher native generations and
+account replacement retire incoming handling; hosting never reactivates implicitly.
+Startup covers binding/configuration timeout as well as coordinator readiness.
+
+App token updates during startup are committed before acknowledgement; later
+updates serialize through the actual player while preserving epochs. Session
+retirement detaches observation immediately, awaits dispatched authentication and
+actual host cleanup, then unbinds. A failed native demotion keeps the binding and
+returns a failed barrier. Dedicated feature suites: SpotifyHostConfigurationProtocolTest,
+SpotifyHostNativeSessionTest and SpotifyHostConnectionEventsTest. The coordinator
+now implements an injected session interface for deterministic lifecycle tests.
+
+Verification: all Android app JVM tests passed 381 cases across 28 suites with
+`./android/gradlew -p android :app:testDebugUnitTest
+-x :app:buildSpotifyLibrespot --no-daemon --console=plain`. Mobile
+`npm run test:spotify` passed 433 Node and 99 Jest cases; full `npx tsc --noEmit`
+passed. The complete native suite passed 223 cases earlier in this source run;
+no Rust changed after that result. `git diff --check` passed. These are source
+results. No new live/session/physical-device result or APK packaging.
+
+Next: application-owned host runtime and native module/task routing, explicit JS
+host controls, background reverse mapping for new local queue additions, and
+cleanup that does not depend on projecting a mapped queue after account/session
+loss. Current cleanup honestly fails when that projection is impossible; do not
+hide this by inventing song data or claiming successful retirement. Keep guest
+admission/second-account and live catalog-backpressure gates explicit. Preserve
+all running Spotify/native processes; the old probe socket has no live owner.
+
 # Native host coordination — 2026-10-30
 
 Added host coordination over injected player, transport, elapsed clock, scheduler

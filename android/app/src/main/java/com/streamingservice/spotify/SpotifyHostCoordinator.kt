@@ -17,7 +17,7 @@ class SpotifyHostCoordinator(
     private val identifiers: SpotifyPlayerIdentifierSource,
     private val isCurrent: (SpotifyHostIdentity) -> Boolean,
     private val observer: (SpotifyHostSnapshot) -> Unit = {}
-) {
+) : SpotifyHostSessionCoordinator {
     private val projector = SpotifyHostPublicationProjector(clock)
     private val started = CompletableFuture<SpotifyHostSnapshot>()
     private val stopped = CompletableFuture<Unit>()
@@ -40,11 +40,11 @@ class SpotifyHostCoordinator(
     private val dispatcher = SpotifyHostCommandDispatcher(identity, player, transport, SpotifyHostCommandEventDecoder(clock), clock, scheduler,
         { selected -> selected == identity && current() }, { receipt -> decide { remember(receipt) } }, { decide { terminate(CommandFailed) } })
 
-    fun snapshot(): SpotifyHostSnapshot = currentSnapshot
-    fun commandHandlingReady(selected: SpotifyHostIdentity): Boolean = selected == identity && !closing && requested && dispatcher.isReady(selected)
-    fun accept(batch: SpotifyConnectBatch) = dispatcher.accept(batch)
+    override fun snapshot(): SpotifyHostSnapshot = currentSnapshot
+    override fun commandHandlingReady(selected: SpotifyHostIdentity): Boolean = selected == identity && !closing && requested && dispatcher.isReady(selected)
+    override fun accept(batch: SpotifyConnectBatch) = dispatcher.accept(batch)
 
-    @Synchronized fun start(previousHostDeviceIdentifier: String, expectedCursor: SpotifyHostPlayerCursor,
+    @Synchronized override fun start(previousHostDeviceIdentifier: String, expectedCursor: SpotifyHostPlayerCursor,
         initialMappings: List<SpotifyHostRecordingMapping>): CompletableFuture<SpotifyHostSnapshot> {
         if (requested || closing) return started
         requested = true
@@ -53,35 +53,36 @@ class SpotifyHostCoordinator(
         publish(SpotifyHostStatus.Starting)
         if (closing) return started
         try {
-        startupTimer = scheduler.schedule(StartupTimeoutMilliseconds) { decide { if (!started.isDone) terminate(Deadline) } }
-        perform(transport.registration(identity)) { actual ->
-            registration = actual; sequence = actual.nextPublicationSequence
-            perform(transport.preflight(identity, previousHostDeviceIdentifier)) { anchor ->
-                sample { queue ->
-                    if (queue.snapshot.cursor != expectedCursor) throw SpotifyConnectFailure(Superseded)
-                    lastCursor = queue.snapshot.cursor
-                    val publication = project(queue, anchor)
-                    val activation = projector.activation(identifiers.nextIdentifier(), anchor)
-                    activeSinceServerMilliseconds = publication.getLong(ActiveSinceField)
-                    dispatcher.setAccepting()
-                    activationAttempted = true
-                    perform(transport.activate(identity, queue, publication, activation), true) {
-                        perform(transport.preflight(identity, identity.deviceIdentifier)) confirmed@{
-                            startupTimer?.cancel(); startupTimer = null
-                            publish(SpotifyHostStatus.Hosting)
-                            if (closing) return@confirmed
-                            started.complete(currentSnapshot)
-                            schedule()
+            startupTimer = scheduler.schedule(StartupTimeoutMilliseconds) { decide { if (!started.isDone) terminate(Deadline) } }
+            if (closing) { startupTimer?.cancel(); startupTimer = null; return started }
+            perform(transport.registration(identity)) { actual ->
+                registration = actual; sequence = actual.nextPublicationSequence
+                perform(transport.preflight(identity, previousHostDeviceIdentifier)) { anchor ->
+                    sample { queue ->
+                        if (queue.snapshot.cursor != expectedCursor) throw SpotifyConnectFailure(Superseded)
+                        lastCursor = queue.snapshot.cursor
+                        val publication = project(queue, anchor)
+                        val activation = projector.activation(identifiers.nextIdentifier(), anchor)
+                        activeSinceServerMilliseconds = publication.getLong(ActiveSinceField)
+                        dispatcher.setAccepting()
+                        activationAttempted = true
+                        perform(transport.activate(identity, queue, publication, activation), true) {
+                            perform(transport.preflight(identity, identity.deviceIdentifier)) confirmed@{
+                                startupTimer?.cancel(); startupTimer = null
+                                publish(SpotifyHostStatus.Hosting)
+                                if (closing) return@confirmed
+                                started.complete(currentSnapshot)
+                                schedule()
+                            }
                         }
                     }
                 }
             }
-        }
         } catch (failure: Throwable) { terminate(safeCode(failure)) }
         return started
     }
 
-    @Synchronized fun stop(): CompletableFuture<Unit> {
+    @Synchronized override fun stop(): CompletableFuture<Unit> {
         if (closing) return stopped
         closing = true
         timer?.cancel(); timer = null

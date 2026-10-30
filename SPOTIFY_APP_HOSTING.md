@@ -92,3 +92,15 @@ completion. Unknown queue mappings or uncertain mutation results retire ownershi
 Demotion requires actual fresh queue projection and a current native registration;
 failed cleanup remains a failed barrier. Application composition and reverse
 background mapping still need implementation before app-led hosting is exposed.
+
+## Native session boundary
+
+SpotifyHostNativeSession binds the real player without resetting its authentication
+epoch or queue. An attached native observer is required before activation; native
+connection/generation/account loss retires handling. React is not a dependency of
+this session. Startup credential races, token writes, delayed binding and cleanup
+barriers have dedicated SpotifyHostNativeSessionTest cases. Configuration scope
+and malformed inputs map to SpotifyHostConfigurationProtocolTest; connection
+loss/replacement maps to SpotifyHostConnectionEventsTest. The application runtime,
+headless job routing and explicit JavaScript controls remain to be composed.
+A failed cleanup retains the binding and must remain visible to its owner.
