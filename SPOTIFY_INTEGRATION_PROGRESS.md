@@ -1,3 +1,22 @@
+# Current-session native catalog check — 2026-10-30
+
+The user approved the fresh pairing. The existing native probe is now registered
+at generation 1 and remains running in execution session 98826; its local socket
+is build/spotify-jam/connect-probe.sock with mode 0600. Do not stop/restart it or
+Spotify processes. No credential was exported or logged.
+
+Read-only current-state and metadata requests passed. Two catalog-search
+attempts returned the safe `backpressure` failure. This is live failure evidence,
+not successful search permission or successful matching. It does not establish
+whether the response came from actor occupancy or HTTP throttling; do not claim
+an HTTP status without evidence. No playback/queue mutation was issued.
+
+Added `tools/validate-spotify-native-search.cjs`: reads the current song in memory,
+validates its native metadata and searches without printing identifiers, titles,
+artists or raw failures. `npm run test:spotify-probes` passed 27 cases, including
+three dedicated search diagnostic/privacy cases. The tool does not retry. Keep
+live public-search availability unresolved while continuing host source work.
+
 # Background app authentication lifecycle — 2026-10-30
 
 Added native expiry-driven app credential renewal independent of recording
