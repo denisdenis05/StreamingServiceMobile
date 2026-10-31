@@ -1,3 +1,84 @@
+# Current Jam repair release — 2026-10-31
+
+Sources: Mobile `d2f7c98` (plus chapter `1843225`), SpotifyJam `4582186`,
+Player `2a66a2a`. Three GPT-6.1 Sol agents implemented the flow, native/build and
+follower queue chapters; root integrated, tested and committed them in their
+owning repositories. Server's pre-existing local configuration changes remain
+untouched. Source and packaging are complete for this checkpoint; live playback
+acceptance remains open.
+
+## Included patches
+
+Automatic per-account remembered country, explicit Start sharing / Join and
+listen, membership versus active-playback copy, actionable safe failure stages
+and queue corrections, and protection against late idle snapshots hiding errors.
+Actual upcoming queue projections preserve repeated occurrences and current
+playback. Current matching starts first; future matching runs separately and
+partial failures do not stop current audio. Local automatic advancement stays
+blocked while Spotify owns playback. Hosting remains bounded to 80 entries.
+
+Saved native connection restoration now belongs to app startup, with OAuth
+redirect readiness and no automatic retry after failure or explicit disconnect.
+Foreground and headless matching share HTTP-category handling and a bounded
+older-server catalog adapter. Actual raw selected metadata can be reused after
+primary NotFound. Only actual current native duration may fill missing duration;
+future songs do not receive invented duration and the matching ranker is unchanged.
+Reliable complete metadata still needs the deployed recording-catalog endpoint.
+
+## Source checks and APKs
+
+637 Spotify Node and 176 Jest cases, full app TypeScript, 341 player/mobile,
+25 settings Node and 25 settings Jest passed. Native source: 447 app JVM and
+289 Player JVM; Player source: 387; focused Swift authority: 19; SpotifyJam: 652.
+Architecture/build checks passed. These are host source results, not audio proof.
+
+Phone APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.
+36,059,888 bytes; SHA-256
+`218744a15fd3269069e3cc8c22cf85b2899da4805f33c96dbbb7e751ef194d9b`.
+Emulator APK: `build/spotify-jam/StreamingService-Jam-repair-x86_64.apk`.
+37,128,609 bytes; SHA-256
+`65c7c8b1d69f3aba39d8290cd79aabe75869f65f425632f4767563f1047080a8`.
+Both have a fresh 2,356,632-byte Hermes bundle, correct sole ABI, verified v2
+signature, 16 KB ZIP alignment and 0x4000 native ELF LOAD alignment. Both headless
+registrations and new flow/error/upcoming queue markers are present. x86 release
+assembly passed in 35 seconds; ARM64 in 22 seconds. Ignored metadata/logs are in
+build/spotify-jam/jam-repair-d2f7c98-*; the prior 1fb232f phone APK is retained.
+
+## Actual emulator result and next steps
+
+WayDroid x86_64 was paired; registered connection, actual React pages and Jam
+creation were observed on earlier repair builds. The user independently saw the
+Jam in Spotify but confirmed StreamingService was not the active playback device.
+An empty/current-queue precondition initially prevented hosting. A real single
+local Search result then reached CatalogMatching and returned Network. The live
+backend catalog search route returned unauthenticated 404, while an existing
+protected route returned 401; missing server deployment is the likely cause.
+The local Server `ad35b78` contains the required route. The user has been asked
+for its deployment path; no production server was changed.
+
+The final d2f7c98 emulator installation stalled at committed install-session
+821621242 while dex2oat32 had no accumulated CPU time. `adb root` reported
+"not available in Waydroid"; the target subsequently disconnected, installation
+exited 1, and Waydroid reported Session STOPPED. No successful root access or
+explicit process termination occurred. The user subsequently requested continuing
+without the emulator; further live checks are postponed.
+Do not claim this final build was launched or that the compatibility path worked
+live. On reconnect check the pending package installation before starting another,
+verify saved restoration, select a single actual local song, then make one
+explicit host attempt and record its safe stage/result. Preserve Spotify processes.
+
+The desktop probe was cancelled by the T3 restart; old sockets/codes are obsolete.
+The earlier desktop HTTP 429 is historical evidence, not a result from this new
+emulator build. No automatic catalog retry or uncertain mutation replay was added.
+Two-account audio, active-device publication, full matching/queue propagation,
+audible timing and background/reconnect acceptance remain unverified. Physical
+phone verification is still separate from the authorized emulator checks.
+Details and feature/test maps: JAM_REPAIR_PROGRESS.md, JAM_LISTENING_FLOW_PROGRESS.md,
+FOLLOWER_QUEUE_PROGRESS.md, HOSTING_CONTINUATION_PROGRESS.md and
+OBSERVED_RECORDINGS_PROGRESS.md.
+
+---
+
 # Integrated player Jam, shared controls and QR release — 2026-10-31
 
 This checkpoint supersedes historical status below. Three GPT-6.1 Sol agents

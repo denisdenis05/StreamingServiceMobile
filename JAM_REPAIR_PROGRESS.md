@@ -112,3 +112,44 @@ TypeScript and 341 player/mobile cases. The new focused suites cover missing-rou
 compatibility, HTTP-category privacy, observed scope/ABA/capacity, actual duration,
 and saved-login/redirect ordering. Packaging and the next explicit emulator
 hosting check are still pending for this source checkpoint.
+
+## Delivery and interrupted final emulator installation
+
+The current phone/emulator APK identities and source results are recorded at
+the top of SPOTIFY_JAM_APK.md and SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md. Source
+commits are Mobile `1843225`/`d2f7c98`, SpotifyJam `4582186` and Player `2a66a2a`. Final
+637 Spotify Node/176 Jest, full TypeScript and 341 mobile-player checks passed;
+447 app JVM/289 Player JVM, 387 Player source and 19 focused Swift cases passed.
+Both release ABIs passed signature, 16 KB ZIP/native alignment and bundle checks.
+The phone artifact was replaced only after verification and its prior source
+1fb232f copy was retained. Physical-phone execution was not attempted.
+
+Final x86 installation stalled in committed session 821621242 during dex2oat32
+with zero accumulated CPU time. Read-only inspection identified only the app
+compiler/package state. An adb-root capability request returned not available
+in Waydroid; the device then disconnected and Waydroid reported Session STOPPED.
+The install command exited 1 and reconnect timed out. No successful root access,
+explicit process kill, app-data deletion or production deployment occurred.
+The exact session-stop cause is not established. The user has been asked to reopen
+the emulator and to provide the server deployment path. Neither elapsed time nor
+source tests count as those prerequisites becoming available.
+
+Resume by inspecting the current package/installer state after adb reconnect.
+Do not start duplicate installation while the prior session is pending. Then
+verify app-owned saved Spotify restoration, select one actual local song and
+make one explicit hosting attempt to test the new compatibility path. Record
+its stage and actual active-device result without account/song data. Complete
+server-catalog deployment is needed for full accurate future-track metadata;
+compatibility intentionally leaves ambiguous missing-duration candidates unselected.
+The cancelled desktop probe is not a live native session and no stale pairing
+code should be reused. Second-account and audible/background scenarios remain
+separate unverified acceptance gates.
+
+## Latest user direction and final source checks
+
+The user requested continuing without the emulator. Live emulator checks are
+postponed; no reconnect, installation or playback attempt will be made in this
+chapter. Final settings rerun passed 25 Node and 25 Jest cases; final full app
+TypeScript completed successfully. The server deployment path remains unknown.
+The source and APK checkpoint is ready; active Spotify device publication,
+audible playback and cross-account/background acceptance remain unverified.

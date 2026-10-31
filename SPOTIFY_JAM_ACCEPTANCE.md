@@ -5,12 +5,14 @@
 The latest APK and source checks are recorded in SPOTIFY_JAM_APK.md. Release
 assembly, signature, alignment, unit tests and bundle markers establish packaged
 source. They do not establish installation, guest permission, audio timing or
-Android process/lifecycle behavior. Mobile verification is currently postponed by the user. Earlier installation,
+Android process/lifecycle behavior. The final emulator installation was interrupted when Waydroid stopped. The user
+has now postponed emulator checks; actual active playback remains unverified.
+Physical-phone verification is still separate. Earlier installation,
 startup and Jam-creation observations belong to their recorded older artifact.
 
 ## Required setup
 
-Connect an ARM64 Android device with USB debugging enabled and authorize adb.
+For emulator checks, reopen WayDroid x86_64 and reconnect adb; first inspect its pending installation. Use StreamingService-Jam-repair-x86_64.apk. For physical checks, connect an ARM64 Android device with USB debugging enabled and authorize adb.
 Install the recorded APK, restore the StreamingService account and pair Spotify
 through Profile → Settings → Spotify & Jam. A second Spotify account/device is required for guest admission,
 shared queue and simultaneous playback acceptance. The host machine's read-only
