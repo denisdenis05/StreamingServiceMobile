@@ -1,3 +1,28 @@
+## Packaged artifact and remaining acceptance
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 35,938,216 bytes.
+SHA-256: 950dd8d5225fd94a4723d34da5c202373831f5189f05ca3c24cb8a0716eb9480.
+Source: Mobile 8aac411, SpotifyJam 4220c2f, Player b28f393.
+Release assembly passed in 38 seconds after source integration. APK v2 signature
+and 16 KB ZIP alignment passed. All four Spotify ELF LOAD segments use 0x4000
+alignment. Fresh Hermes bundle: 2,257,868 bytes; Profile/Settings, artwork clearing,
+hosting and both background hosting-recording/authentication markers are present.
+The previous 9cef510 artifact is retained separately in the ignored artifact
+folder. This APK has not been installed or tested on a phone.
+
+Do not claim every Spotify operation works end to end. Live catalog search most
+recently returned Backpressure, with no proven HTTP cause. Guest writes still
+require actual control-permission evidence; cross-account joining/role changes,
+queue propagation, measured audible synchronization and screen-lock/network/
+renewal behavior remain unverified. Mobile verification is postponed by the user.
+Historical probe 52503 was approved, but its liveness must be checked before any
+future use; never infer a live owner from its socket. Preserve existing sessions.
+
+
+The in-app connection route is now Profile → Settings → Spotify & Jam.
+Implementation details and source checks are in PROFILE_SETTINGS_PROGRESS.md
+and the current SPOTIFY_INTEGRATION_PROGRESS.md checkpoint.
+
 # Updated hosting-error APK — 2026-10-31
 
 Mobile source `9cef510` preserves safe native hosting failure categories. The

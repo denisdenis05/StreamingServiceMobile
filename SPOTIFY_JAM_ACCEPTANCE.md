@@ -5,13 +5,14 @@
 The latest APK and source checks are recorded in SPOTIFY_JAM_APK.md. Release
 assembly, signature, alignment, unit tests and bundle markers establish packaged
 source. They do not establish installation, guest permission, audio timing or
-Android process/lifecycle behavior. No Android device is currently attached.
+Android process/lifecycle behavior. Mobile verification is currently postponed by the user. Earlier installation,
+startup and Jam-creation observations belong to their recorded older artifact.
 
 ## Required setup
 
 Connect an ARM64 Android device with USB debugging enabled and authorize adb.
 Install the recorded APK, restore the StreamingService account and pair Spotify
-through the app. A second Spotify account/device is required for guest admission,
+through Profile → Settings → Spotify & Jam. A second Spotify account/device is required for guest admission,
 shared queue and simultaneous playback acceptance. The host machine's read-only
 probe is a separate native session and cannot establish Android playback results.
 
@@ -19,6 +20,7 @@ probe is a separate native session and cannot establish Android playback results
 
 | Scenario | Required observation |
 | --- | --- |
+| Profile and Settings | Check actual name persistence per account, all Settings routes/back navigation, Last.fm authorization/cancel/disconnect, shuffle/repeat and artwork-cache clear; no audio cache deletion |
 | Native sign-in and restore | Actual registered native handle/generation; no credentials or raw account/song logging |
 | Catalog translation | Current-session native search returns decoded candidates; permission, throttling and queue-capacity failures stay explicit |
 | App-led host activation | Explicit action captures the actual app queue and epochs; native activation and fresh own-device verification succeed |

@@ -1,3 +1,67 @@
+# Profile, Settings and verified Spotify integration — 2026-10-31
+
+User approved the self-contained Profile/Settings mockup and requested three
+GPT-6.1 Sol Codex agents, continued implementation and postponed device checks.
+The three agents covered Profile/Settings, hosting/background lifecycle and guest
+observation. The owning session integrated and reviewed their source and tests.
+No device, pairing, Spotify process, audio or queue action ran in this chapter.
+
+## Source chapters
+
+- Mobile aab9714: host startup failure categories, serialized/idempotent native
+  binding retirement, actual queue/authority/current-occurrence recapture and
+  exact Hosting/player-epoch acknowledgement.
+- Library 4220c2f: optional guest membership verification before/after queue and
+  playback reads, participant/account/Jam/host fences and prompt cancellation.
+- Mobile 2801fb1: actual Android Connect membership bridge, native-only verifier
+  binding, admitted-guest follower context and explicit shared-listening UI.
+  Guest mutation guards remain closed; admission is not control permission.
+- Mobile 8aac411: approved visual style and Profile → Settings navigation;
+  account/server-scoped local display name editor, real Last.fm lifecycle,
+  Spotify connection destination/status, actual shuffle/repeat, storage metrics,
+  explicit artwork-only cache clearing and About. Unsupported liked/history
+  destinations use existing library/playlist creation routes, without fake data.
+
+Feature/test details: PROFILE_SETTINGS_PROGRESS.md, HOSTING_CONTINUATION_PROGRESS.md
+and GUEST_IMPLEMENTATION_PROGRESS.md. No backend profile/photo editor exists;
+profile-name changes are explicitly local to this device. Audio caches are not
+removed while live playback may reference them. Last.fm status copies validated
+fields only; cancellation and account replacement retire delayed responses.
+
+## Integrated source checks
+
+- npm run test:settings: 25 deterministic domain and 25 Jest cases passed.
+- npm run test:spotify: 503 Node and 106 Jest cases passed.
+- npx tsc --noEmit: passed.
+- Android :app:testDebugUnitTest -x :app:buildSpotifyLibrespot with --no-daemon:
+  415 JVM cases across 32 suites passed.
+- cargo test --manifest-path native/librespot-session/Cargo.toml --locked --quiet:
+  235 cases passed.
+- npm run test:player-mobile: 329 passed; npm run test:asset-cache: 73 passed.
+- Library npm test: 626 passed, including strict build/architecture checking.
+- git diff --check: passed. Host logs are ignored under build/spotify-jam/profile-*
+  and settings-integrated-tests.log.
+
+## Packaged artifact and remaining acceptance
+
+APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 35,938,216 bytes.
+SHA-256: 950dd8d5225fd94a4723d34da5c202373831f5189f05ca3c24cb8a0716eb9480.
+Source: Mobile 8aac411, SpotifyJam 4220c2f, Player b28f393.
+Release assembly passed in 38 seconds after source integration. APK v2 signature
+and 16 KB ZIP alignment passed. All four Spotify ELF LOAD segments use 0x4000
+alignment. Fresh Hermes bundle: 2,257,868 bytes; Profile/Settings, artwork clearing,
+hosting and both background hosting-recording/authentication markers are present.
+The previous 9cef510 artifact is retained separately in the ignored artifact
+folder. This APK has not been installed or tested on a phone.
+
+Do not claim every Spotify operation works end to end. Live catalog search most
+recently returned Backpressure, with no proven HTTP cause. Guest writes still
+require actual control-permission evidence; cross-account joining/role changes,
+queue propagation, measured audible synchronization and screen-lock/network/
+renewal behavior remain unverified. Mobile verification is postponed by the user.
+Historical probe 52503 was approved, but its liveness must be checked before any
+future use; never infer a live owner from its socket. Preserve existing sessions.
+
 # Updated hosting-error APK — 2026-10-31
 
 Mobile source `9cef510` preserves safe native hosting failure categories. The
