@@ -8,7 +8,9 @@ source. They do not establish installation, guest permission, audio timing or
 Android process/lifecycle behavior. Emulator verification resumed at the user's
 request. The latest APK installed and the actual hosting action stopped at
 CatalogMatching/RateLimited, before native activation. Read JAM_REPAIR_RELEASE.md
-for exact artifact identity, source checks and the remaining live gates.
+for that artifact identity, source checks and the remaining live gates.
+The newer paced packages and current pending adb reconnection are recorded in
+SPOTIFY_RATE_LIMIT_PROGRESS.md; they have not been installed successfully.
 Physical-phone verification remains separate.
 
 ## Required setup

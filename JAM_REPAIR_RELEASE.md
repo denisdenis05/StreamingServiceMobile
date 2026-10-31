@@ -1,3 +1,6 @@
+Current package update: read [SPOTIFY_RATE_LIMIT_PROGRESS.md](SPOTIFY_RATE_LIMIT_PROGRESS.md).
+The following 2138cf7 release is retained as an earlier tested checkpoint.
+
 # Jam repair release — 2026-11-01
 
 ## Implemented source

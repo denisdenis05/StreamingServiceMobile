@@ -163,3 +163,15 @@ Source 63751ed reached CatalogMatching/Backpressure. Source 2138cf7 distinguishe
 HTTP429 and local capacity; one controlled check reached CatalogMatching/RateLimited.
 No further searches were made. Active host publication and shared audio remain
 unverified. Retain the actual native session; do not reuse old desktop codes.
+
+## Pacing and player-flow continuation — 2026-11-01
+
+Mobile 3130e19 adds bounded query caching, request spacing, Retry-After cooldown
+and safe request-count/quota diagnostics. 252 Rust, 35 probe, 651 Spotify Node
+and 178 Jest cases passed. Final x86/ARM64 packages passed verification. Source and exact APK
+identities are in SPOTIFY_RATE_LIMIT_PROGRESS.md. No new live catalog request
+was submitted because the emulator update stalled and its adb connection was
+lost. Root reset only host adb transport, as requested, without restarting the
+emulator. The known endpoint is unreachable and mDNS currently finds no devices.
+The user has been asked for the current adb endpoint. Desktop local Play/Pause
+was observed and prior pause restored; that is not app Jam integration proof.

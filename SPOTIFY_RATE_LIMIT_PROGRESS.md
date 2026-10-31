@@ -110,3 +110,31 @@ https://developer.spotify.com/blog/2026-07-23-web-api-quota-updates
 
 The running session's actual limiting rule is still unknown until a fresh bounded
 response diagnostic is observed. No credential/client identity rotation is used.
+
+## Final source and package checkpoint
+
+Source Mobile `3130e19`, SpotifyJam `135a891`, Player `2a66a2a`. Final source
+x86 and ARM64 release builds passed in 40 and 28 seconds. Both packages passed
+v2 signature, 16 KB ZIP alignment, sole ABI and native ELF LOAD alignment checks.
+Both contain the safe Android catalog tag and typed pacing diagnostic fields.
+The quota comparison literal is optimized out of contiguous binary strings; its
+behavior is established by Rust tests, not a literal marker check.
+
+Phone: `build/spotify-jam/StreamingService-Jam-paced-final-arm64.apk`; 36,078,556 bytes, SHA-256 `3f66f1f4049acd30f65896b12225c4696058497e63bc64e79c5455def658f27d`.
+
+Emulator: `build/spotify-jam/StreamingService-Jam-paced-final-x86_64.apk`; 37,147,765 bytes, SHA-256 `1820ee9219b34dbf04bf384f0acc38e0de26b57e57f02d2f2caa86c8c39a606f`.
+
+The phone delivery alias now points to the paced ARM64 package. The earlier
+2138cf7 artifacts are retained under their exact filenames. These final packages
+have not been launched on a device. The intermediate diagnostic install client
+exited after transport loss; its committed package state must be inspected on
+reconnection before another installation. No new Spotify search was submitted,
+so the real Retry-After and quota reason are still unknown.
+
+Read-only inspection of the installed desktop application bundle found the
+searchDesktop GraphQL operation and searchV2 response references. Our native
+catalog currently uses the public Web API search route. These are different
+protocol paths; this observation does not establish the limiting rule or authorize
+claims of a working replacement transport. No extracted application artifacts
+were added to production code. Actual player Jam verification remains pending
+Android reconnection and successful catalog matching.

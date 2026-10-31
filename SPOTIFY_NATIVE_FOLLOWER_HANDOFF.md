@@ -1,3 +1,14 @@
+# Latest catalog pacing checkpoint — 2026-11-01
+
+Read [SPOTIFY_RATE_LIMIT_PROGRESS.md](SPOTIFY_RATE_LIMIT_PROGRESS.md) first.
+Source 3130e19 adds cached/paced catalog searches, server cooldown handling and
+safe quota diagnostics. Both final APK packages are verified. Android reconnect
+is pending after the installer lost its adb transport; no new live Spotify
+search or active hosting result is claimed. The prior release checkpoints below
+remain historical evidence.
+
+---
+
 # Latest checkpoint — 2026-11-01
 
 Read [JAM_REPAIR_RELEASE.md](JAM_REPAIR_RELEASE.md) first. It records the current
