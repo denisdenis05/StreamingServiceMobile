@@ -108,6 +108,28 @@ class SpotifyHostRuntimeTest {
         fixture.observers.first()(SpotifyHostSnapshot(fixture.sessions.first().identity, SpotifyHostStatus.Failed)); fixture.drain()
         assertEquals(OtherDevice, fixture.runtime.snapshot(fixture.attachment)?.identity?.deviceIdentifier)
     }
+    @Test fun startupRejectionsPreserveEveryKnownSafeNativeFailureThroughCompletionWrappers() {
+        SpotifyConnectFailureCode.entries.forEach { code ->
+            val fixture = Fixture(); val result = fixture.begin()
+            fixture.sessions.single().cleanup = CompletableFuture()
+            fixture.sessions.single().started.completeExceptionally(java.util.concurrent.CompletionException(SpotifyConnectFailure(code.wireValue)))
+            fixture.drain()
+            assertTrue(result.isCompletedExceptionally)
+            assertEquals(code.wireValue, fixture.runtime.snapshot(fixture.attachment)?.failure)
+            try { result.join(); throw AssertionError() } catch (failure: java.util.concurrent.CompletionException) {
+                assertEquals(code.wireValue, (failure.cause as SpotifyConnectFailure).code)
+            }
+            assertEquals(SingleCount, fixture.sessions.single().stops)
+        }
+    }
+    @Test fun unknownStartupRejectionsNeverExposePrivateErrorDetails() {
+        val fixture = Fixture(); val result = fixture.begin()
+        fixture.sessions.single().cleanup = CompletableFuture()
+        fixture.sessions.single().started.completeExceptionally(SpotifyConnectFailure(PrivateFailure))
+        fixture.drain()
+        assertTrue(result.isCompletedExceptionally)
+        assertEquals(StartupFailed, fixture.runtime.snapshot(fixture.attachment)?.failure)
+    }
     companion object {
         private const val Account = "synthetic-account"
         private const val OtherAccount = "synthetic-other-account"
@@ -133,6 +155,8 @@ class SpotifyHostRuntimeTest {
         private const val TwoCount = 2
         private const val UnknownOutcome = "unknown-outcome"
         private const val Canceled = "canceled"
+        private const val PrivateFailure = "synthetic-private-failure"
+        private const val StartupFailed = "host-startup-failed"
         private fun configuration(device: String): JSONObject = JSONObject().put(SpotifyJamPlaybackProtocol.AppAccountField, Account)
             .put(SpotifyJamPlaybackProtocol.BaseAddressField, Address).put(SpotifyJamPlaybackProtocol.AccessTokenField, Token)
             .put(SpotifyJamPlaybackProtocol.SpotifyAccountField, SpotifyAccount).put(SpotifyJamPlaybackProtocol.SessionField, Jam)

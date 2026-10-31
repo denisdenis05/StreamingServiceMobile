@@ -158,6 +158,25 @@ class SpotifyHostNativeSessionTest {
         fixture.session.stop().get(); fixture.session.stop().get()
         assertEquals(SingleCount, fixture.starts); assertEquals(SingleCount, fixture.stops); assertEquals(SingleCount, fixture.unbinds)
     }
+    @Test fun connectionRetirementWaitsForAnAlreadySubmittedAuthenticationWriteBeforeUnbinding() {
+        val fixture = Fixture(); fixture.session.start(); fixture.bind(); fixture.completeStart()
+        val refreshed = fixture.session.synchronizeAuthentication(RefreshedToken)
+        val released = fixture.session.releaseAfterConnectionRetired()
+        assertFalse(released.isDone); assertEquals(EmptyCount, fixture.unbinds)
+        fixture.main.drain()
+        refreshed.get(); released.get(); assertEquals(SingleCount, fixture.unbinds)
+    }
+    @Test fun ordinaryStopAndActualConnectionRetirementShareOneBindingRelease() {
+        val fixture = Fixture(); fixture.session.start(); fixture.bind(); fixture.completeStart()
+        fixture.session.stop().get(); fixture.session.releaseAfterConnectionRetired().get()
+        assertEquals(SingleCount, fixture.unbinds)
+    }
+    @Test fun repeatedConnectionRetirementSharesOneBindingRelease() {
+        val fixture = Fixture(); fixture.session.start(); fixture.bind(); fixture.completeStart()
+        fixture.session.releaseAfterConnectionRetired().get()
+        fixture.session.releaseAfterConnectionRetired().get()
+        assertEquals(SingleCount, fixture.unbinds)
+    }
     companion object {
         private const val HandleField = "handle"
         private const val EventsField = "events"

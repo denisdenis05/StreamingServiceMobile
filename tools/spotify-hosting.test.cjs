@@ -14,11 +14,11 @@ function fixture() {
   const queue = { playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication, expectedCursor: {
     queueIdentifier: Fixture.queue, queueRevision: Fixture.revision, contentRevision: Fixture.revision, controlRevision: Fixture.revision },
     entries: [{ occurrenceIdentifier: Fixture.occurrence, recordingIdentifier: Fixture.recording }] };
-  const state = { context, queue, stop: null, translation: null, initial: null, startFailure: null, stopFailure: null, translationFailure: null, track: Fixture.track };
+  const state = { context, queue, stop: null, translation: null, initial: null, startFailure: null, startResponse: null, stopFailure: null, translationFailure: null, track: Fixture.track };
   const calls = { starts: [], following: Fixture.emptyCount, translations: Fixture.emptyCount };
   let observed; let changed;
   const response = () => JSON.stringify({ status: SpotifyHostingStatus.Hosting, identity: { ...context, playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication }, failure: null });
-  const store = new SpotifyHostingStore({ native: { async startHosting(serialized) { calls.starts.push(JSON.parse(serialized)); if (state.startFailure) throw state.startFailure; return response(); },
+  const store = new SpotifyHostingStore({ native: { async startHosting(serialized) { calls.starts.push(JSON.parse(serialized)); if (state.startFailure) throw state.startFailure; return state.startResponse ?? response(); },
     async stopHosting() { if (state.stopFailure) throw state.stopFailure; if (state.stop) await state.stop.promise; }, async getHostingSnapshot() { return state.initial ? state.initial.promise : Fixture.stopped; } },
     observe(listener) { observed = listener; return () => undefined; }, getContext: () => state.context,
     subscribeConnection(listener) { changed = listener; return () => undefined; }, getAccessToken: () => Fixture.token,
@@ -111,4 +111,21 @@ test('Unknown native snapshot failures stay private and become network failures'
   current.observed(JSON.stringify({ ...JSON.parse(current.response()), status: SpotifyHostingStatus.Failed, failure: Fixture.privateFailure }));
   assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.Network);
   assertion.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
+});
+
+test('Native startup must return an actual hosting acknowledgement rather than a stopped snapshot', async () => {
+  const current = fixture(); current.state.startResponse = Fixture.stopped;
+  await current.store.start(Fixture.market);
+  assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Failed);
+  assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.InvalidResponse);
+});
+test('Native startup acknowledgement must match the captured player epochs and connection generation', async () => {
+  for (const identity of [{ playerEngineEpoch: Fixture.invalidTrack }, { playerAuthenticationEpoch: Fixture.invalidTrack },
+    { generation: Fixture.generation + Fixture.singleCount }]) {
+    const current = fixture(); const response = JSON.parse(current.response());
+    current.state.startResponse = JSON.stringify({ ...response, identity: { ...response.identity, ...identity } });
+    await current.store.start(Fixture.market);
+    assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Failed);
+    assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.InvalidResponse);
+  }
 });

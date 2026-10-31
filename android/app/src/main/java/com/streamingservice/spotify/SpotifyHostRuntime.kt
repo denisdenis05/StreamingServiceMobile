@@ -72,7 +72,7 @@ class SpotifyHostRuntime(
                     current.resources = resources
                     resources.session.start().whenComplete { snapshot, startupFailure -> decisions.execute startup@{
                         if (lifetime !== current || current.retiring) return@startup
-                        if (startupFailure != null || snapshot?.identity != configuration.identity || snapshot.status != SpotifyHostStatus.Hosting || !active(current)) fail(current, StartupFailed)
+                        if (startupFailure != null || snapshot?.identity != configuration.identity || snapshot.status != SpotifyHostStatus.Hosting || !active(current)) fail(current, startupFailure?.let(::startupFailureCode) ?: Superseded)
                         else {
                             publish(current, snapshot)
                             if (!active(current)) return@startup
@@ -80,7 +80,7 @@ class SpotifyHostRuntime(
                             current.started.complete(snapshot)
                         }
                     } }
-                } catch (_failure: Throwable) { fail(current, StartupFailed) }
+                } catch (failure: Throwable) { fail(current, startupFailureCode(failure)) }
             } }
             current.started
         }.thenApply { snapshot ->
@@ -205,6 +205,13 @@ class SpotifyHostRuntime(
     }
     private fun publish(current: Lifetime, snapshot: SpotifyHostSnapshot) { if (lifetime === current) { currentSnapshot = snapshot; notify(snapshot) } }
     private fun notify(snapshot: SpotifyHostSnapshot?) { try { attachment?.listener?.invoke(snapshot) } catch (_failure: Throwable) { Unit } }
+    private fun startupFailureCode(failure: Throwable): String {
+        val cause = when (failure) {
+            is java.util.concurrent.CompletionException, is java.util.concurrent.ExecutionException -> failure.cause
+            else -> failure
+        }
+        return (cause as? SpotifyConnectFailure)?.code?.takeIf { code -> code in FailureCodes } ?: StartupFailed
+    }
     private fun active(current: Lifetime): Boolean = current.allowed && !current.retiring && connected(current.configuration.identity) && accountMatches(current.configuration.identity)
     private fun accountMatches(identity: SpotifyHostIdentity): Boolean = !account.known || account.identifier == identity.streamingServiceAccountIdentifier
     private fun connected(identity: SpotifyHostIdentity): Boolean = try { ownsConnection(identity) } catch (_failure: Throwable) { false }
@@ -224,6 +231,7 @@ class SpotifyHostRuntime(
         private const val Unauthorized = "unauthorized"
         private const val CleanupFailed = "host-cleanup-failed"
         private const val StartupFailed = "host-startup-failed"
+        private val FailureCodes = SpotifyConnectFailureCode.entries.map { failure -> failure.wireValue }.toSet()
         private val TerminalStatuses = setOf(SpotifyHostStatus.Failed, SpotifyHostStatus.Stopped)
         fun follower(identity: SpotifyHostIdentity) = SpotifyNativeFollowerIdentity(identity.streamingServiceAccountIdentifier, identity.spotifyAccountIdentifier,
             identity.jamSessionIdentifier, identity.deviceIdentifier, identity.handle, identity.generation, identity.playerIdentity)

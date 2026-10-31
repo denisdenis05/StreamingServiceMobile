@@ -91,6 +91,7 @@ export class SpotifyHostingStore {
         previousHostDeviceIdentifier: context.previousHostDeviceIdentifier, expectedCursor: queue.expectedCursor, mappings }));
       if (intent.signal.aborted || this.disposed) return;
       if (!sameScope(context, this.dependencies.getContext())) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      this.requireAcknowledgement(response, context, queue);
       this.observe(response);
     } catch (failure) {
       if (this.intent !== intent || intent.signal.aborted || this.disposed) return;
@@ -110,6 +111,20 @@ export class SpotifyHostingStore {
     }
   }
   dispose(): void { this.disposed = true; this.intent?.abort(); this.subscriptions.forEach(unsubscribe => unsubscribe()); this.listeners.clear(); }
+  private requireAcknowledgement(response: string, context: SpotifyHostingContext, queue: SpotifyHostingQueue): void {
+    try {
+      if (typeof response !== Policy.stringType || response.length > Policy.maximumSnapshotCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      const snapshot = JSON.parse(response) as { status?: unknown; failure?: unknown; identity?: Record<string, unknown> | null };
+      const identity = snapshot.identity;
+      if (snapshot.status !== SpotifyHostingStatus.Hosting || snapshot.failure !== null || !identity
+        || identity.streamingServiceAccountIdentifier !== context.streamingServiceAccountIdentifier
+        || identity.spotifyAccountIdentifier !== context.spotifyAccountIdentifier || identity.jamSessionIdentifier !== context.jamSessionIdentifier
+        || identity.deviceIdentifier !== context.deviceIdentifier || identity.handle !== context.handle || identity.generation !== context.generation
+        || identity.playerEngineEpoch !== queue.playerEngineEpoch || identity.playerAuthenticationEpoch !== queue.playerAuthenticationEpoch) {
+        throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      }
+    } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
+  }
   private requireCurrent(intent: AbortController, context: SpotifyHostingContext): void {
     if (this.disposed || this.intent !== intent || intent.signal.aborted || JSON.stringify(this.dependencies.getContext()) !== JSON.stringify(context)) {
       throw new IntegrationFailure(IntegrationFailureCode.Superseded);
