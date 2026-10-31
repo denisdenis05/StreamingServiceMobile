@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Alert, ScrollView, Share, TextInput, View } from 'react-native';
 import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginMethod, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import PageContainer from '../../components/PageContainer';
@@ -33,10 +33,6 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const selection = spotifyRouteSongSelection(route?.params);
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   const sharing = useSyncExternalStore(playerJam.subscribe, playerJam.getSnapshot);
-  useEffect(() => {
-    const current = spotifyMobile.getSnapshot();
-    if (!current.connected && current.operation === SpotifyMobileOperation.Idle && current.failure === null) void spotifyMobile.restore();
-  }, []);
   const [clientIdentifier, setClientIdentifier] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [username, setUsername] = useState<string>(SpotifyMobilePolicy.emptyText);
   const [password, setPassword] = useState<string>(SpotifyMobilePolicy.emptyText);

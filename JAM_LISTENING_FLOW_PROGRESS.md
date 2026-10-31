@@ -108,3 +108,33 @@ cases verify exact queueIssue projection. Focused Jest across these views: 68
 passed. Library build/architecture source checks and full TypeScript passed. Root
 integration owns the final domain compilation/run and packaged build. No emulator,
 Spotify playback, Gradle or commit action ran in this correction.
+
+## Saved Spotify startup belongs to the application
+
+SpotifySavedConnectionStartup now restores a saved Spotify connection once per
+application account per app run after application authentication is restored.
+It has injected account/controller/authorization-readiness sources and only calls
+restore; it never starts hosting, following or playback. Failed restoration is not
+retried by observations. Already-connected, manual Connecting and explicit
+Disconnecting states consume that account's automatic attempt, preserving an
+explicit later disconnect. New account startup waits for old connection retirement;
+old asynchronous completion cannot retry or reconnect an account already attempted.
+Disposal fences later observations/completions and removes subscriptions.
+
+SpotifyAuthorizationStartup exposes getSnapshot/subscribe readiness after initial
+redirect inspection and while no callback is pending or browser flow active.
+Pending authorization starts its Connecting operation before readiness listeners
+can consider saved restoration. This prevents a concurrent restore from retiring
+an OAuth transaction. The root composition injects this barrier into saved startup.
+The Jam page no longer owns an independent mount-time restore, avoiding a second
+attempt after explicit disconnect or missing saved credentials.
+
+Dedicated tests: tools/spotify-saved-connection-startup.test.cjs covers restored
+accounts, logged-out/missing accounts, redirect readiness, manual attempts,
+explicit disconnect, failure without retry, account replacement during restore and
+manual retirement, disposal. tools/spotify-authorization-recovery.test.cjs adds
+readiness regressions for initial-address waiting, pending account callbacks,
+Connecting-before-readiness ordering and disposal. Combined startup/recovery Node
+suite: 44 passed. Main Jam screen Jest: 49 passed. Domain TypeScript, full TypeScript,
+library build/architecture checks and diff checks passed. The new Node suite is
+registered in test:spotify. No device, Spotify, Gradle or commit action was used.

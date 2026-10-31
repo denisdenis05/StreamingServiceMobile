@@ -27,12 +27,20 @@ const StartupPolicy = Object.freeze({ stateParameter: 'state', singleParameterCo
 
 export class SpotifyAuthorizationStartup {
   private started = false;
+  private initialAddressSettled = false;
+  private readonly listeners = new Set<() => void>();
   private disposed = false;
   private pending: { readonly address: string; readonly state: string } | null = null;
   private lastState: string | null = null;
   private readonly cleanup: (() => void)[] = [];
 
   constructor(private readonly dependencies: SpotifyAuthorizationStartupDependencies) {}
+
+  readonly getSnapshot = (): boolean => !this.disposed && this.initialAddressSettled && this.pending === null && !this.dependencies.isAuthorizing();
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
 
   start(): void {
     if (this.started || this.disposed) return;
@@ -42,11 +50,15 @@ export class SpotifyAuthorizationStartup {
     this.cleanup.push(this.dependencies.redirects.observe(address => this.receive(address)));
     void this.dependencies.redirects.readInitialAddress().then(address => {
       if (address !== null) this.receive(address);
-    }, () => this.interrupted(IntegrationFailureCode.Network));
+    }, () => this.interrupted(IntegrationFailureCode.Network)).finally(() => {
+      this.initialAddressSettled = true;
+      this.publish();
+    });
   }
 
   dispose(): void {
     this.disposed = true; this.pending = null; this.lastState = null;
+    this.listeners.clear();
     for (const stop of this.cleanup) { try { stop(); } catch {} }
   }
 
@@ -67,10 +79,15 @@ export class SpotifyAuthorizationStartup {
     }
     if (state === this.lastState) return;
     this.pending = { address, state };
+    this.publish();
     this.process();
   }
 
   private process(): void {
+    try { this.processPending(); } finally { this.publish(); }
+  }
+
+  private processPending(): void {
     if (this.disposed || !this.pending || this.dependencies.isAuthorizing()) return;
     const account = this.dependencies.account.getSnapshot();
     if (!account.restored || !account.isLoggedIn || account.accountIdentifier === null) return;
@@ -79,6 +96,10 @@ export class SpotifyAuthorizationStartup {
     if (snapshot.operation !== SpotifyMobileOperation.Idle) return;
     const pending = this.pending; this.pending = null; this.lastState = pending.state;
     void this.dependencies.controller.resumeAuthorization(pending.address).catch(() => this.interrupted(IntegrationFailureCode.Network));
+  }
+
+  private publish(): void {
+    for (const listener of this.listeners) { try { listener(); } catch {} }
   }
 
   private interrupted(failure: IntegrationFailureCode): void {

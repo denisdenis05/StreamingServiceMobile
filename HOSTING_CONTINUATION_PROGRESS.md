@@ -129,3 +129,30 @@ issue reaching the snapshot and rejection of untrusted issue fields.
 `node --test tools/spotify-hosting-queue.test.cjs tools/spotify-hosting.test.cjs`
 passed all 76 cases. UI copy and emulator verification are integrated by the
 owning session. No live catalog or playback outcome is inferred from these tests.
+
+## Catalog compatibility adapter — 2026-10-31
+
+`SpotifyLibraryCatalogQuery` wraps the primary recording catalog with bounded
+compatibility for existing authenticated library search. Primary lookup remains
+first; a missing identifier can use only exact-ID metadata already observed in
+the actual local queue or bounded real-candidate cache. Primary search switches to
+`Metadata/search/db` only after a typed NotFound from the real search request,
+without probing capability or downloading the full catalog. Unauthorized,
+forbidden, network and backpressure failures do not activate fallback. The existing
+RecordingResponse DTO supplies actual id/title/artistName; its absent duration is
+left absent. No match or identifier is manufactured.
+
+Every request passes the caller's cancellation signal through the injected
+account-authenticated reader. Scope changes permanently retire the adapter and
+clear its cache; stale/canceled completions cannot cache their candidates. Search
+requests use one page of at most 80 candidates and retain at most 256 recordings.
+Root composition supplies current real observed queue metadata and account scope.
+The adapter has no server deployment or device side effects.
+
+Dedicated `tools/spotify-library-catalog.test.cjs` covers primary success,
+exact-ID observed lookup, verified search absence, bounded authenticated request,
+legacy auth failures, cancellation, changed scope/stale completion, malformed DTO
+rejection and cache eviction. Ran `npx tsc --project tsconfig.spotify.json` and
+`node --test tools/spotify-library-catalog.test.cjs`: 12 cases passed. Actual
+production catalog matching and host playback still require the integrated live
+check after composition and packaging.

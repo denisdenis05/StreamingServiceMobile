@@ -1,7 +1,7 @@
 export {};
 const Imports = Object.freeze({ runtime: '../src/services/PlayerJamRuntime', account: '../src/services/AuthenticationService',
   integration: '../src/services/SpotifyIntegration', mobile: '../src/services/SpotifyMobileService',
-  country: '../src/services/SpotifyListeningCountryPlatform', hosting: '../src/services/spotify/SpotifyHostingStore', controller: '../src/services/spotify/SpotifyPlayerJamController', lifecycle: '../src/services/player/PlaybackQueueChangeLifecycle' });
+  country: '../src/services/SpotifyListeningCountryPlatform', catalog: '../src/services/SpotifyRecordingCatalogPlatform', hosting: '../src/services/spotify/SpotifyHostingStore', controller: '../src/services/spotify/SpotifyPlayerJamController', lifecycle: '../src/services/player/PlaybackQueueChangeLifecycle' });
 const Fixture = Object.freeze({ account: 'application-test-account', replacementAccount: 'replacement-test-account',
   spotifyAccount: 'spotify-test-account', session: 'jam-test-session', host: 'host-test-device',
   country: 'RO', invitation: 'synthetic-test-invitation', clear: 'clear', firstGeneration: 1, handle: 1, zero: 0 });
@@ -28,6 +28,7 @@ const mobile = { subscribe, getSnapshot: () => ({ connected: true,
 jest.doMock(Imports.account, () => ({ authenticationSession: { subscribe, getSnapshot: () => account } }));
 jest.doMock(Imports.integration, () => ({ spotifyIntegration: { usesNativeConnect: true, runtime: null } }));
 jest.doMock(Imports.country, () => ({ spotifyListeningCountry: country }));
+jest.doMock(Imports.catalog, () => ({ spotifyObservedRecordings: { captureScope: () => null, remember: jest.fn() } }));
 jest.doMock(Imports.lifecycle, () => ({ playbackQueueChanges: { attach: () => () => undefined }, PlaybackQueueChangeKind: { Clear: Fixture.clear } }));
 jest.doMock(Imports.mobile, () => ({ spotifyMobile: mobile,
   spotifyConnect: { subscribe, getPlaybackConnection: () => nativeConnection, getSnapshot: () => ({ deviceIdentifier: Fixture.host }) },

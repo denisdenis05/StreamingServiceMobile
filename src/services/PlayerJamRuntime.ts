@@ -15,6 +15,7 @@ import {
   spotifyPlaybackFollower,
 } from './SpotifyMobileService';
 import { spotifyListeningCountry } from './SpotifyListeningCountryPlatform';
+import { spotifyObservedRecordings } from './SpotifyRecordingCatalogPlatform';
 import {
   playbackQueueChanges,
   PlaybackQueueChangeKind,
@@ -132,6 +133,8 @@ export const playerJam = new SpotifyPlayerJamController({
 });
 const removeQueueLifecycle = playbackQueueChanges.attach({
   async prepare(request) {
+    const recordingScope = spotifyObservedRecordings.captureScope();
+    if (request.isCurrent()) spotifyObservedRecordings.remember(request.tracks, recordingScope);
     const committed = await playerJam.prepareQueueChange(
       request.tracks.map(track => track.recordingIdentifier),
       request.isCurrent,

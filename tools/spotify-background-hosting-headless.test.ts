@@ -3,14 +3,14 @@ const Imports = Object.freeze({ native: 'react-native', authentication: '../src/
   network: '../src/services/ApplicationNetworkClient', task: '../src/services/SpotifyBackgroundHostingHeadless' });
 const Fixture = Object.freeze({ request: 'synthetic-request', account: 'synthetic-account', otherAccount: 'synthetic-other-account', token: 'synthetic-token',
   spotify: 'synthetic-spotify', jam: 'synthetic-jam', host: 'synthetic-host', address: 'https://synthetic.example/', market: 'GB',
-  recording: 'synthetic-recording', track: '4uLU6hMCjMI75M1A2tKUQC', title: 'Synthetic title', artist: 'Synthetic artist', durationMilliseconds: 180000,
+  android: 'android', platformVersion: 35, recording: 'synthetic-recording', track: '4uLU6hMCjMI75M1A2tKUQC', title: 'Synthetic title', artist: 'Synthetic artist', durationMilliseconds: 180000,
   handle: 3, generation: 7, otherGeneration: 8 });
 let account: string = Fixture.account;
-const authentication = { restore: jest.fn(), getSnapshot: () => ({ isLoggedIn: true, accountIdentifier: account, token: Fixture.token }) };
+const authentication = { subscribe: () => () => undefined, restore: jest.fn(), getSnapshot: () => ({ isLoggedIn: true, accountIdentifier: account, token: Fixture.token }) };
 const client = { get: jest.fn() };
 const native = { claimHostingRecording: jest.fn(), isHostingRecordingPending: jest.fn(), searchHostingRecording: jest.fn(),
   completeHostingRecording: jest.fn(), failHostingRecording: jest.fn() };
-jest.doMock(Imports.native, () => ({ NativeModules: { SpotifyJamPlayback: native } }));
+jest.doMock(Imports.native, () => ({ Platform: { OS: Fixture.android, Version: Fixture.platformVersion }, NativeModules: { SpotifyJamPlayback: native } }));
 jest.doMock(Imports.authentication, () => ({ authenticationSession: authentication }));
 jest.doMock(Imports.network, () => ({ createApplicationNetworkClient: () => client }));
 function response(generation: number = Fixture.generation) { return JSON.stringify({ handle: Fixture.handle, generation, tracks: [{ spotifyTrackIdentifier: Fixture.track,

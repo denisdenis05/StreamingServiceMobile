@@ -198,10 +198,10 @@ test(QueueReceiptReplacementName, async () => {
   expect(JSON.stringify(rendered.toJSON()).includes(SpotifyJamCopy.queueAccepted)).toBe(false);
 });
 
-const SavedScreenNames = Object.freeze({ automatic: 'Opening a disconnected Jam screen attempts saved login without browser sign-in',
+const SavedScreenNames = Object.freeze({ automatic: 'Opening the Jam screen leaves saved connection startup to the application lifecycle',
   forget: 'A disconnected screen can explicitly forget the saved Spotify login' });
 test(SavedScreenNames.automatic, async () => { snapshot = connection(false); await render();
-  expect(controller.restore).toHaveBeenCalledTimes(Fixture.singleInvocationCount); expect(controller.login).not.toHaveBeenCalled(); });
+  expect(controller.restore).not.toHaveBeenCalled(); expect(controller.login).not.toHaveBeenCalled(); });
 test(SavedScreenNames.forget, async () => { snapshot = connection(false); await render();
   await act(async () => button(SpotifyJamCopy.forget).props.onPress()); expect(controller.disconnect).toHaveBeenCalled(); });
 

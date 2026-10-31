@@ -1,8 +1,7 @@
 import { NativeModules } from 'react-native';
-import { CandidateRanker, MatchStatus, IntegrationFailure, IntegrationFailureCode, QueryableRecordingCatalog, RecordingNamespace,
-  StreamingServiceRecordingQuery, SystemScheduler, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
+import { CandidateRanker, MatchStatus, IntegrationFailure, IntegrationFailureCode, SystemScheduler, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
-import { createApplicationNetworkClient } from './ApplicationNetworkClient';
+import { createSpotifyRecordingCatalog } from './SpotifyRecordingCatalogPlatform';
 import { SpotifyBackgroundHostingTask } from './spotify/SpotifyBackgroundHostingTask';
 import type { SpotifyBackgroundHostingJob } from './spotify/SpotifyBackgroundHostingTask';
 interface HostingNative {
@@ -12,7 +11,7 @@ interface HostingNative {
   failHostingRecording(identifier: string): Promise<void>;
   searchHostingRecording(identifier: string, serialized: string): Promise<string>;
 }
-const Policy = Object.freeze({ moduleName: 'SpotifyJamPlayback', catalogPrefix: 'streaming-service:' } as const);
+const Policy = Object.freeze({ moduleName: 'SpotifyJamPlayback' } as const);
 export async function executeSpotifyBackgroundHosting(identifier: string): Promise<void> {
   const native = NativeModules[Policy.moduleName] as HostingNative | undefined;
   if (!native) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
@@ -29,12 +28,7 @@ export async function executeSpotifyBackgroundHosting(identifier: string): Promi
     async match(job, cancellation) {
       const account = authenticationSession.getSnapshot();
       if (account.accountIdentifier !== job.streamingServiceAccountIdentifier || !account.isLoggedIn || !account.token) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
-      const client = createApplicationNetworkClient({ accountIdentifier: account.accountIdentifier, token: account.token });
-      const catalog = new QueryableRecordingCatalog(Policy.catalogPrefix + job.baseAddress, RecordingNamespace.Local,
-        new StreamingServiceRecordingQuery(job.baseAddress, { async read(address, signal) {
-          if (signal.aborted || authenticationSession.getSnapshot().accountIdentifier !== job.streamingServiceAccountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
-          return (await client.get<unknown>(address, { signal })).data;
-        } }));
+      const catalog = createSpotifyRecordingCatalog(job.baseAddress, account.accountIdentifier, account.token);
       const source = await catalog.lookup(job.recordingIdentifier, cancellation);
       if (!source || source.identifier !== job.recordingIdentifier) return null;
       const ranker = new CandidateRanker();

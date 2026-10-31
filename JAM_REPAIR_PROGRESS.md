@@ -76,3 +76,39 @@ player progress animation; a temporary read-only UiAutomation helper exports
 only allowlisted static UI labels/bounds, never titles, accounts or credentials.
 The queue-issue copy addition is being rebuilt before repeating that explicit
 check. No desktop probe was restarted.
+
+## Live catalog prerequisite repair
+
+After a single-song selection from Search, hosting passed QueueCapture and
+failed CatalogMatching/Network on the installed 1843225 build. A read-only,
+unauthenticated capability check against the configured live backend returned
+404 for spotify/catalog/recordings/search and 401 for the existing protected
+Recommendation/sections route. The local Server ad35b78 already contains the
+new authorized controller. Missing deployment is the likely cause; no production
+server was modified. The user has been asked for the deployment path.
+
+The app now preserves known HTTP statuses instead of flattening all library
+request failures into Network. A scoped compatibility query can use actual
+selected recording metadata after primary lookup NotFound, and uses the existing
+bounded Metadata/search/db route only after an actual primary-search NotFound.
+It never downloads the full catalog or relaxes authorization failures. Foreground
+and both headless paths use the same factory. An opaque account/server revision
+fences logout/relogin work; raw pending queue metadata is remembered before
+host preparation and never includes credentials or arbitrary response fields.
+
+The existing match ranker still requires actual duration/recording-code evidence.
+Two matching ready native snapshots can fill missing duration only for the actual
+current known recording. Future tracks receive no borrowed/invented duration;
+complete reliable matching still needs the deployed catalog endpoint (or actual
+confirmed associations). Compatibility does not establish full future matching.
+
+Saved Spotify login now restores once per app account at application startup,
+without waiting for the Jam page. Restoration waits for OAuth initial-address/
+pending-redirect readiness, never starts playback, and does not retry automatically
+after a failure or explicit disconnect. The page's duplicate restore was removed.
+
+Integrated verification passed 637 Spotify Node and 176 Jest cases, full app
+TypeScript and 341 player/mobile cases. The new focused suites cover missing-route
+compatibility, HTTP-category privacy, observed scope/ABA/capacity, actual duration,
+and saved-login/redirect ordering. Packaging and the next explicit emulator
+hosting check are still pending for this source checkpoint.

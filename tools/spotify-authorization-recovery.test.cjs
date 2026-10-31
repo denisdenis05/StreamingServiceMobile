@@ -202,3 +202,35 @@ test(Fixture.names.navigation, () => { let calls = Fixture.zero; const navigatio
   navigation.update(SpotifyAuthenticationAction.Login, true, true); navigation.update(SpotifyAuthenticationAction.Resume, true, true); assert.equal(calls, Fixture.two); });
 test(Fixture.names.navigationRetry, () => { let fails = true; let calls = Fixture.zero; const navigation = new SpotifyAuthorizationNavigation(() => { if (fails) throw new Error(Fixture.privateFailure); calls += Fixture.one; });
   navigation.update(SpotifyAuthenticationAction.Resume, true, true); fails = false; navigation.update(SpotifyAuthenticationAction.Resume, true, true); assert.equal(calls, Fixture.one); });
+
+const ReadinessNames = Object.freeze({ initial: 'Saved restoration readiness waits for initial redirect inspection',
+  pending: 'Saved restoration readiness remains blocked by a pending account callback',
+  resume: 'Readiness publication observes resumed authorization already connecting',
+  disposal: 'Disposed authorization readiness cannot permit saved restoration' });
+test(ReadinessNames.initial, async () => {
+  const current = startupFixture(); const pending = deferred(); current.state.initial = pending.promise;
+  current.startup.start(); assert.equal(current.startup.getSnapshot(), false);
+  const readiness = []; current.startup.subscribe(() => readiness.push(current.startup.getSnapshot()));
+  pending.resolve(null); await flush(); assert.equal(current.startup.getSnapshot(), true); assert.ok(readiness.includes(true)); current.startup.dispose();
+});
+test(ReadinessNames.pending, async () => {
+  const current = startupFixture(); current.state.initial = Fixture.callback; current.state.account.restored = false;
+  current.startup.start(); await flush(); assert.equal(current.startup.getSnapshot(), false);
+  current.state.account.restored = true; current.notifyAccount(); await flush(); assert.equal(current.startup.getSnapshot(), true);
+  current.startup.dispose();
+});
+test(ReadinessNames.resume, async () => {
+  const accountListeners = new Set(); const controllerListeners = new Set(); const pending = deferred();
+  const snapshot = { connected: false, operation: SpotifyMobileOperation.Idle }; const readiness = [];
+  const startup = new SpotifyAuthorizationStartup({ account: { getSnapshot: () => ({ restored: true, isLoggedIn: true, accountIdentifier: Fixture.account }),
+    subscribe(listener) { accountListeners.add(listener); return () => accountListeners.delete(listener); } },
+    controller: { getSnapshot: () => snapshot, subscribe(listener) { controllerListeners.add(listener); return () => controllerListeners.delete(listener); },
+      async resumeAuthorization() { snapshot.operation = SpotifyMobileOperation.Connecting; for (const listener of controllerListeners) listener(); }, authorizationInterrupted: () => undefined },
+    redirects: { readInitialAddress: () => pending.promise, observe: () => () => undefined }, isAuthorizing: () => false, redirectAddress: Fixture.redirect });
+  startup.subscribe(() => { if (startup.getSnapshot()) readiness.push(snapshot.operation); }); startup.start();
+  pending.resolve(Fixture.callback); await flush(); assert.deepEqual(readiness, [SpotifyMobileOperation.Connecting]); startup.dispose();
+});
+test(ReadinessNames.disposal, async () => {
+  const current = startupFixture(); const pending = deferred(); current.state.initial = pending.promise;
+  current.startup.start(); current.startup.dispose(); pending.resolve(null); await flush(); assert.equal(current.startup.getSnapshot(), false);
+});

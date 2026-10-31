@@ -1,9 +1,9 @@
 import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
-  QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
-  StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
+  SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
+  SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
-import { createApplicationNetworkClient } from './ApplicationNetworkClient';
+import { createSpotifyRecordingCatalog, spotifyObservedRecordings } from './SpotifyRecordingCatalogPlatform';
 import { spotifyIntegration } from './SpotifyIntegration';
 import { SpotifyMobileController, SpotifyMobileOperation } from './spotify/SpotifyMobileController';
 import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
@@ -17,6 +17,8 @@ import { spotifyCredentialOwnership, spotifyAuthorizationOwnership, spotifyLibre
 import { spotifyLibrespotAuthentication, openSpotifyVerificationPage } from './SpotifyLibrespotPlatform';
 import { SpotifyLoginProviders } from './spotify/SpotifyLoginProviders';
 import { SpotifyAuthorizationStartup } from './spotify/SpotifyAuthorizationStartup';
+import { SpotifySavedConnectionStartup } from './spotify/SpotifySavedConnectionStartup';
+import { SpotifyObservedRecordingDuration } from './spotify/SpotifyObservedRecordingDuration';
 import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
 export { spotifyListeningCountry } from './SpotifyListeningCountryPlatform';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
@@ -37,7 +39,7 @@ import { spotifyHostingNative, observeSpotifyHosting } from './SpotifyHostingPla
 
 const MobileHostingEmptyHost = '';
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
-  identifierSeparator: '-', catalogPrefix: 'streaming-service:', invalidIdentifierMessage: 'Spotify command sequence exhausted.',
+  identifierSeparator: '-', invalidIdentifierMessage: 'Spotify command sequence exhausted.',
   urlEvent: 'url' } as const);
 const clock = { nowMilliseconds: () => Date.now() };
 const requests = new FetchHttpExecutor(new SystemScheduler());
@@ -127,24 +129,11 @@ export const spotifyMobile = new SpotifyMobileController({
   connect(identity, credentials, selection) {
     const account = authenticationSession.getSnapshot();
     if (account.accountIdentifier === null || account.token === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
-    const client = createApplicationNetworkClient({ accountIdentifier: account.accountIdentifier, token: account.token });
-    const recordingQuery = new StreamingServiceRecordingQuery(TEMPORARY_API_URL, { async read(address, cancellation) {
-      try {
-        const response = await client.get<unknown>(address, { signal: cancellation });
-        if (cancellation.aborted || authenticationSession.getSnapshot().accountIdentifier !== account.accountIdentifier) {
-          throw new IntegrationFailure(IntegrationFailureCode.Superseded);
-        }
-        return response.data;
-      } catch (failure) {
-        if (failure instanceof IntegrationFailure) throw failure;
-        throw new IntegrationFailure(cancellation.aborted ? IntegrationFailureCode.Canceled : IntegrationFailureCode.Network);
-      }
-    } });
     return spotifyIntegration.connect({ accountIdentifier: identity.accountIdentifier, credentials,
       endpoints: { resolveServiceOrigin: cancellation => identity.serviceOrigin === null
         ? gateway.resolveServiceOrigin(cancellation) : Promise.resolve(identity.serviceOrigin) },
-      recordings: new QueryableRecordingCatalog(MobileCompositionPolicy.catalogPrefix + TEMPORARY_API_URL,
-        RecordingNamespace.Local, recordingQuery), associations: new MemoryAssociationStore(), requests, clock,
+      recordings: createSpotifyRecordingCatalog(TEMPORARY_API_URL, account.accountIdentifier, account.token),
+      associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,
       scheduler: new SystemScheduler(), playbackClock,
@@ -172,6 +161,10 @@ const authorizationStartup = new SpotifyAuthorizationStartup({
   } },
 });
 authorizationStartup.start();
+const savedConnectionStartup = new SpotifySavedConnectionStartup({
+  account: authenticationSession, controller: spotifyMobile, authorizationReady: authorizationStartup,
+});
+savedConnectionStartup.start();
 
 declare const module: { readonly hot?: { dispose(callback: () => void): void } };
 export const spotifyRecordingQueue = new SpotifyRecordingQueueStore({
@@ -225,6 +218,7 @@ const nativePlaybackFollower = new SpotifyNativeFollowerStore({
 });
 export const spotifyPlaybackFollower: SpotifyPlaybackController = new SpotifyPlaybackController({ native: nativePlaybackFollower,
   foreground: foregroundPlaybackFollower, useNative: () => spotifyIntegration.usesNativeConnect, stopHosting: () => spotifyHosting.stop() });
+const observedRecordingDuration = new SpotifyObservedRecordingDuration({ store: spotifyObservedRecordings, player: sharedPlaybackNative });
 export const spotifyHosting: SpotifyHostingStore = new SpotifyHostingStore({
   native: spotifyHostingNative(), observe: observeSpotifyHosting,
   getContext: () => {
@@ -245,7 +239,10 @@ export const spotifyHosting: SpotifyHostingStore = new SpotifyHostingStore({
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
   },
   whenPlayerReady: () => playbackApplication.whenReady(),
-  captureQueue: () => captureSpotifyHostingQueue(sharedPlaybackNative),
+  captureQueue: async () => {
+    await observedRecordingDuration.capture();
+    return captureSpotifyHostingQueue(sharedPlaybackNative);
+  },
   translate: async (identifier, market, cancellation) => {
     const runtime = spotifyIntegration.runtime;
     if (!runtime) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
@@ -268,6 +265,7 @@ module.hot?.dispose(() => {
   void spotifyConnect.dispose().catch(() => undefined);
   spotifyHosting.dispose();
   authorizationStartup.dispose();
+  savedConnectionStartup.dispose();
   spotifyPlaybackCommands.dispose();
   playbackApplicationState.remove(); void spotifyPlaybackFollower.dispose().catch(() => undefined);
   spotifyMembership.dispose(); spotifyHostedQueue.dispose(); spotifyRecordingQueue.dispose(); spotifyMobile.dispose();
