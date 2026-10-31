@@ -465,3 +465,43 @@ test(SearchFixture.names.cancel, async () => {
   current.state.searching.resolve(metadataResponse()); await flush();
   assert.equal(current.store.getSnapshot().status, SpotifyConnectStatus.Ready); assert.deepEqual(current.calls.closes, []);
 });
+
+const GuestFixture = Object.freeze({ session: 'synthetic-guest-jam', host: 'synthetic-guest-host',
+  admitted: 'Fresh native guest verification requires exact account session host and participant evidence',
+  denied: 'Missing guest permission malformed participant lists and native denial stay closed',
+  stale: 'Reconnect retires an in flight guest membership verification',
+  malformed: 'Malformed native guest membership JSON is rejected without private details' });
+function guestMembership(overrides = {}) {
+  return { handle: Fixture.handle, generation: Fixture.generation, reading: { accountIdentifier: Fixture.account,
+    membership: { sessionIdentifier: GuestFixture.session, hostDeviceIdentifier: GuestFixture.host, active: true,
+      ownedByCurrentAccount: false, participantIdentifiers: [Fixture.account], ...overrides } } };
+}
+function guestIdentity() { return { accountIdentifier: Fixture.account, sessionIdentifier: GuestFixture.session, hostDeviceIdentifier: GuestFixture.host }; }
+test(GuestFixture.admitted, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  current.dependencies.native().membership = async () => JSON.stringify(guestMembership());
+  await current.store.verify(guestIdentity(), new AbortController().signal);
+  assert.equal(current.calls.commands.length, Fixture.zero); await current.store.detach();
+});
+test(GuestFixture.denied, async () => {
+  for (const [membership, code] of [[{ participantIdentifiers: [] }, library.IntegrationFailureCode.Forbidden],
+    [{ participantIdentifiers: [Fixture.account, Fixture.account] }, library.IntegrationFailureCode.InvalidResponse],
+    [{ active: false }, library.IntegrationFailureCode.Superseded], [{ hostDeviceIdentifier: Fixture.device }, library.IntegrationFailureCode.Superseded]]) {
+    const current = fixture(); await current.attach(); current.send(registration());
+    current.dependencies.native().membership = async () => JSON.stringify(guestMembership(membership));
+    await assert.rejects(current.store.verify(guestIdentity(), new AbortController().signal), { code }); await current.store.detach();
+  }
+});
+test(GuestFixture.stale, async () => {
+  const current = fixture(); await current.attach(); current.send(registration()); const pending = deferred();
+  current.dependencies.native().membership = async () => pending.promise;
+  const verification = current.store.verify(guestIdentity(), new AbortController().signal);
+  current.send({ type: Fixture.reconnecting }); pending.resolve(JSON.stringify(guestMembership()));
+  await assert.rejects(verification, { code: library.IntegrationFailureCode.Superseded }); await current.store.detach();
+});
+test(GuestFixture.malformed, async () => {
+  const current = fixture(); await current.attach(); current.send(registration());
+  current.dependencies.native().membership = async () => Fixture.privateFailure;
+  await assert.rejects(current.store.verify(guestIdentity(), new AbortController().signal), { code: library.IntegrationFailureCode.InvalidResponse });
+  await current.store.detach();
+});

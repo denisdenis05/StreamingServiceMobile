@@ -6,6 +6,7 @@ interface SpotifyConnectNativeCalls {
     fun start(serialized: String): String
     fun search(handle: Long, generation: Long, serialized: String): String
     fun metadata(handle: Long, generation: Long, serialized: String): String
+    fun membership(handle: Long, generation: Long): String = throw SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)
     fun read(handle: Long, generation: Long): String
     fun poll(handle: Long): String
     fun execute(handle: Long, serialized: String): String
@@ -20,6 +21,7 @@ private object PlatformSpotifyConnectNativeCalls : SpotifyConnectNativeCalls {
     override fun start(serialized: String): String = SpotifyLibrespotNative.connectStart(serialized)
     override fun search(handle: Long, generation: Long, serialized: String): String = SpotifyLibrespotNative.connectSearch(handle, generation, serialized)
     override fun metadata(handle: Long, generation: Long, serialized: String): String = SpotifyLibrespotNative.connectMetadata(handle, generation, serialized)
+    override fun membership(handle: Long, generation: Long): String = SpotifyLibrespotNative.connectMembership(handle, generation)
     override fun read(handle: Long, generation: Long): String = SpotifyLibrespotNative.connectRead(handle, generation)
     override fun poll(handle: Long): String = SpotifyLibrespotNative.connectPoll(handle)
     override fun execute(handle: Long, serialized: String): String = SpotifyLibrespotNative.connectExecute(handle, serialized)
@@ -51,6 +53,7 @@ class SpotifyConnectNativeExecution(private val native: SpotifyConnectNativeCall
 
     override fun search(handle: Long, generation: Long, serialized: String): String = boundResponse(handle, generation, native.search(handle, generation, serialized))
     override fun metadata(handle: Long, generation: Long, serialized: String): String = boundResponse(handle, generation, native.metadata(handle, generation, serialized))
+    override fun membership(handle: Long, generation: Long): String = boundResponse(handle, generation, native.membership(handle, generation))
     override fun read(handle: Long, generation: Long): String = boundResponse(handle, generation, native.read(handle, generation))
 
     private fun boundResponse(handle: Long, generation: Long, serialized: String): String {

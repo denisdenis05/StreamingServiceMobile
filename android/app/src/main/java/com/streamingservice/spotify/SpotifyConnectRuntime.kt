@@ -135,6 +135,7 @@ class SpotifyConnectRuntime(
         return checkNotNull(handle)
     }
 
+    fun membership(selected: Attachment, identifier: String, generation: Long): String = observe(selected, identifier) { owner.membership(NATIVE_OWNER_IDENTIFIER, generation) }
     fun read(selected: Attachment, identifier: String, generation: Long): String = observe(selected, identifier) { owner.read(NATIVE_OWNER_IDENTIFIER, generation) }
     fun search(selected: Attachment, identifier: String, generation: Long, serialized: String): String =
         observe(selected, identifier) { owner.search(NATIVE_OWNER_IDENTIFIER, generation, serialized) }

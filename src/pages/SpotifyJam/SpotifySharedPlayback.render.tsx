@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { TextInput, View } from 'react-native';
-import { SharedPlaybackStatus } from 'streaming-service-spotify-jam';
+import { SharedPlaybackStatus, SpotifyLoginMethod } from 'streaming-service-spotify-jam';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
 import { spotifyMobile, spotifyPlaybackFollower } from '../../services/SpotifyMobileService';
@@ -8,8 +8,8 @@ import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePoli
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
 export const SharedPlaybackCopy = Object.freeze({ title: 'Listen alongside Spotify',
-  explanation: 'Plays matching songs from your library while Spotify supplies playback position. Your Spotify account must host the Jam on an active Spotify device.',
-  replacement: 'Starting replaces your local queue. The host controls below send playback commands to Spotify. Pausing locally stops following. Spotify browser sign-in supports foreground listening only. Guest playback is not available yet.',
+  explanation: 'Plays matching songs from your library while Spotify supplies playback position. An active Jam host supplies playback. Device sign-in also supports admitted guests after native membership verification.',
+  replacement: 'Starting replaces your local queue. The host controls below send playback commands to Spotify. Pausing locally stops following. Spotify browser sign-in supports foreground listening only. Guest playback requires device sign-in and current Jam admission.',
   market: 'Two-letter country code', emptyText: '', marketCharacters: 2, capitalization: 'characters',
   start: 'Replace queue and follow Spotify', stop: 'Stop following Spotify',
   stopping: 'Stopping local shared playback…',
@@ -31,7 +31,7 @@ export default function SpotifySharedPlayback() {
   const connection = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   const [market, setMarket] = useState<string>(SharedPlaybackCopy.emptyText);
   const session = connection.session?.session;
-  const available = connection.connected && session?.ownedByCurrentAccount && session.active && session.hostDeviceIdentifier;
+  const available = connection.connected && session && (session.ownedByCurrentAccount || connection.authenticationMethod === SpotifyLoginMethod.Librespot && session.participants?.some(participant => participant.identifier === connection.session?.accountIdentifier)) && session.active && session.hostDeviceIdentifier;
   const following = snapshot.status !== SharedPlaybackStatus.Detached && snapshot.status !== SharedPlaybackStatus.Failed;
   const message = StatusMessages[snapshot.status];
   return <View style={styles.section}>

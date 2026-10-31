@@ -24,6 +24,12 @@ class SpotifyConnectNativeExecutionTest {
         try { execution.search(HANDLE, GENERATION, CREDENTIAL); throw AssertionError(INVALID_RESPONSE_FAILURE) }
         catch (failure: SpotifyConnectFailure) { assertEquals(INVALID_RESPONSE_FAILURE, failure.code) }
     }
+    @Test fun membershipReadsRequireTheExactHandleAndGeneration() {
+        val native = Native(); val execution = SpotifyConnectNativeExecution(native)
+        assertEquals(native.reading, execution.membership(HANDLE, GENERATION))
+        native.reading = JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, NEXT_GENERATION).toString()
+        requireFailure(INVALID_RESPONSE_FAILURE) { execution.membership(HANDLE, GENERATION) }
+    }
     private class Native : SpotifyConnectNativeCalls {
         var opened = JSONObject().put(HANDLE_FIELD, HANDLE).toString()
         var polled = JSONObject().put(HANDLE_FIELD, HANDLE).put(FINISHED_FIELD, false).put(EVENTS_FIELD, JSONArray()).toString()
@@ -42,6 +48,7 @@ class SpotifyConnectNativeExecutionTest {
         var reading = JSONObject().put(HANDLE_FIELD, HANDLE).put(GENERATION_FIELD, GENERATION).toString()
         override fun search(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
         override fun metadata(handle: Long, generation: Long, serialized: String): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); assertEquals(CREDENTIAL, serialized); return reading }
+        override fun membership(handle: Long, generation: Long): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); return reading }
         override fun read(handle: Long, generation: Long): String { assertEquals(HANDLE, handle); assertEquals(GENERATION, generation); return reading }
         override fun poll(handle: Long): String { assertEquals(HANDLE, handle); return polled }
         override fun execute(handle: Long, serialized: String): String { commands.add(handle to serialized); executionFailure?.let { failure -> throw failure }; return receipt }

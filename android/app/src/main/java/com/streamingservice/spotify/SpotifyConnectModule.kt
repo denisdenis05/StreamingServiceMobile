@@ -43,6 +43,14 @@ class SpotifyConnectModule(private val applicationContext: ReactApplicationConte
     }
 
     @ReactMethod
+    fun membership(identifier: String, generation: Double, promise: Promise) {
+        if (!generation.isFinite() || generation < MINIMUM_GENERATION || generation > MAXIMUM_GENERATION || generation != generation.toLong().toDouble()) {
+            reject(promise, INVALID_INPUT_FAILURE); return
+        }
+        dispatch(promise) { promise.resolve(runtime.membership(attachment, identifier, generation.toLong())) }
+    }
+
+    @ReactMethod
     fun read(identifier: String, generation: Double, promise: Promise) {
         if (!generation.isFinite() || generation < MINIMUM_GENERATION || generation > MAXIMUM_GENERATION || generation != generation.toLong().toDouble()) {
             reject(promise, INVALID_INPUT_FAILURE); return

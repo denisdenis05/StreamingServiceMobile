@@ -9,7 +9,7 @@ import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePoli
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
 export const HostedQueueCopy = Object.freeze({ title: 'Spotify host queue', refresh: 'Refresh host queue',
-  explanation: 'Shows the hosting Spotify account’s queue. Guest queue observation is not available yet.',
+  explanation: 'Shows the active Jam host’s queue. Device sign-in verifies current guest membership before displaying a shared queue.',
   current: 'Playing in Spotify: ', separator: ' · ', empty: 'The Spotify host queue is empty.',
   unloaded: 'Refresh to load the host queue after starting playback in Spotify.',
   stale: 'The queue view is out of date. Refresh after reconnecting.', initialCount: 0 });

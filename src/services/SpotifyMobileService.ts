@@ -1,4 +1,4 @@
-import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode, JamConnectionStatus,
+import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
   QueryableRecordingCatalog, RecordingNamespace, SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
   StreamingServiceRecordingQuery, SystemScheduler } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
@@ -21,6 +21,7 @@ import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
 import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
 import { SpotifyNativeFollowerStore } from './spotify/SpotifyNativeFollowerStore';
+import { captureSpotifyNativeFollowerContext } from './spotify/SpotifyNativeFollowerContext';
 import { SpotifyPlaybackController } from './spotify/SpotifyPlaybackController';
 import { spotifyJamPlaybackNative, observeSpotifyJamPlayback } from './SpotifyJamPlaybackPlatform';
 import { SpotifyPlaybackCommandStore } from './spotify/SpotifyPlaybackCommandStore';
@@ -149,6 +150,7 @@ export const spotifyMobile = new SpotifyMobileController({
       ...(selection.useNativeConnect ? {
         sharedStateVerifier: new SpotifyConnectSharedStateVerifier(spotifyConnect, identity.accountIdentifier),
         connectMetadata: spotifyConnect, connectSearch: spotifyConnect,
+        guestObservationVerifier: spotifyConnect,
         hostedQueueReader: new SpotifyConnectHostedQueueReader(spotifyConnect, spotifyConnect, identity.accountIdentifier),
         playbackReader: new SpotifyConnectPlaybackReader(spotifyConnect, identity.accountIdentifier),
         queueProtocol: new SpotifyConnectQueueProtocol(spotifyConnect, identity.accountIdentifier, nextIdentifier),
@@ -200,15 +202,9 @@ const foregroundPlaybackFollower = new SpotifyPlaybackFollowerStore({
 });
 function nativePlaybackContext(getConnection: (accountIdentifier: string) => Readonly<{ handle: number; generation: number }> | null) {
   const runtime = spotifyMobile.getSnapshot().connected ? spotifyIntegration.runtime : null;
-  const snapshot = runtime?.sessions.getSnapshot();
-  const account = authenticationSession.getSnapshot();
-  const session = snapshot?.session;
-  if (!spotifyIntegration.usesNativeConnect || !snapshot || snapshot.accountIdentifier === null || snapshot.status !== JamConnectionStatus.Ready || !session?.ownedByCurrentAccount
-    || !session.active || !session.hostDeviceIdentifier || !account.isLoggedIn || account.accountIdentifier === null) return null;
-  const connection = getConnection(snapshot.accountIdentifier);
-  return connection === null ? null : Object.freeze({ streamingServiceAccountIdentifier: account.accountIdentifier,
-    baseAddress: TEMPORARY_API_URL, spotifyAccountIdentifier: snapshot.accountIdentifier,
-    jamSessionIdentifier: session.identifier, hostDeviceIdentifier: session.hostDeviceIdentifier, ...connection });
+  return captureSpotifyNativeFollowerContext({ useNativeConnection: spotifyIntegration.usesNativeConnect,
+    session: runtime?.sessions.getSnapshot() ?? null, applicationAccount: authenticationSession.getSnapshot(),
+    baseAddress: TEMPORARY_API_URL, getConnection });
 }
 const nativePlaybackFollower = new SpotifyNativeFollowerStore({
   native: spotifyJamPlaybackNative(), observe: observeSpotifyJamPlayback,

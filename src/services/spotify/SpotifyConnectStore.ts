@@ -17,6 +17,7 @@ export interface SpotifyConnectNative {
   close(identifier: string): Promise<void>;
   shutdown?(): Promise<void>;
   refresh(identifier: string, generation: number): Promise<void>;
+  membership?(identifier: string, generation: number): Promise<string>;
   read(identifier: string, generation: number): Promise<string>;
   search(identifier: string, generation: number, serialized: string): Promise<string>;
   metadata(identifier: string, generation: number, serialized: string): Promise<string>;
@@ -31,6 +32,8 @@ export interface SpotifyConnectDependencies {
   readonly nextIdentifier: () => string;
   readonly membershipChanged?: () => void;
 }
+
+const GuestMembershipPolicy = Object.freeze({ maximumParticipants: 256 });
 
 const Policy = Object.freeze({ zero: 0, firstGeneration: 1, stringType: 'string', objectType: 'object',
   booleanType: 'boolean', maximumRequestIdentifierCharacters: 128,
@@ -155,6 +158,40 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
     try {
       await binding.native.refresh(binding.identifier, this.snapshot.generation);
       this.requireCurrent(binding);
+    } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
+  }
+
+  async verify(identity: Readonly<{ accountIdentifier: string; sessionIdentifier: string; hostDeviceIdentifier: string }>, cancellation: AbortSignal): Promise<void> {
+    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    const binding = this.binding;
+    if (!binding || binding.accountIdentifier !== identity.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.requireCurrent(binding);
+    const native = binding.native;
+    const generation = this.snapshot.generation;
+    const handle = binding.handle;
+    if (!native?.membership || handle === null || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    try {
+      const serialized = await this.awaitNativeRead(binding, cancellation, () => native.membership!(binding.identifier, generation));
+      this.requireCurrent(binding);
+      if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+      if (this.snapshot.generation !== generation || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (typeof serialized !== Policy.stringType || serialized.length > Policy.maximumBatchCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      let response: Record<string, unknown>;
+      try { response = object(JSON.parse(serialized)); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
+      if (!response || typeof response !== Policy.objectType) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      if (response.handle !== handle || response.generation !== generation) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (response.failure !== undefined && response.failure !== null) throw new IntegrationFailure(typeof response.failure === Policy.stringType && FailureCodes.has(response.failure as string) ? response.failure as IntegrationFailureCode : IntegrationFailureCode.Network);
+      const reading = object(response.reading);
+      if (reading?.accountIdentifier !== identity.accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+      if (reading.membership === null) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      const membership = object(reading.membership);
+      if (!membership || membership.sessionIdentifier !== identity.sessionIdentifier || membership.hostDeviceIdentifier !== identity.hostDeviceIdentifier
+        || membership.active !== true) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (typeof membership.ownedByCurrentAccount !== Policy.booleanType || !Array.isArray(membership.participantIdentifiers)
+        || membership.participantIdentifiers.length > GuestMembershipPolicy.maximumParticipants) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      const participants = membership.participantIdentifiers.map((participant: unknown) => identifier(participant));
+      if (new Set(participants).size !== participants.length) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      if (!membership.ownedByCurrentAccount && !participants.includes(identity.accountIdentifier)) throw new IntegrationFailure(IntegrationFailureCode.Forbidden);
     } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
   }
 

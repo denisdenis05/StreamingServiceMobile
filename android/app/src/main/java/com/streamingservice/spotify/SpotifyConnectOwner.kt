@@ -5,6 +5,7 @@ interface SpotifyConnectExecution {
     fun poll(handle: Long): SpotifyConnectBatch
     fun search(handle: Long, generation: Long, serialized: String): String
     fun metadata(handle: Long, generation: Long, serialized: String): String
+    fun membership(handle: Long, generation: Long): String = throw SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)
     fun read(handle: Long, generation: Long): String
     fun refresh(handle: Long, generation: Long)
     fun beginCommand(handle: Long, requestIdentifier: String)
@@ -49,6 +50,7 @@ class SpotifyConnectOwner(
         return handle
     }
 
+    fun membership(identifier: String, generation: Long): String = observe(identifier, generation) { handle -> execution.membership(handle, generation) }
     fun read(identifier: String, generation: Long): String = observe(identifier, generation) { handle -> execution.read(handle, generation) }
     fun search(identifier: String, generation: Long, serialized: String): String = observe(identifier, generation) { handle -> execution.search(handle, generation, serialized) }
     fun metadata(identifier: String, generation: Long, serialized: String): String = observe(identifier, generation) { handle -> execution.metadata(handle, generation, serialized) }
