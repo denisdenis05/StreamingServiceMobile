@@ -60,11 +60,12 @@ No installation or physical-device result is claimed.
 ## Live session and concrete next steps
 
 The historical approved probe is no longer running. Fresh read-only probe
-execution 44183 remains running, awaiting the requested pairing approval;
-registration and current-session catalog success have not been observed.
-Preserve it and existing Spotify processes. Check its current output before
-using its live channel; a socket alone is not registration evidence. After actual
-approval/registration, run `node tools/validate-spotify-native-search.cjs` once and
+execution 44183 exited with status 1 after reporting a network error and then
+authorization failure Unauthorized. Its pairing link is obsolete. No registration
+or current-session catalog result was observed. Preserve existing Spotify
+processes. When pairing is available, start a fresh read-only probe and verify
+actual approval/registration; a socket alone is not evidence. Then run
+`node tools/validate-spotify-native-search.cjs` once and
 inspect only the bounded allowlisted diagnostic phase/status. Do not retry a
 throttled search automatically or infer the earlier Backpressure HTTP cause.
 

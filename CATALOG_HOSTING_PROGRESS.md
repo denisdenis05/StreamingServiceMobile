@@ -11,8 +11,11 @@ output without killing its owner. UI backpressure copy now covers both busy
 transport and limiting requests without asserting a cause.
 
 The historical probe had no live process. Root built the diagnostic example and
-started fresh read-only execution 44183, awaiting user pairing. Do not treat a
-socket file as a registered session or assert an HTTP cause without that result.
+started fresh read-only execution 44183. It subsequently exited with status 1
+after Network and authorization Unauthorized failures, without observed
+registration. Its pairing link is obsolete; a fresh probe is needed when pairing
+is available. Do not treat a socket file as a registered session or assert a
+catalog HTTP cause from this authorization failure.
 No playback command/queue mutation or process restart was issued.
 
 Scoped native preparation now caches confirmed recording-to-Spotify mappings,

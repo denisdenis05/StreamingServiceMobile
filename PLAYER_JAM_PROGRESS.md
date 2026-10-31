@@ -50,4 +50,6 @@ npm run test:player-mobile passed 341; npm run test:settings passed 25 Node and
 example tests; probes: 32 cases. Library: 643 cases. Physical mobile verification
 is postponed. No real cross-account permission, audible latency/alignment or
 background process-survival claim follows from these tests. Catalog search still
-needs actual live diagnostics; the fresh diagnostic probe awaits approval and has not registered yet.
+needs actual live diagnostics. Probe 44183 exited with network and authorization
+Unauthorized failures before observed registration; its pairing link is obsolete.
+A fresh read-only probe and actual approval are required for live catalog checks.
