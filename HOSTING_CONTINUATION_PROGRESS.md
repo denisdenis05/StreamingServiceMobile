@@ -193,3 +193,23 @@ after a matching deadline. Both regressions failed before the change.
 `npx tsc --project tsconfig.spotify.json` passed;
 `node --test tools/spotify-background-hosting.test.cjs` passed all 8 cases.
 No device, emulator, live session or deployment operation was performed.
+
+## Initial hosting with an existing Connect device — 2026-11-01
+
+A new owned Jam may have no assigned Jam host while the account still has an
+active Spotify Connect device. Preflight previously required that device to be
+empty as well, preventing explicit app activation. For an actually empty Jam
+host, preflight now captures the fresh actual Connect device in its clock anchor.
+Rust activation still checks that exact captured device, sequence and native
+scope. Both membership reads still require the same owned active Jam and empty
+host. A known Jam host still requires an exact Connect-device match; a host
+appearing during the read is rejected. No membership or takeover guard was removed.
+
+`SpotifyHostNativeTransportTest` independently models membership host and active
+Connect device. Dedicated tests cover actual prior-device capture, another host
+acquiring membership during the read and mismatch for a known Jam host. The agent
+reproduced two failures before the fix. A concurrent focused Gradle run encountered
+an output-file collision, so it is not counted as a passing result. Root's final
+sequential full native run passed 454 app and 289 Player JVM cases, zero failures.
+The native change was included in the subsequent x86 release build and successful
+adb update; live activation is checked separately after installation.

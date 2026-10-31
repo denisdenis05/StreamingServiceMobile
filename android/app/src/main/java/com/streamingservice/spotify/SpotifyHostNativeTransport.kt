@@ -38,7 +38,8 @@ class SpotifyHostNativeTransport(
         requireCurrent()
         membership(native.membership(identity.handle, identity.generation), identity, expectedHostDeviceIdentifier)
         requireCurrent()
-        val anchor = readAnchor(identity, expectedHostDeviceIdentifier, requireCurrent)
+        val expectedActiveDevice = expectedHostDeviceIdentifier.takeUnless { identifier -> identifier.isEmpty() }
+        val anchor = readAnchor(identity, expectedActiveDevice, requireCurrent)
         membership(native.membership(identity.handle, identity.generation), identity, expectedHostDeviceIdentifier)
         requireCurrent()
         anchor

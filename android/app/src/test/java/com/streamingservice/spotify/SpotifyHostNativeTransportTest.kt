@@ -24,6 +24,7 @@ class SpotifyHostNativeTransportTest {
         var roundTripMilliseconds = ReadRoundTripMilliseconds
         var owned = true
         var host = PreviousHost
+        var activeDevice: String? = null
         var afterMembership: () -> Unit = {}
         var afterExecution: () -> Unit = {}
         var afterRead: () -> Unit = {}
@@ -47,7 +48,7 @@ class SpotifyHostNativeTransportTest {
                 reads += SingleCount; elapsedMilliseconds += roundTripMilliseconds
                 val response = JSONObject().put(HandleField, handle).put(GenerationField, generation).put(SampledNativeField, NativeReadSampleMilliseconds)
                     .put(ReadingField, JSONObject().put(ReadStartedField, NativeReadStartMilliseconds).put(ReadCompletedField, NativeReadEndMilliseconds)
-                        .put(ClusterField, JSONObject().put(ActiveDeviceField, host).put(ServerField, ServerMilliseconds)))
+                        .put(ClusterField, JSONObject().put(ActiveDeviceField, activeDevice ?: host).put(ServerField, ServerMilliseconds)))
                 afterRead()
                 return response.toString()
             }
@@ -154,6 +155,23 @@ class SpotifyHostNativeTransportTest {
         val anchor = fixture.complete(fixture.transport.preflight(fixture.identity, EmptyHost))
         assertEquals(EmptyHost, anchor.previousHostDeviceIdentifier)
         assertEquals(TwoMembershipReads, fixture.membershipCount)
+    }
+    @Test fun ownedJamWithoutAHostCapturesTheActualExistingConnectDeviceForExplicitActivation() {
+        val fixture = Fixture(); fixture.host = EmptyHost; fixture.activeDevice = OtherHost
+        val anchor = fixture.complete(fixture.transport.preflight(fixture.identity, EmptyHost))
+        assertEquals(OtherHost, anchor.previousHostDeviceIdentifier)
+        assertEquals(TwoMembershipReads, fixture.membershipCount); assertEquals(SingleCount, fixture.reads)
+    }
+    @Test fun initialHostCaptureRejectsMembershipAcquisitionByAnotherDeviceDuringTheRead() {
+        val fixture = Fixture(); fixture.host = EmptyHost; fixture.activeDevice = OtherHost
+        fixture.afterRead = { fixture.host = OtherHost }
+        val operation = fixture.transport.preflight(fixture.identity, EmptyHost); fixture.queue.drain()
+        failure(operation.result, Superseded); assertEquals(TwoMembershipReads, fixture.membershipCount)
+    }
+    @Test fun aKnownJamHostStillRequiresTheExactConnectDeviceBeforeActivation() {
+        val fixture = Fixture(); fixture.activeDevice = OtherHost
+        val operation = fixture.transport.preflight(fixture.identity, PreviousHost); fixture.queue.drain()
+        failure(operation.result, Superseded); assertEquals(SingleCount, fixture.reads)
     }
     @Test fun malformedRegistrationReceiptsCannotInventADeviceOrSequence() {
         val fixture = Fixture(); fixture.receiptOverride = JSONObject().put(FailureField, JSONObject.NULL).toString()
