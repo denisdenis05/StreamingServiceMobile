@@ -25,7 +25,9 @@ probe is a separate native session and cannot establish Android playback results
 | Catalog translation | Current-session native search returns decoded candidates; permission, throttling and queue-capacity failures stay explicit |
 | App-led host activation | Explicit action captures the actual app queue and epochs; native activation and fresh own-device verification succeed |
 | Remote actions | Pause/resume/seek/skip/add queue are acknowledged only after real app player receipts; duplicates do not execute again |
-| Local queue changes | Known recordings publish the real order; unknown recordings pause and use a bounded headless match; Play afterward is explicit |
+| Player integration and local queue changes | Host from the player; switching songs prepares mappings before queue mutation and publishes actual occurrences after receipt. A failed preparation preserves the old queue. Incoming remote changes retire stale local preparations; unprepared external additions still pause safely |
+| Player controls while following | Allowed pause/resume/next/previous/seek use one real remote command and authoritative follower refresh, without duplicate local mutation; arbitrary remote select/reorder remains unavailable |
+| Invitation QR | Generated QR contains exactly the current real invitation, scans in Spotify, clears on session/account/invitation rotation and retains accessible text/share alternatives |
 | Shared queue | Repeated recording occurrences and order agree across accounts; uncertain edits do not replay |
 | Guest admission and permissions | The second account is actually admitted; permitted reads/actions succeed, denied roles remain denied; guards are not removed by inference |
 | Following | Host playback changes map to actual library audio; drift is measured rather than inferred from source clocks |

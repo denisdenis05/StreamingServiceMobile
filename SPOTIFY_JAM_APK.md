@@ -1,3 +1,82 @@
+# Integrated player Jam, shared controls and QR release — 2026-10-31
+
+This checkpoint supersedes historical status below. Three GPT-6.1 Sol agents
+implemented the native/catalog, guest-controls and QR chapters; the owning
+session integrated the player lifecycle, reviewed source and ran source checks.
+Mobile verification remains postponed. No phone installation or audio action
+was performed for this release.
+
+## Source chapters
+
+- Mobile `87768b4`: bounded headless mapping preparation/cache, immediate host
+  publication requests, safe native catalog diagnostics and Dealer-driven
+  follower refresh with one coalesced read behind an in-flight operation.
+- SpotifyJam `5890b80`: guarded native guest commands and reconciliation with
+  fresh membership, actual native restrictions and Dealer acknowledgements.
+  Browser/default owner guards remain. Admission does not grant every command.
+- Mobile `26c5555`: locally generated invitation QR codes from the current real
+  invitation, offline encoding, scoped clearing and accessible share/text paths.
+- Mobile `1fb232f`: actual player Jam sheet, explicit host/follow/stop, preparation
+  before hosted queue changes and publication after actual player receipts.
+  Following forwards supported controls without duplicate local mutation;
+  scoped cursor checks reject stale selection after another local/remote action.
+  Player library remains `b28f393`; the app owns the Spotify integration.
+
+Arbitrary remote song selection/reordering is unsupported by the current native
+command contract. Owners can explicitly host from this player; guests can append
+when permitted or stop following for local playback. Unknown outcomes are not
+replayed. QR scanning opens the real Spotify invitation; in-app camera scanning
+and a new StreamingService deep-link route were not introduced.
+
+Feature/test mapping: PLAYER_JAM_PROGRESS.md, SHARED_CONTROL_PROGRESS.md,
+CATALOG_HOSTING_PROGRESS.md and JAM_QR_PROGRESS.md.
+
+## Host source verification
+
+- `npm run test:spotify`: 538 Node and 148 Jest cases passed.
+- `npm run test:player-mobile`: 341 passed.
+- `npm run test:settings`: 25 Node and 25 Jest passed.
+- `npx tsc --noEmit`: passed.
+- Android `:app:testDebugUnitTest -x :app:buildSpotifyLibrespot --no-daemon`:
+  433 JVM cases passed.
+- `cargo test --manifest-path native/librespot-session/Cargo.toml --locked --quiet`:
+  236 passed; `--example connect_probe` adds 8 passed.
+- `npm run test:spotify-probes`: 32 passed. SpotifyJam `npm test`: 643 passed.
+- Release `:app:assembleRelease --no-daemon --console=plain`: passed in 59 seconds.
+
+## Packaged APK
+
+`build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`: 36,027,172 bytes.
+SHA-256: `a3819c8b174d2c019851e85fa416e9eb131f9eff1ab3058279c757b4ae6bb433`.
+Packaged source is Mobile `1fb232f`, SpotifyJam `5890b80`, Player `b28f393`.
+APK v2 signature and 16 KB ZIP alignment passed using build-tools 37.0.0.
+All four Spotify ELF LOAD segments use 0x4000 alignment. Hermes bundle is
+2,323,920 bytes; native Spotify library is 5,626,960 bytes. Player host/manage,
+QR and both hosting-recording/authentication headless task markers are present.
+The previous `8aac411` APK is preserved in the ignored artifact folder.
+Verification logs and `player-jam-release-metadata.json` are in build/spotify-jam.
+No installation or physical-device result is claimed.
+
+## Live session and concrete next steps
+
+The historical approved probe is no longer running. Fresh read-only probe
+execution 44183 remains running, awaiting the requested pairing approval;
+registration and current-session catalog success have not been observed.
+Preserve it and existing Spotify processes. Check its current output before
+using its live channel; a socket alone is not registration evidence. After actual
+approval/registration, run `node tools/validate-spotify-native-search.cjs` once and
+inspect only the bounded allowlisted diagnostic phase/status. Do not retry a
+throttled search automatically or infer the earlier Backpressure HTTP cause.
+
+Catalog success remains unresolved. Cross-account admission/control permissions,
+real queue propagation, audible synchronization/drift, QR scanning, reconnect,
+screen lock, headless task execution and process/credential lifecycle remain
+unverified. Use SPOTIFY_JAM_ACCEPTANCE.md when device checks resume. Source tests
+and APK assembly do not prove these scenarios. Keep all account/song data,
+credentials and invitation tokens out of exported evidence.
+
+---
+
 ## Packaged artifact and remaining acceptance
 
 APK: build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk, 35,938,216 bytes.
