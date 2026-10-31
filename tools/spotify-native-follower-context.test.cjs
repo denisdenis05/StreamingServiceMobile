@@ -47,3 +47,7 @@ test('The connection lookup uses the actual Spotify account and permits a verifi
     return { handle: Fixture.handle, generation: Fixture.generation + Fixture.single }; };
   assertion.equal(captureSpotifyNativeFollowerContext(input).generation, Fixture.generation + Fixture.single);
 });
+test('An in-flight permitted Jam command retains the same verified native follower context', () => {
+  const input = fixture(); const before = captureSpotifyNativeFollowerContext(input); input.session.status = JamConnectionStatus.Operating;
+  assertion.deepEqual(captureSpotifyNativeFollowerContext(input), before);
+});

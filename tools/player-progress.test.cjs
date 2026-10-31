@@ -46,7 +46,7 @@ function environment() {
     'react-native-toast-message': {}, 'streaming-service-player': {},
     './NativeAudioRuntime': { playbackProgressStore: store, audioRuntime: { state: source,
       dispatcher: { getSnapshot: async () => snapshot } }, AudioRuntimePolicy: { millisecondsPerSecond: Fixture.second } },
-    './AuthenticationService': {}, './player/QueueIntentScheduler': {}, './ApplicationNetworkClient': {},
+    './PlayerJamRuntime': {}, './AuthenticationService': {}, './player/QueueIntentScheduler': {}, './ApplicationNetworkClient': {},
     './player/PlaybackCollectionLoader': { PlaybackCollectionLoader: class {} }, '../constants/types': {}, './PlaybackTracker': {} });
   return { service, store, frames, observers, lifecycleListeners,
     advance(time) { now = time; const pending = [...frames]; frames.clear(); for (const callback of pending) callback(); },

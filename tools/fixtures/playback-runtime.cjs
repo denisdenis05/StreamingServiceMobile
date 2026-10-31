@@ -7,7 +7,7 @@ const RuntimeFixture = Object.freeze({ token: 'fixture-access-token', nextToken:
   stateName: 'state', replaceName: 'replace', appendName: 'append', appendSelectName: 'appendAndSelect', selectName: 'select',
   removeName: 'remove', moveName: 'move', clearName: 'clear', repeatName: 'repeat', shuffleName: 'shuffle', pauseName: 'pause',
   playName: 'play', stopName: 'stop', nextName: 'next', previousName: 'previous', seekName: 'seek' });
-function environment() {
+function environment(queueChanges) {
   const model = new QueueReferenceModel(DefaultQueuePolicy, new QueueEntryValidator(DefaultQueuePolicy), { shuffle: entries => [...entries].reverse() });
   let playbackError = null;
   let state = model.createEmptyState(); let sequence = RuntimeFixture.initial; let content = RuntimeFixture.initial;
@@ -78,7 +78,7 @@ function environment() {
     previous(context) { return mutation(RuntimeFixture.previousName, context, () => model.previous(state, RuntimeFixture.initial), false, true); },
     seek(context) { return mutation(RuntimeFixture.seekName, context, () => state, false, true); },
   };
-  const runtime = new PlaybackRuntime({ native, mediaServerAddress: Fixture.server,
+  const runtime = new PlaybackRuntime({ native, ...(queueChanges === undefined ? {} : { queueChanges }), mediaServerAddress: Fixture.server,
     identifiers: { nextIdentifier() { identifier += RuntimeFixture.increment; return Fixture.identifierPrefix + identifier; } },
     cache: { findReadableCachedAddress: address => cacheOperation(address) },
     fetchSuggestions: () => { suggestionCalls += RuntimeFixture.increment; return suggestions(); },

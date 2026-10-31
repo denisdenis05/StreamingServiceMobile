@@ -3,7 +3,13 @@ import { useData } from '../../services/DataProvider.tsx';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 import HeartEmptyIcon from '../../../assets/icons/heartEmptyIcon.tsx';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import {
   Animated,
   Dimensions,
@@ -41,6 +47,9 @@ import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { RepeatingType } from '../../constants/types.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
+import SpotifyPlayerJam from './SpotifyPlayerJam.render';
+import { playerJam } from '../../services/PlayerJamRuntime';
+import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -60,11 +69,23 @@ const Playing = ({ navigation }: any) => {
     toggleShuffle,
   } = useMusicQueue();
 
+  const jam = useSyncExternalStore(playerJam.subscribe, playerJam.getSnapshot);
+  const sharing =
+    jam.mode === SpotifyPlayerJamMode.Hosting ||
+    jam.mode === SpotifyPlayerJamMode.Following ||
+    jam.mode === SpotifyPlayerJamMode.Resolving;
+  const controlsDisabled =
+    jam.pending ||
+    jam.mode === SpotifyPlayerJamMode.Preparing ||
+    jam.mode === SpotifyPlayerJamMode.Resolving ||
+    jam.mode === SpotifyPlayerJamMode.Stopping ||
+    (jam.mode === SpotifyPlayerJamMode.Following &&
+      !jam.remoteControlsAvailable);
   const api = useApi();
   const { data: isLiked, updateData } = useData<boolean>(
     `isLiked:${currentTrack?.recordingIdentifier}`,
     undefined,
-    currentTrack?.isLiked
+    currentTrack?.isLiked,
   );
 
   const toggleLike = useCallback(async () => {
@@ -78,8 +99,8 @@ const Playing = ({ navigation }: any) => {
         album: currentTrack.album,
         cover: currentTrack.artworkAddress,
       });
-    } catch (error) {
-      console.error('Failed to toggle like:', error);
+    } catch {
+      console.warn(PlayingPreferenceMessages.failure);
       updateData(!newLikedState);
     }
   }, [currentTrack, isLiked, updateData, api]);
@@ -87,10 +108,12 @@ const Playing = ({ navigation }: any) => {
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const translateY = useRef(new Animated.Value(0)).current;
+  const contentScrollOffset = useRef<number>(PlayingScrollPolicy.startOffset);
 
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) =>
+        contentScrollOffset.current <= PlayingScrollPolicy.startOffset &&
         gestureState.dy > 0 &&
         Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
       onPanResponderMove: (_, gestureState) => {
@@ -104,10 +127,13 @@ const Playing = ({ navigation }: any) => {
             useNativeDriver: true,
           }).start(() => navigation.goBack());
         } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
         }
       },
-    })
+    }),
   ).current;
 
   const handleMorePress = useCallback((event: any) => {
@@ -116,8 +142,10 @@ const Playing = ({ navigation }: any) => {
   }, []);
 
   const handleRepeatCycle = useCallback(() => {
-    if (repeatingState === RepeatingType.None) setRepeatingState(RepeatingType.Song);
-    else if (repeatingState === RepeatingType.Song) setRepeatingState(RepeatingType.Album);
+    if (repeatingState === RepeatingType.None)
+      setRepeatingState(RepeatingType.Song);
+    else if (repeatingState === RepeatingType.Song)
+      setRepeatingState(RepeatingType.Album);
     else setRepeatingState(RepeatingType.None);
   }, [repeatingState, setRepeatingState]);
 
@@ -135,10 +163,18 @@ const Playing = ({ navigation }: any) => {
         style={[styles.container, { transform: [{ translateY }] }]}
         {...panResponder.panHandlers}
       >
-        <ContentContainer>
+        <ContentContainer
+          onScroll={event => {
+            contentScrollOffset.current = event.nativeEvent.contentOffset.y;
+          }}
+        >
           <DragIndicator />
           <HeaderContainer>
-            <ArrowDownIcon height={iconSizes.md} onPress={navigation.goBack} fill={colors.normalText} />
+            <ArrowDownIcon
+              height={iconSizes.md}
+              onPress={navigation.goBack}
+              fill={colors.normalText}
+            />
             <HeaderTitle>Playing {currentTrack?.album}</HeaderTitle>
             <MoreIcon
               height={iconSizes.md}
@@ -147,7 +183,9 @@ const Playing = ({ navigation }: any) => {
             />
           </HeaderContainer>
           <AlbumCover
-            source={{ uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER }}
+            source={{
+              uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER,
+            }}
             releaseId={currentTrack?.albumIdentifier}
             cover={currentTrack?.artworkAddress}
             smallCover={currentTrack?.smallArtworkAddress}
@@ -159,36 +197,77 @@ const Playing = ({ navigation }: any) => {
               <SongAuthor>{currentTrack?.artist}</SongAuthor>
             </SongDescriptorContainer>
             {isLiked ? (
-              <HeartIcon height={iconSizes.md} onPress={toggleLike} fill={colors.accentPrimary} />
+              <HeartIcon
+                height={iconSizes.md}
+                onPress={toggleLike}
+                fill={colors.accentPrimary}
+              />
             ) : (
-              <HeartEmptyIcon height={iconSizes.md} onPress={toggleLike} fill={colors.normalText} />
+              <HeartEmptyIcon
+                height={iconSizes.md}
+                onPress={toggleLike}
+                fill={colors.normalText}
+              />
             )}
           </SongDetailsContainer>
           <AudioProgressBar
             isLoading={isLoading}
             isBuffering={false}
-            onSeek={seekToPosition}
+            onSeek={controlsDisabled ? undefined : seekToPosition}
             showThumb
             showTimeLabels
             containerStyle={{ padding: 30 }}
           />
-          <AllPlayingControlsContainer>
-            <ShufflIcon height={iconSizes.lg} fill={isShuffled ? colors.accentPrimary : colors.normalText} onPress={toggleShuffle} />
-            <BackwardIcon height={iconSizes.lg} onPress={playPrevious} fill={colors.normalText} />
+          <AllPlayingControlsContainer disabled={controlsDisabled}>
+            <ShufflIcon
+              height={iconSizes.lg}
+              fill={isShuffled ? colors.accentPrimary : colors.normalText}
+              onPress={sharing ? undefined : toggleShuffle}
+            />
+            <BackwardIcon
+              height={iconSizes.lg}
+              onPress={playPrevious}
+              fill={colors.normalText}
+            />
             {isPlaying ? (
-              <PauseIcon height={iconSizes.lg} onPress={pause} fill={colors.normalText} />
+              <PauseIcon
+                height={iconSizes.lg}
+                onPress={pause}
+                fill={colors.normalText}
+              />
             ) : (
-              <PlayIcon height={iconSizes.lg} onPress={play} fill={colors.normalText} />
+              <PlayIcon
+                height={iconSizes.lg}
+                onPress={play}
+                fill={colors.normalText}
+              />
             )}
-            <ForwardIcon height={iconSizes.lg} onPress={playNext} fill={colors.normalText} />
+            <ForwardIcon
+              height={iconSizes.lg}
+              onPress={playNext}
+              fill={colors.normalText}
+            />
             {repeatingState === RepeatingType.None ? (
-              <RepeatIcon height={iconSizes.lg} fill={colors.normalText} onPress={handleRepeatCycle} />
+              <RepeatIcon
+                height={iconSizes.lg}
+                fill={colors.normalText}
+                onPress={sharing ? undefined : handleRepeatCycle}
+              />
             ) : repeatingState === RepeatingType.Song ? (
-              <RepeatOnceIcon height={iconSizes.lg} fill={colors.accentPrimary} onPress={handleRepeatCycle} />
+              <RepeatOnceIcon
+                height={iconSizes.lg}
+                fill={colors.accentPrimary}
+                onPress={sharing ? undefined : handleRepeatCycle}
+              />
             ) : (
-              <RepeatIcon height={iconSizes.lg} fill={colors.accentPrimary} onPress={handleRepeatCycle} />
+              <RepeatIcon
+                height={iconSizes.lg}
+                fill={colors.accentPrimary}
+                onPress={sharing ? undefined : handleRepeatCycle}
+              />
             )}
           </AllPlayingControlsContainer>
+          <SpotifyPlayerJam navigation={navigation} />
         </ContentContainer>
       </Animated.View>
       {menuVisible && (
@@ -222,3 +301,7 @@ const styles = StyleSheet.create({
     marginTop: 30,
   },
 });
+
+const PlayingScrollPolicy = Object.freeze({ startOffset: 0 });
+
+const PlayingPreferenceMessages = Object.freeze({ failure: 'The song preference could not be saved.' });

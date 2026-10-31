@@ -10,7 +10,7 @@ export interface SpotifyNativeFollowerContextInput {
 }
 export function captureSpotifyNativeFollowerContext(input: SpotifyNativeFollowerContextInput): SpotifyJamPlaybackContext | null {
   const snapshot = input.session; const account = input.applicationAccount; const session = snapshot?.session;
-  if (!input.useNativeConnection || !snapshot || snapshot.accountIdentifier === null || snapshot.status !== JamConnectionStatus.Ready
+  if (!input.useNativeConnection || !snapshot || snapshot.accountIdentifier === null || (snapshot.status !== JamConnectionStatus.Ready && snapshot.status !== JamConnectionStatus.Operating)
     || !session || !session.active || !session.hostDeviceIdentifier || !account.isLoggedIn || account.accountIdentifier === null) return null;
   if (!session.ownedByCurrentAccount && !session.participants.some(participant => participant.identifier === snapshot.accountIdentifier)) return null;
   const connection = input.getConnection(snapshot.accountIdentifier);

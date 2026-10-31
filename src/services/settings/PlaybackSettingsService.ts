@@ -3,7 +3,7 @@ export const PlaybackSettingsPolicy = Object.freeze({
   unavailableMessage:
     'The audio player is not ready. Try again after opening your library.',
   controlledMessage:
-    'Stop Spotify following before changing local playback preferences.',
+    'Stop Spotify sharing or following before changing local playback preferences.',
   changedMessage: 'The playback account changed. Open these settings again.',
   failureMessage: 'The playback setting could not be changed.',
   invalidModeMessage: 'Choose a supported repeat mode.',

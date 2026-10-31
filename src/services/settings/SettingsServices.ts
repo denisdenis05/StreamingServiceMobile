@@ -14,6 +14,8 @@ import { PlaybackSettingsService } from './PlaybackSettingsService';
 import { ProfilePreferencesService } from './ProfilePreferencesService';
 import { StorageSettingsService } from './StorageSettingsService';
 import { directoryStorageBytes } from './StorageStatistics';
+import { spotifyHosting } from '../SpotifyMobileService';
+import { SpotifyHostingStatus } from '../spotify/SpotifyHostingStore';
 const SettingsStoragePolicy = Object.freeze({
   profileKeyPrefix: 'profile-display-name.v1.',
 });
@@ -38,13 +40,16 @@ export const playbackSettings = new PlaybackSettingsService({
   accountIdentifier,
   read() {
     const snapshot = audioRuntime.state.getSnapshot();
+    const hosting = spotifyHosting.getSnapshot().status;
     return {
       ready: playbackApplication.getSnapshot().ready && snapshot !== null,
       shuffled: snapshot?.shuffled ?? false,
       repeatMode: snapshot?.repeatMode ?? RepeatMode.Off,
       externallyControlled:
-        snapshot?.externalAuthorityIdentifier !== null &&
-        snapshot?.externalAuthorityIdentifier !== undefined,
+        (snapshot?.externalAuthorityIdentifier !== null &&
+          snapshot?.externalAuthorityIdentifier !== undefined) ||
+        (hosting !== SpotifyHostingStatus.Stopped &&
+          hosting !== SpotifyHostingStatus.Failed),
     };
   },
   subscribe(listener) {
@@ -52,6 +57,7 @@ export const playbackSettings = new PlaybackSettingsService({
       authenticationSession.subscribe(listener),
       audioRuntime.state.subscribe(listener),
       playbackApplication.subscribe(listener),
+      spotifyHosting.subscribe(listener),
     ];
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
   },

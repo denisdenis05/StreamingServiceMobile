@@ -2,6 +2,9 @@ import { ReactNode } from 'react';
 import {
   ImageProps,
   SafeAreaView,
+  ScrollView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   StyleProp,
   StyleSheet,
   View,
@@ -15,6 +18,8 @@ import CachedImage from '../../components/CachedImage.tsx';
 interface Props {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
 
 const styles = StyleSheet.create({
@@ -27,7 +32,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: moderateScale(20),
     gap: verticalScale(10),
-    height: '100%',
+    paddingBottom: verticalScale(30),
     borderTopLeftRadius: moderateScale(15),
     borderTopRightRadius: moderateScale(15),
   },
@@ -97,9 +102,16 @@ export const BackdropContainer = ({ children, style }: Props) => {
   return <View style={[styles.backdrop, style]}>{children}</View>;
 };
 
-export const ContentContainer = ({ children, style }: Props) => {
+export const ContentContainer = ({ children, style, onScroll }: Props) => {
   return (
-    <SafeAreaView style={[styles.content, style]}>{children}</SafeAreaView>
+    <SafeAreaView style={PlayingLayout.safeArea}>
+      <ScrollView
+        onScroll={onScroll}
+        contentContainerStyle={[styles.content, style]}
+      >
+        {children}
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
@@ -115,9 +127,29 @@ export const HeaderTitle = ({ children }: Props) => {
   return <DefaultText style={styles.headerTitle}>{children}</DefaultText>;
 };
 
-export const AlbumCover = ({ source, releaseId, cover, smallCover, verySmallCover }: ImageProps & { releaseId?: string; cover?: string; smallCover?: string; verySmallCover?: string }) => {
+export const AlbumCover = ({
+  source,
+  releaseId,
+  cover,
+  smallCover,
+  verySmallCover,
+}: ImageProps & {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+}) => {
   return (
-    <CachedImage releaseId={releaseId} cover={cover} smallCover={smallCover} verySmallCover={verySmallCover} tier="full" source={source} style={styles.albumCover} resizeMode="cover" />
+    <CachedImage
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="full"
+      source={source}
+      style={styles.albumCover}
+      resizeMode="cover"
+    />
   );
 };
 
@@ -136,6 +168,31 @@ export const SongAuthor = ({ children }: Props) => {
   return <DefaultText style={styles.songAuthor}>{children}</DefaultText>;
 };
 
-export const AllPlayingControlsContainer = ({ children }: Props) => {
-  return <View style={styles.allPlayingControlsContainer}>{children}</View>;
+export const AllPlayingControlsContainer = ({
+  children,
+  disabled = false,
+}: Props) => {
+  return (
+    <View
+      pointerEvents={
+        disabled ? PlayingControlPolicy.disabled : PlayingControlPolicy.enabled
+      }
+      style={[
+        styles.allPlayingControlsContainer,
+        disabled && PlayingLayout.disabled,
+      ]}
+    >
+      {children}
+    </View>
+  );
 };
+
+const PlayingControlPolicy = Object.freeze({
+  disabled: 'none' as const,
+  enabled: 'auto' as const,
+  disabledOpacity: 0.4,
+});
+const PlayingLayout = StyleSheet.create({
+  safeArea: { flex: 1, width: '100%' },
+  disabled: { opacity: PlayingControlPolicy.disabledOpacity },
+});

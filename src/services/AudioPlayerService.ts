@@ -10,6 +10,7 @@ import { createApplicationNetworkClient } from './ApplicationNetworkClient';
 import { PlaybackCollectionLoader } from './player/PlaybackCollectionLoader';
 import type { CatalogRecording } from './player/PlaybackCatalogMapping';
 import { RepeatingType } from '../constants/types';
+import { playerJam, PlayerJamControls } from './PlayerJamRuntime';
 
 export { PlaybackTracker } from './PlaybackTracker';
 const PlaybackMessages = Object.freeze({ failure: 'Playback unavailable. Please try again.', toastType: 'message', zeroSeconds: 0 });
@@ -75,8 +76,10 @@ const Commands = Object.freeze({
   moveEntry: (identifier: string, beforeIdentifier: string | null) => runAudioCommand(() => audioRuntime.move(identifier, beforeIdentifier)),
   selectEntry: (identifier: string) => runAudioCommand(() => audioRuntime.select(identifier)),
   clearQueue: () => runAudioCommand(() => audioRuntime.clear()),
-  play: () => runAudioCommand(() => audioRuntime.play()), pause: () => runAudioCommand(() => audioRuntime.pause()),
-  playNext: () => runAudioCommand(() => audioRuntime.next()), playPrevious: () => runAudioCommand(() => audioRuntime.previous()),
+  play: () => runAudioCommand(() => playerJam.control(PlayerJamControls.play, () => audioRuntime.play())),
+  pause: () => runAudioCommand(() => playerJam.control(PlayerJamControls.pause, () => audioRuntime.pause())),
+  playNext: () => runAudioCommand(() => playerJam.control(PlayerJamControls.next, () => audioRuntime.next())),
+  playPrevious: () => runAudioCommand(() => playerJam.control(PlayerJamControls.previous, () => audioRuntime.previous())),
 });
 export function useQueue() {
   const view = useSyncExternalStore(audioRuntime.views.subscribe, audioRuntime.views.getSnapshot);
@@ -85,11 +88,11 @@ export function useQueue() {
   const seekToPosition = useCallback((seconds: number) => {
     const entry = audioRuntime.state.getSnapshot()?.currentEntry;
     return entry === null || entry === undefined ? Promise.resolve()
-      : runAudioCommand(() => audioRuntime.seek(entry.entryIdentifier, seconds));
+      : runAudioCommand(() => playerJam.seek(seconds, () => audioRuntime.seek(entry.entryIdentifier, seconds)));
   }, []);
-  const toggleShuffle = useCallback(() => runAudioCommand(() => audioRuntime.setShuffle(!audioRuntime.views.getSnapshot().isShuffled)), []);
-  const setRepeatingState = useCallback((mode: RepeatingType) => runAudioCommand(() => audioRuntime.setRepeat(
-    mode === RepeatingType.Song ? RepeatMode.One : mode === RepeatingType.Album ? RepeatMode.All : RepeatMode.Off)), []);
+  const toggleShuffle = useCallback(() => runAudioCommand(() => playerJam.localOptions(() => audioRuntime.setShuffle(!audioRuntime.views.getSnapshot().isShuffled))), []);
+  const setRepeatingState = useCallback((mode: RepeatingType) => runAudioCommand(() => playerJam.localOptions(() => audioRuntime.setRepeat(
+    mode === RepeatingType.Song ? RepeatMode.One : mode === RepeatingType.Album ? RepeatMode.All : RepeatMode.Off))), []);
   return { ...view, ...Commands, isLoading: view.isLoading || application.initializing, isPlayerReady: application.ready, isPlayerInitializing: application.initializing,
     playbackError: application.error, seekToPosition, toggleShuffle, setRepeatingState,
     repeatingState: view.repeatMode === RepeatMode.One ? RepeatingType.Song

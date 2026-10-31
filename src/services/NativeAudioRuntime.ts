@@ -6,6 +6,7 @@ import axios from 'axios';
 import { NativeStreamingPlayer, PlayerProgressStore } from 'streaming-service-player';
 import { reactNativePlaybackTransport } from './ReactNativePlaybackTransport';
 import { PlaybackRuntime } from './player/PlaybackRuntime';
+import { playbackQueueChanges } from './player/PlaybackQueueChangeLifecycle';
 import { PlaybackCatalogMapping } from './player/PlaybackCatalogMapping';
 import { PlaybackReportingQueue, PlaybackTracker } from './PlaybackTracker';
 import { authenticationSession } from './AuthenticationService';
@@ -34,7 +35,7 @@ const native = new NativeStreamingPlayer(reactNativePlaybackTransport, identifie
 export const sharedPlaybackNative = native;
 const reports = new PlaybackReportingQueue();
 export const audioRuntime = new PlaybackRuntime({
-  native, mediaServerAddress: TEMPORARY_API_URL, identifiers, sessionOwnership: playbackNativeSessionStorage,
+  native, queueChanges: playbackQueueChanges, mediaServerAddress: TEMPORARY_API_URL, identifiers, sessionOwnership: playbackNativeSessionStorage,
   reportPlaybackFailure() { Toast.show({ type: AudioRuntimePolicy.toastType, text1: AudioRuntimePolicy.playbackFailureMessage }); },
   cache: { async findReadableCachedAddress(address) {
     const accountIdentifier = authenticationSession.getSnapshot().accountIdentifier;
