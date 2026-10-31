@@ -90,10 +90,12 @@ class SpotifyNativeFollowerCoordinatorTest {
         data class Request(val identity: SpotifyNativeFollowerIdentity, val trackIdentifier: String, val result: CompletableFuture<SpotifyFollowerRecordingResolution>, var cancelled: Boolean = false)
         val requests = mutableListOf<Request>()
         var automatic = true
+        var synchronousFailure: Throwable? = null
         var selected: SpotifyFollowerRecordingResolution = SpotifyFollowerRecordingResolution.Matched(SpotifyFollowerRecording(RecordingIdentifier, RecordingTitle, RecordingArtist))
         override fun resolve(identity: SpotifyNativeFollowerIdentity, spotifyTrackIdentifier: String): SpotifyFollowerOperation<SpotifyFollowerRecordingResolution> {
             val request = Request(identity, spotifyTrackIdentifier, CompletableFuture())
             requests.add(request)
+            synchronousFailure?.let { failure -> throw failure }
             if (automatic) request.result.complete(selected)
             return SpotifyFollowerOperation(request.result) { request.cancelled = true }
         }
@@ -222,6 +224,19 @@ class SpotifyNativeFollowerCoordinatorTest {
         assertEquals(SingleCount, fixture.coordinator.snapshot().unavailableUpcomingCount)
         assertFalse(fixture.coordinator.snapshot().upcomingQueuePending)
         fixture.tick()
+        assertEquals(DoubleCount, fixture.resolver.requests.size)
+        assertTrue(fixture.output.playing)
+    }
+
+    @Test fun synchronousUpcomingLookupFailureKeepsCurrentPlaybackAndReportsPartialQueue() {
+        val fixture = Fixture(); fixture.start()
+        fixture.resolver.synchronousFailure = SpotifyConnectFailure(SpotifyConnectFailureCode.Network.wireValue)
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Following, fixture.coordinator.snapshot().status)
+        assertEquals(SpotifyNativeFollowerFailureReason.SourceUnavailable, fixture.coordinator.snapshot().upcomingQueueFailure)
+        fixture.tick(); fixture.tick()
         assertEquals(DoubleCount, fixture.resolver.requests.size)
         assertTrue(fixture.output.playing)
     }
@@ -445,11 +460,51 @@ class SpotifyNativeFollowerCoordinatorTest {
             assertEquals(requests, fixture.resolver.requests.size)
         }
     }
+    @Test fun unchangedUnavailableCurrentDoesNotRestartMatchingOnPollsOrUpcomingQueueChanges() {
+        for (resolution in listOf(SpotifyFollowerRecordingResolution.Ambiguous, SpotifyFollowerRecordingResolution.Unavailable)) {
+            val fixture = Fixture(); fixture.resolver.selected = resolution; fixture.start()
+            fixture.tick(); fixture.tick()
+            fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+            fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+            assertEquals(SingleCount, fixture.resolver.requests.size)
+            assertEquals(SpotifyNativeFollowerStatus.Unavailable, fixture.coordinator.snapshot().status)
+            assertFalse(fixture.output.playing)
+            fixture.source.occurrenceIdentifier = SecondOccurrence; fixture.source.trackIdentifier = SecondTrack
+            fixture.source.upcomingOccurrences = emptyList()
+            fixture.resolver.selected = SpotifyFollowerRecordingResolution.Matched(SpotifyFollowerRecording(RecordingIdentifier, RecordingTitle, RecordingArtist))
+            fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+            assertEquals(DoubleCount, fixture.resolver.requests.size)
+            assertEquals(SpotifyNativeFollowerStatus.Following, fixture.coordinator.snapshot().status)
+        }
+    }
+
+    @Test fun failedCurrentLookupDoesNotRepeatItsNetworkRequestUntilTheCurrentOccurrenceChanges() {
+        val fixture = Fixture(); fixture.resolver.automatic = false; fixture.start()
+        fixture.resolver.requests.single().result.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Network.wireValue))
+        fixture.mainQueue.drain(); fixture.tick(); fixture.tick()
+        assertEquals(SingleCount, fixture.resolver.requests.size)
+        assertEquals(SpotifyNativeFollowerStatus.Unavailable, fixture.coordinator.snapshot().status)
+        assertFalse(fixture.output.playing)
+        fixture.source.occurrenceIdentifier = SecondOccurrence
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(DoubleCount, fixture.resolver.requests.size)
+    }
+
+    @Test fun failedCurrentOccurrenceCannotChangeItsSpotifyTrackWithoutBeingRejected() {
+        val fixture = Fixture(); fixture.resolver.selected = SpotifyFollowerRecordingResolution.Unavailable; fixture.start()
+        fixture.source.trackIdentifier = SecondTrack
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.resolver.requests.size)
+        assertEquals(SpotifyNativeFollowerStatus.Failed, fixture.coordinator.snapshot().status)
+        assertEquals(SpotifyNativeFollowerFailureReason.InvalidObservation, fixture.coordinator.snapshot().failure)
+        assertFalse(fixture.output.playing)
+    }
+
     @Test fun ambiguousAndUnavailableMatchingDoNotPrepareAudio() {
         val fixture = Fixture(); fixture.resolver.selected = SpotifyFollowerRecordingResolution.Ambiguous; fixture.start()
         assertEquals(SpotifyNativeFollowerFailureReason.AmbiguousRecording, fixture.coordinator.snapshot().failure)
         assertTrue(fixture.operations(PlayerOperation.Replace).isEmpty())
-        fixture.resolver.selected = SpotifyFollowerRecordingResolution.Unavailable; fixture.tick()
+        fixture.resolver.selected = SpotifyFollowerRecordingResolution.Unavailable; fixture.source.occurrenceIdentifier = SecondOccurrence; fixture.tick()
         assertEquals(SpotifyNativeFollowerFailureReason.RecordingUnavailable, fixture.coordinator.snapshot().failure)
     }
     @Test fun cachedObservationOlderThanNativeReadIsRejectedWithoutLeaseRenewal() {

@@ -25,7 +25,7 @@ const Names = Object.freeze({ match: 'Background matching uses native metadata a
   authFailure: 'Player authentication failure prevents a matched result from reaching native playback', cleanup: 'Failure reporting cannot leak unexpected native error details',
   apiAddress: 'A secure API base path survives native job capture and recording resolution',
   unsafeAddress: 'Insecure credential-bearing and query-bearing API addresses cannot start background requests' });
-function deferred() { let resolve; const promise = new Promise(complete => { resolve = complete; }); return { promise, resolve }; }
+function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { for (let turn = Fixture.zero; turn < Fixture.flushTurns; turn += Fixture.one) await Promise.resolve(); }
 function recording(identifier = Fixture.recording) { return { identifier, title: Fixture.title, author: Fixture.artist,
   artistNames: [Fixture.artist], durationMilliseconds: Fixture.duration }; }
@@ -131,4 +131,47 @@ test(Names.unsafeAddress, async () => {
     await context.task.execute(Fixture.request); failure(context, library.IntegrationFailureCode.InvalidInput);
     assertion.equal(context.calls.restorations, Fixture.zero);
   }
+});
+
+const FailureRetirementNames = Object.freeze({ pendingDeadline: 'A stalled native pending check cannot keep a failed headless recording task alive beyond its deadline',
+  failureDeadline: 'A stalled native failure receipt cannot keep a recording task alive beyond its deadline',
+  pendingCancellation: 'Cancellation returns promptly even when native failure cleanup ignores cancellation' });
+test(FailureRetirementNames.pendingDeadline, async () => {
+  const context = fixture(); const cleanup = deferred();
+  context.state.search = async () => {
+    let pendingChecks = Fixture.zero;
+    context.dependencies.isPending = async () => {
+      pendingChecks += Fixture.one;
+      return pendingChecks === Fixture.one ? true : cleanup.promise;
+    };
+    throw new Error(Fixture.privateMessage);
+  };
+  const operation = context.task.execute(Fixture.request); await flush();
+  context.calls.timers[Fixture.zero].action(); await operation;
+  assertion.equal(context.calls.timers[Fixture.zero].active, false);
+  assertion.equal(context.calls.completions.length, Fixture.zero);
+  cleanup.resolve(true); await flush();
+  assertion.equal(context.calls.failures.length, Fixture.zero);
+});
+test(FailureRetirementNames.failureDeadline, async () => {
+  const context = fixture(); const cleanup = deferred();
+  context.state.search = async () => { throw new Error(Fixture.privateMessage); };
+  context.state.fail = () => cleanup.promise;
+  const operation = context.task.execute(Fixture.request); await flush();
+  context.calls.timers[Fixture.zero].action(); await operation;
+  assertion.equal(context.calls.timers[Fixture.zero].active, false);
+  assertion.equal(context.calls.completions.length, Fixture.zero);
+  cleanup.resolve(); await flush();
+  assertion.equal(context.calls.search.length, Fixture.one);
+});
+test(FailureRetirementNames.pendingCancellation, async () => {
+  const context = fixture(); const search = deferred(); const cleanup = deferred(); const cancellation = new AbortController();
+  context.state.search = () => search.promise;
+  const operation = context.task.execute(Fixture.request, cancellation.signal); await flush();
+  context.state.fail = () => cleanup.promise;
+  cancellation.abort(); await operation;
+  assertion.equal(context.calls.timers[Fixture.zero].active, false);
+  cleanup.reject(new Error(Fixture.privateMessage)); search.resolve([recording()]); await flush();
+  assertion.equal(context.calls.completions.length, Fixture.zero);
+  assertion.equal(context.calls.failures.length, Fixture.zero);
 });

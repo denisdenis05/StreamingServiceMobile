@@ -133,9 +133,16 @@ export class SpotifyBackgroundRecordingTask {
     } catch (failure) {
       const code = controller.signal.aborted ? cancellationFailure
         : failure instanceof IntegrationFailure && FailureCodes.has(failure.code) ? failure.code : IntegrationFailureCode.Network;
-      try {
-        if (claimed && await this.dependencies.isPending(requestIdentifier)) await this.dependencies.fail(requestIdentifier, code);
-      } catch { throw new IntegrationFailure(IntegrationFailureCode.Network); }
+      if (claimed) {
+        const alreadyAborted = controller.signal.aborted;
+        const retire = async () => {
+          if (alreadyAborted) await this.dependencies.fail(requestIdentifier, code);
+          else if (await this.dependencies.isPending(requestIdentifier) && !controller.signal.aborted) await this.dependencies.fail(requestIdentifier, code);
+        };
+        const retirement = retire();
+        try { await this.wait(retirement, controller.signal); }
+        catch { if (!controller.signal.aborted) throw new IntegrationFailure(IntegrationFailureCode.Network); }
+      }
     } finally {
       cancelTimer();
       cancellation?.removeEventListener(SpotifyBackgroundRecordingPolicy.abortEvent, abort);

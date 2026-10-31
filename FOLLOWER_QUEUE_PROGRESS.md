@@ -96,3 +96,31 @@ from zero through 2,000; no metadata or raw errors enter queue diagnostics. Olde
 Following snapshots carrying RecordingUnavailable migrate that reason into the
 queue failure field. Mobile Spotify TypeScript and native-store/shared-playback
 suites passed 83 cases after wire alignment (`/tmp/queue-wire-mobile-tests.log`).
+
+## Failed current matching and bounded headless cleanup — 2026-11-01
+
+The native follower retains an unavailable, ambiguous or failed current match
+across position polls and upcoming-only queue changes. A new actual current
+occurrence or restored connection lifetime can match again. The existing
+same-occurrence/different-track contradiction check remains enforced. A
+synchronous future resolver exception now follows the same partial-queue path
+as an asynchronous rejection, leaving already current playback running.
+
+Headless recording task failure cleanup now shares the task cancellation and
+deadline. An unresponsive native pending check or failure acknowledgement cannot
+hold JavaScript after its budget expires. A pending check completed after abort
+cannot start a new failure mutation. Already canceled claimed jobs still receive
+one best-effort scoped failure submission; late rejection is consumed and native
+broker expiry remains authoritative.
+
+Dedicated mapping: `SpotifyNativeFollowerCoordinatorTest` covers repeated
+missing/ambiguous/network current matches, new-current recovery, contradictory
+identity and synchronous future lookup failure. `tools/spotify-background-recording.test.cjs`
+covers stalled pending checks, stalled failure receipts, prompt cancellation,
+late pending completion and late rejected cleanup. Root completed the agent's
+unfinished verification and corrected the pending-check regression setup to
+stall cleanup rather than the preceding source-validity check.
+
+Focused headless suite: 24 passed. Integrated Spotify: 651 Node and 178 Jest
+passed. Full Android app/Player JVM command passed; app: 454, Player: 289, no
+failures. Source checks establish these boundaries, not actual device audio.

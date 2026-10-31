@@ -68,7 +68,8 @@ test(UpcomingNames.partial, async () => {
   expect(presentation).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.NotFound]);
 });
 
-test('Following instructions distinguish remote player controls from explicitly stopping local following', async () => {
+const FollowingInstructionsName = 'Following instructions distinguish remote player controls from explicitly stopping local following';
+test(FollowingInstructionsName, async () => {
   await mount();
   const expectedControls = 'Player controls send permitted playback commands to Spotify while following continues.';
   const expectedStop = 'Use Stop following Spotify to return to local playback.';
