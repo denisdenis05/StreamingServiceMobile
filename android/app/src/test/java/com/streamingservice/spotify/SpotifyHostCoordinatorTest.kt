@@ -16,6 +16,7 @@ class SpotifyHostCoordinatorTest {
     }
     private class Timer(val action: () -> Unit, var cancelled: Boolean = false)
     private class Fixture(mappingEnabled: Boolean = false) {
+        var cachedTrack: String? = null
         val mapping = CompletableFuture<String>()
         var mappingCancellations = EmptyCount
         val decisions = Decisions()
@@ -28,6 +29,8 @@ class SpotifyHostCoordinatorTest {
         var nextSequence = FirstSequence
         var pauseCount = EmptyCount
         var retired = false
+        var buffering = false
+        var durationMilliseconds: Long? = DurationMilliseconds
         var externalAuthorityAbsent = true
         var publicationFailure: String? = null
         var demotionFailure: String? = null
@@ -42,7 +45,7 @@ class SpotifyHostCoordinatorTest {
         var recording = Recording
         val mappings = listOf(SpotifyHostRecordingMapping(Occurrence, Recording, Track))
         fun queue(): SpotifyHostPlayerQueue = SpotifyHostPlayerQueue(SpotifyHostPlayerSnapshot(identity, cursor, Occurrence, PositionMilliseconds,
-            DurationMilliseconds, now, true, false, false, externalAuthorityAbsent), listOf(SpotifyHostQueueEntry(Occurrence, recording)), false, RepeatMode, PlaybackRate)
+            durationMilliseconds, now, !buffering, false, buffering, externalAuthorityAbsent), listOf(SpotifyHostQueueEntry(Occurrence, recording)), false, RepeatMode, PlaybackRate)
         val player = object : SpotifyHostPlayer {
             override fun sampleQueue(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerQueue> = sampleCompletion ?: CompletableFuture.completedFuture(queue())
             override fun pause(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor): CompletableFuture<Unit> {
@@ -81,6 +84,7 @@ class SpotifyHostCoordinatorTest {
             { _, action -> val timer = Timer(action); timers.add(timer); SpotifyNativeFollowerCancellation { timer.cancelled = true } },
             decisions, { Request }, { current }, { snapshot -> snapshots.add(snapshot); onSnapshot(snapshot) },
             if (!mappingEnabled) null else object : SpotifyHostQueueMappingSource {
+                override fun cached(identity: SpotifyHostIdentity, recordingIdentifier: String): String? = cachedTrack
                 override fun resolve(identity: SpotifyHostIdentity, recordingIdentifier: String): SpotifyPlayerOperation<String> = SpotifyPlayerOperation(mapping) {
                     mappingCancellations += SingleCount; mapping.completeExceptionally(SpotifyConnectFailure(Superseded))
                 }
@@ -96,6 +100,37 @@ class SpotifyHostCoordinatorTest {
         assertEquals(SpotifyHostStatus.Resolving, fixture.coordinator.snapshot().status); assertEquals(SingleCount, fixture.pauseCount)
         assertTrue(fixture.publications.isEmpty()); fixture.mapping.complete(Track); fixture.decisions.drain()
         assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status); assertEquals(SingleCount, fixture.publications.size)
+    }
+    @Test fun preparedLocalSelectionPublishesTheActualOccurrenceWithoutPausingOrRestartingHosting() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.cachedTrack = Track; fixture.recording = OtherRecording
+        val requested = fixture.coordinator.publishLocalChanges(); fixture.decisions.drain(); requested.get()
+        assertEquals(EmptyCount, fixture.pauseCount); assertEquals(SingleCount, fixture.publications.size)
+        assertEquals(SingleCount, fixture.activations.size); assertTrue(fixture.deactivations.isEmpty())
+        assertEquals(Occurrence, fixture.publications.single().getJSONObject(TrackField).getString(OccurrenceField))
+    }
+    @Test fun preparingLocalOutputKeepsTheJamActiveUntilTheActualDurationIsAvailable() {
+        val fixture = Fixture(); fixture.start().get(); fixture.buffering = true; fixture.durationMilliseconds = null; fixture.tick()
+        assertTrue(fixture.publications.isEmpty()); assertTrue(fixture.deactivations.isEmpty()); assertEquals(EmptyCount, fixture.pauseCount)
+        fixture.durationMilliseconds = DurationMilliseconds; fixture.buffering = false; fixture.tick()
+        assertEquals(SingleCount, fixture.publications.size); assertEquals(SingleCount, fixture.activations.size)
+    }
+    @Test fun preparingOutputCannotKeepAnUnpublishableHostActiveBeyondItsDeadline() {
+        val fixture = Fixture(); fixture.start().get(); fixture.buffering = true; fixture.durationMilliseconds = null; fixture.tick()
+        fixture.now += PlayerPreparationDeadlineMilliseconds; fixture.tick()
+        assertEquals(SpotifyHostStatus.Failed, fixture.coordinator.snapshot().status); assertEquals(SingleCount, fixture.deactivations.size)
+    }
+    @Test fun localPublicationDuringAnOutstandingSampleQueuesAFreshPublication() {
+        val fixture = Fixture(); fixture.start().get(); fixture.sampleCompletion = CompletableFuture(); fixture.tick()
+        fixture.coordinator.publishLocalChanges(); fixture.decisions.drain()
+        val pending = fixture.sampleCompletion!!; fixture.sampleCompletion = null; pending.complete(fixture.queue()); fixture.decisions.drain()
+        assertEquals(TwoCount, fixture.publications.size); assertEquals(EmptyCount, fixture.pauseCount)
+    }
+    @Test fun reentrantStopFromResolvingCannotIssueANewPauseOrMapping() {
+        val fixture = Fixture(true); fixture.start().get()
+        fixture.onSnapshot = { snapshot -> if (snapshot.status == SpotifyHostStatus.Resolving) fixture.coordinator.stop() }
+        fixture.recording = OtherRecording; fixture.tick()
+        assertEquals(SingleCount, fixture.pauseCount); assertEquals(SpotifyHostStatus.Stopped, fixture.coordinator.snapshot().status)
+        assertTrue(fixture.publications.isEmpty()); assertFalse(fixture.mapping.isDone)
     }
     @Test fun stoppingBackgroundMappingCancelsTheJobAndStillWithdraws() {
         val fixture = Fixture(true); fixture.start().get(); fixture.recording = OtherRecording; fixture.tick()
@@ -227,6 +262,7 @@ class SpotifyHostCoordinatorTest {
         private const val ServerMilliseconds = 1700000000000L
         private const val PrecisionMilliseconds = 2L
         private const val PublishIntervalMilliseconds = 1000L
+        private const val PlayerPreparationDeadlineMilliseconds = 15000L
         private const val EmptyCount = 0
         private const val SingleCount = 1
         private const val TwoCount = 2

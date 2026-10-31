@@ -1,3 +1,6 @@
+#[path = "connect_search_diagnostics.rs"]
+pub mod diagnostics;
+
 use std::{collections::HashSet, future::Future};
 
 use http::Method;

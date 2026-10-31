@@ -13,6 +13,8 @@ export interface SpotifyHostingContext {
   readonly generation: number;
 }
 export interface SpotifyHostingNative {
+  prepareHostingRecordings?(serialized: string): Promise<void>;
+  publishHostingChanges?(): Promise<void>;
   startHosting(serialized: string): Promise<string>;
   stopHosting(): Promise<void>;
   getHostingSnapshot(): Promise<string>;
@@ -97,6 +99,32 @@ export class SpotifyHostingStore {
       if (this.intent !== intent || intent.signal.aborted || this.disposed) return;
       this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure));
     }
+  }
+  async prepareRecordings(recordingIdentifiers: readonly string[]): Promise<void> {
+    if (this.snapshot.status === SpotifyHostingStatus.Stopped || this.snapshot.status === SpotifyHostingStatus.Failed) return;
+    if (this.snapshot.status !== SpotifyHostingStatus.Hosting) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+    const context = this.context;
+    const intent = this.intent;
+    const operation = this.dependencies.native?.prepareHostingRecordings;
+    if (!context || !operation) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    this.requireHostingOperation(context, intent);
+    await operation(JSON.stringify(recordingIdentifiers));
+    this.requireHostingOperation(context, intent);
+  }
+  async publishLocalChanges(): Promise<void> {
+    if (this.snapshot.status === SpotifyHostingStatus.Stopped || this.snapshot.status === SpotifyHostingStatus.Failed) return;
+    if (this.snapshot.status !== SpotifyHostingStatus.Hosting) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+    const context = this.context;
+    const intent = this.intent;
+    const operation = this.dependencies.native?.publishHostingChanges;
+    if (!context || !operation) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    this.requireHostingOperation(context, intent);
+    await operation();
+    this.requireHostingOperation(context, intent);
+  }
+  private requireHostingOperation(context: SpotifyHostingContext, intent: AbortController | null): void {
+    if (this.disposed || this.intent !== intent || intent?.signal.aborted || this.snapshot.status !== SpotifyHostingStatus.Hosting
+      || !sameScope(context, this.dependencies.getContext())) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
   }
   async stop(): Promise<void> {
     this.observation += Policy.observationIncrement;

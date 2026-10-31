@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from 'react';
 import { TextInput, View } from 'react-native';
-import { MatchEvidence, MatchStatus, RecordingQueueStatus } from 'streaming-service-spotify-jam';
+import { JamConnectionStatus, MatchEvidence, MatchStatus, RecordingQueueStatus } from 'streaming-service-spotify-jam';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
 import { spotifyMobile, spotifyRecordingQueue } from '../../services/SpotifyMobileService';
@@ -17,12 +17,16 @@ export const RecordingQueueCopy = Object.freeze({ heading: 'Share a song from yo
   marketPattern: /^[A-Z]{2}$/, capitalization: 'characters', marketCharacters: 2 } as const);
 
 export default function SpotifyRecordingQueue({ selection }: { readonly selection: SpotifySongSelection }) {
-  useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
+  const mobile = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   const snapshot = useSyncExternalStore(spotifyRecordingQueue.subscribe, spotifyRecordingQueue.getSnapshot);
   const [market, setMarket] = useState<string>(SpotifyMobilePolicy.emptyText);
   const busy = snapshot.status === RecordingQueueStatus.Matching || snapshot.status === RecordingQueueStatus.Submitting;
   const currentAccount = spotifyMobile.isApplicationAccount(selection.applicationAccountIdentifier);
   const canFind = currentAccount && !busy && RecordingQueueCopy.marketPattern.test(market.toUpperCase());
+  const session = mobile.session?.session;
+  const canEnqueue = mobile.session?.status === JamConnectionStatus.Ready && session?.active && session.hostDeviceIdentifier
+    && (session.ownedByCurrentAccount || (mobile.canSubmitGuestCommands
+      && session.participants.some(participant => participant.identifier === mobile.session?.accountIdentifier)));
   const source = selection.recordings.find(recording => recording.identifier === snapshot.recordingIdentifier);
 
   return <View style={styles.section}>
@@ -47,7 +51,7 @@ export default function SpotifyRecordingQueue({ selection }: { readonly selectio
           || candidate.evidence.includes(MatchEvidence.RecordingCodeConflict) || candidate.evidence.includes(MatchEvidence.Unavailable);
         return <View key={candidate.song.identifier}>
           <DefaultButton title={RecordingQueueCopy.candidate + candidate.song.title + RecordingQueueCopy.separator + candidate.song.author}
-            disabled={!currentAccount || snapshot.status !== RecordingQueueStatus.Ready || market.toUpperCase() !== snapshot.market || blocked}
+            disabled={!currentAccount || !canEnqueue || snapshot.status !== RecordingQueueStatus.Ready || market.toUpperCase() !== snapshot.market || blocked}
             onPress={() => { void spotifyRecordingQueue.enqueue(candidate.song.identifier); }} />
           {blocked && <DefaultText>{RecordingQueueCopy.blocked}</DefaultText>}
         </View>;

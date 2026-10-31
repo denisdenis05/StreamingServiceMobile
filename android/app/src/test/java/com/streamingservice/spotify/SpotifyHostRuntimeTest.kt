@@ -13,15 +13,19 @@ class SpotifyHostRuntimeTest {
         val started = CompletableFuture<SpotifyHostSnapshot>()
         var cleanup = CompletableFuture.completedFuture(Unit)
         var stops = EmptyCount
+        var publications = EmptyCount
         var releases = EmptyCount
         val tokens = mutableListOf<String>()
+        override fun publishLocalChanges(): CompletableFuture<Unit> { publications += SingleCount; return CompletableFuture.completedFuture(Unit) }
         override fun start() = started
         override fun stop(): CompletableFuture<Unit> { stops += SingleCount; return cleanup }
         override fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> { tokens.add(accessToken); return CompletableFuture.completedFuture(Unit) }
         override fun releaseAfterConnectionRetired(): CompletableFuture<Unit> { releases += SingleCount; return CompletableFuture.completedFuture(Unit) }
         fun ready() { started.complete(SpotifyHostSnapshot(identity, SpotifyHostStatus.Hosting)) }
     }
-    private class Fixture {
+    private class Fixture(preparationEnabled: Boolean = false) {
+        val preparations = mutableListOf<String>()
+        var broker: SpotifyHostRecordingBroker? = null
         val pending = ArrayDeque<Runnable>()
         val sessions = mutableListOf<Session>()
         val configurations = mutableListOf<SpotifyHostConfiguration>()
@@ -33,7 +37,14 @@ class SpotifyHostRuntimeTest {
         })
         val runtime = SpotifyHostRuntime(SpotifyHostConfigurationProtocol(tokens), tokens, { configuration, observer ->
             configurations.add(configuration); observers.add(observer)
-            val session = Session(configuration.identity); sessions.add(session); SpotifyHostSessionResources(session)
+            val session = Session(configuration.identity); sessions.add(session)
+            broker = if (!preparationEnabled) null else SpotifyHostRecordingBroker(configuration, object : SpotifyBackgroundRecordingRunner {
+                override fun start(requestIdentifier: String, failed: (Throwable) -> Unit): SpotifyNativeFollowerCancellation {
+                    preparations.add(requestIdentifier); return SpotifyNativeFollowerCancellation {}
+                }
+            }, { _, _ -> SpotifyNativeFollowerCancellation {} }, { PreparationPrefix + preparations.size },
+                { action -> pending.addLast(action) }, { _, _, _ -> throw AssertionError() }, { connected })
+            SpotifyHostSessionResources(session, hostingRecordings = broker)
         }, { work -> pending.addLast(work) }, { connected }, { followerCleanup })
         val events = mutableListOf<SpotifyHostSnapshot?>()
         val attachment = runtime.attach(events::add)
@@ -42,6 +53,26 @@ class SpotifyHostRuntimeTest {
             val result = runtime.start(selected, configuration(device).toString()); drain(); return result
         }
         fun start() { begin(); sessions.single().ready(); drain() }
+    }
+    @Test fun activePreparationWaitsForScopedMatchingAndPublicationUsesTheRetainedSession() {
+        val fixture = Fixture(true); fixture.start()
+        val prepared = fixture.runtime.prepareRecordings(fixture.attachment, JSONArray(listOf(Recording)).toString()); fixture.drain()
+        assertFalse(prepared.isDone); val request = fixture.preparations.single(); fixture.broker!!.claim(request); fixture.broker!!.complete(request, Track)
+        prepared.get(); val publication = fixture.runtime.publishLocalChanges(fixture.attachment); fixture.drain(); publication.get()
+        assertEquals(SingleCount, fixture.sessions.single().publications); assertEquals(SingleCount, fixture.sessions.size)
+        assertEquals(EmptyCount, fixture.sessions.single().stops)
+    }
+    @Test fun accountReplacementCancelsPreparedSelectionBeforeItCanAuthorizePlayback() {
+        val fixture = Fixture(true); fixture.start()
+        val prepared = fixture.runtime.prepareRecordings(fixture.attachment, JSONArray(listOf(Recording)).toString()); fixture.drain()
+        fixture.runtime.updateAccount(fixture.attachment, OtherAccount, null); fixture.drain()
+        assertTrue(prepared.isCompletedExceptionally); assertEquals(EmptyCount, fixture.sessions.single().publications)
+    }
+    @Test fun detachedViewCannotPrepareRecordingsOrRequestPublication() {
+        val fixture = Fixture(true); fixture.start(); fixture.runtime.attach {}
+        val prepared = fixture.runtime.prepareRecordings(fixture.attachment, JSONArray(listOf(Recording)).toString())
+        val publication = fixture.runtime.publishLocalChanges(fixture.attachment); fixture.drain()
+        assertTrue(prepared.isCompletedExceptionally); assertTrue(publication.isCompletedExceptionally); assertTrue(fixture.preparations.isEmpty())
     }
     @Test fun startupWaitsForBothFollowerCleanupAndTheActualHostAcknowledgement() {
         val fixture = Fixture(); fixture.followerCleanup = CompletableFuture(); val result = fixture.begin()
@@ -131,6 +162,9 @@ class SpotifyHostRuntimeTest {
         assertEquals(StartupFailed, fixture.runtime.snapshot(fixture.attachment)?.failure)
     }
     companion object {
+        private const val Recording = "synthetic-recording"
+        private const val Track = "4uLU6hMCjMI75M1A2tKUQC"
+        private const val PreparationPrefix = "synthetic-preparation-"
         private const val Account = "synthetic-account"
         private const val OtherAccount = "synthetic-other-account"
         private const val Address = "https://synthetic.example/"

@@ -24,6 +24,8 @@ class SpotifyHostCoordinator(
     private val stopped = CompletableFuture<Unit>()
     @Volatile private var requested = false
     @Volatile private var closing = false
+    private var waitingForPlayerSinceElapsedMilliseconds: Long? = null
+    private var publicationRequested = false
     private var activationAttempted = false
     private var registration: SpotifyHostNativeRegistration? = null
     private var sequence = FirstSequence
@@ -110,8 +112,22 @@ class SpotifyHostCoordinator(
         if (mappings.size > MaximumMappings) terminate(Capacity)
     }
 
+    override fun publishLocalChanges(): CompletableFuture<Unit> {
+        val completion = CompletableFuture<Unit>()
+        decide {
+            if (closing || !started.isDone || started.isCompletedExceptionally || !current()) completion.completeExceptionally(SpotifyConnectFailure(Superseded))
+            else {
+                timer?.cancel(); timer = null
+                if (work != null) publicationRequested = true else refresh()
+                completion.complete(Unit)
+            }
+        }
+        return completion
+    }
     private fun schedule() {
         if (closing) return
+        if (publicationRequested) { publicationRequested = false; refresh(); return }
+        timer?.cancel()
         try { timer = scheduler.schedule(PublishIntervalMilliseconds) { decide { if (!closing) refresh() } } }
         catch (_failure: Throwable) { terminate(Backpressure) }
     }
@@ -121,10 +137,25 @@ class SpotifyHostCoordinator(
         perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
             sample { queue ->
                 lastCursor = queue.snapshot.cursor
+                queue.entries.forEach { entry ->
+                    if (mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier }) {
+                        mappingSource?.cached(identity, entry.recordingIdentifier)?.let { track ->
+                            mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
+                        }
+                    }
+                }
                 val missing = queue.entries.firstOrNull { entry -> mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
                 if (missing != null && mappingSource != null) {
                     resolve(queue, missing); return@sample
                 }
+                if (queue.snapshot.buffering && queue.snapshot.durationMilliseconds == null && queue.snapshot.externalAuthorityAbsent
+                    && queue.entries.any { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }) {
+                    val now = clock.nowElapsedRealtimeMilliseconds()
+                    val waitingSince = waitingForPlayerSinceElapsedMilliseconds ?: now.also { waitingForPlayerSinceElapsedMilliseconds = it }
+                    if (now < waitingSince || now - waitingSince >= MaximumPlayerPreparationMilliseconds) throw SpotifyConnectFailure(Deadline)
+                    schedule(); return@sample
+                }
+                waitingForPlayerSinceElapsedMilliseconds = null
                 val publication = project(queue, anchor)
                 val provenance = acceptedCommand
                 perform(transport.publish(identity, publication), true) {
@@ -139,6 +170,7 @@ class SpotifyHostCoordinator(
     private fun resolve(queue: SpotifyHostPlayerQueue, entry: SpotifyHostQueueEntry) {
         resolving = true
         publish(SpotifyHostStatus.Resolving)
+        if (closing) return
         val pause = player.pause(identity, queue.snapshot.cursor)
         performFuture(pause, {}, false) {
             perform(requireNotNull(mappingSource).resolve(identity, entry.recordingIdentifier)) { track ->
@@ -233,6 +265,7 @@ class SpotifyHostCoordinator(
         private const val StartupTimeoutMilliseconds = 15000L
         private const val Deadline = "deadline"
         private const val PublishIntervalMilliseconds = 1000L
+        private const val MaximumPlayerPreparationMilliseconds = 15000L
         private const val ActiveSinceField = "activeSinceServerTimestampMilliseconds"
         private const val Superseded = "superseded"
         private const val Canceled = "canceled"

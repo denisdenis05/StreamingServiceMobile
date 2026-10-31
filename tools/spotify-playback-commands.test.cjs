@@ -6,6 +6,7 @@ const library = require(Imports.library);
 const { SpotifyPlaybackCommandStore } = require(Imports.commands);
 
 const Fixture = Object.freeze({ account: 'spotify-account', session: 'owned-session', host: 'owned-host', otherHost: 'replacement-host',
+  guestAvailability: 'Admitted native guests can request commands while browser and removed guests cannot',
   request: 'playback-request', track: 'aaaaaaaaaaaaaaaaaaaaaa', seconds: '12.345', positionMilliseconds: 12345,
   invalidSeconds: '1e3', roundingSeconds: '1.001', roundedMilliseconds: 1001, zero: 0, one: 1, flushCount: 12,
   firstListener: 'first-listener', secondListener: 'second-listener', addedListener: 'added-listener',
@@ -87,4 +88,19 @@ test(Fixture.names.observation, async () => { const current = fixture(); const e
 });
 test(Fixture.names.rounding, async () => { const current = fixture(); await current.store.seek(Fixture.roundingSeconds);
   assert.equal(current.calls.commands[Fixture.zero][Fixture.zero].positionMilliseconds, Fixture.roundedMilliseconds); current.store.dispose();
+});
+
+test(Fixture.guestAvailability, () => {
+  const current = fixture();
+  current.state.membership.session.ownedByCurrentAccount = false;
+  current.state.membership.session.participants = [{ identifier: Fixture.account }];
+  current.membership();
+  assert.equal(current.store.getSnapshot().available, false);
+  current.runtime.sessions.guestCommandsAvailable = true;
+  current.membership();
+  assert.equal(current.store.getSnapshot().available, true);
+  current.state.membership.session.participants = [];
+  current.membership();
+  assert.equal(current.store.getSnapshot().available, false);
+  current.store.dispose();
 });

@@ -1,10 +1,10 @@
 const Imports = Object.freeze({ test: 'node:test', assertion: 'node:assert/strict', events: 'node:events',
   stream: 'node:stream', probe: './probe-spotify-connect.cjs' });
 const test = require(Imports.test);
-const assert = require(Imports.assertion);
+const assertion = require(Imports.assertion);
 const { EventEmitter } = require(Imports.events);
 const { PassThrough } = require(Imports.stream);
-const { projectEvent, projectFailure, observeConnect } = require(Imports.probe);
+const { projectEvent, projectFailure, projectCatalogDiagnostic, observeConnect } = require(Imports.probe);
 const Fixture = Object.freeze({ generation: 1, observedMilliseconds: 57, privateValue: 'synthetic-private-value',
   track: 'spotify:track:aaaaaaaaaaaaaaaaaaaaaa', revision: 'synthetic-revision', occurrence: 'synthetic-occurrence',
   connecting: 'connecting', registered: 'registered', membership: 'membership', reconnecting: 'reconnecting', stopped: 'stopped',
@@ -25,28 +25,28 @@ function registration() { return event({ type: Fixture.registered, accountIdenti
       previousTracks: [], playing: true, paused: false, buffering: false,
       positionAsOfTimestampMilliseconds: Fixture.positionMilliseconds, timestampMilliseconds: Fixture.anchorMilliseconds } } }); }
 function childFixture() {
-  const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough();
+  const child = new EventEmitter(); child.stdin = new PassThrough(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
   const writes = []; child.stdin.on(Fixture.stdoutEvent, bytes => writes.push(bytes.toString()));
   child.kill = () => child.emit(Fixture.closeEvent, Fixture.one);
   return { child, writes, input: new PassThrough() };
 }
 test(Fixture.names.projection, () => {
   const summary = projectEvent(registration());
-  assert.equal(summary.hasActiveDevice, true); assert.equal(summary.playing, true);
-  assert.equal(summary.positionMilliseconds, Fixture.positionMilliseconds);
-  assert.equal(summary.anchorMilliseconds, Fixture.anchorMilliseconds);
-  assert.equal(summary.queueHasOccurrenceIdentifiers, true);
+  assertion.equal(summary.hasActiveDevice, true); assertion.equal(summary.playing, true);
+  assertion.equal(summary.positionMilliseconds, Fixture.positionMilliseconds);
+  assertion.equal(summary.anchorMilliseconds, Fixture.anchorMilliseconds);
+  assertion.equal(summary.queueHasOccurrenceIdentifiers, true);
   for (const value of [Fixture.privateValue, Fixture.track, Fixture.revision, Fixture.occurrence]) {
-    assert.equal(JSON.stringify(summary).includes(value), false);
+    assertion.equal(JSON.stringify(summary).includes(value), false);
   }
-  assert.deepEqual(projectEvent(event({ type: Fixture.membership, update: { invitation: Fixture.privateValue } })),
+  assertion.deepEqual(projectEvent(event({ type: Fixture.membership, update: { invitation: Fixture.privateValue } })),
     { stage: Fixture.stage, generation: Fixture.generation, event: Fixture.membership });
 });
 test(Fixture.names.lifecycle, () => {
-  assert.equal(projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden })).failure, Fixture.forbidden);
-  assert.equal(projectEvent(event({ type: Fixture.stopped, cleanupFailure: null })).failure, null);
-  assert.equal(projectEvent({ ...event({ type: Fixture.stopped, cleanupFailure: null }), generation: Fixture.zero }).failure, null);
-  assert.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.privateValue })),
+  assertion.equal(projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden })).failure, Fixture.forbidden);
+  assertion.equal(projectEvent(event({ type: Fixture.stopped, cleanupFailure: null })).failure, null);
+  assertion.equal(projectEvent({ ...event({ type: Fixture.stopped, cleanupFailure: null }), generation: Fixture.zero }).failure, null);
+  assertion.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.privateValue })),
     failure => !failure.message.includes(Fixture.privateValue));
 });
 test(Fixture.names.framing, async () => {
@@ -55,10 +55,10 @@ test(Fixture.names.framing, async () => {
   const serialized = JSON.stringify(registration()) + Fixture.line;
   fixture.child.stdout.write(serialized.slice(Fixture.zero, Fixture.one));
   fixture.child.stdout.write(serialized.slice(Fixture.one));
-  assert.equal(summaries.length, Fixture.one);
-  assert.equal(JSON.parse(fixture.writes[Fixture.zero]).storedCredential, Fixture.privateValue);
-  assert.equal(JSON.parse(fixture.writes[Fixture.zero]).configuration.playbackReady, false);
-  assert.equal(JSON.stringify(summaries).includes(Fixture.privateValue), false);
+  assertion.equal(summaries.length, Fixture.one);
+  assertion.equal(JSON.parse(fixture.writes[Fixture.zero]).storedCredential, Fixture.privateValue);
+  assertion.equal(JSON.parse(fixture.writes[Fixture.zero]).configuration.playbackReady, false);
+  assertion.equal(JSON.stringify(summaries).includes(Fixture.privateValue), false);
   fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
 });
 test(Fixture.names.control, async () => {
@@ -66,25 +66,25 @@ test(Fixture.names.control, async () => {
   const observing = observeConnect(Fixture.privateValue, () => undefined, () => fixture.child, fixture.input);
   fixture.input.write(Fixture.refresh + Fixture.line); fixture.input.write(Fixture.stop + Fixture.line);
   fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
-  assert.deepEqual(fixture.writes.slice(Fixture.one).map(serialized => JSON.parse(serialized)),
+  assertion.deepEqual(fixture.writes.slice(Fixture.one).map(serialized => JSON.parse(serialized)),
     [{ operation: Fixture.refresh }, { operation: Fixture.stop }]);
 });
 test(Fixture.names.malformed, async () => {
   const fixture = childFixture(); const summaries = [];
   const observing = observeConnect(Fixture.privateValue, summary => summaries.push(summary), () => fixture.child, fixture.input);
   fixture.child.stdout.write(Fixture.privateValue + Fixture.line);
-  await assert.rejects(observing, failure => !failure.message.includes(Fixture.privateValue));
-  assert.deepEqual(summaries, []);
+  await assertion.rejects(observing, failure => !failure.message.includes(Fixture.privateValue));
+  assertion.deepEqual(summaries, []);
 });
 test(Fixture.names.restart, async () => {
   const fixture = childFixture(); const observing = observeConnect(Fixture.privateValue, () => undefined, () => fixture.child, fixture.input);
   fixture.input.write(Fixture.restart + Fixture.line); fixture.child.emit(Fixture.closeEvent, Fixture.zero);
-  assert.equal(await observing, true);
-  assert.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: Fixture.stop });
+  assertion.equal(await observing, true);
+  assertion.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: Fixture.stop });
 });
 test(Fixture.names.stage, () => {
-  assert.equal(projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.failureStage })).failureStage, Fixture.failureStage);
-  assert.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.privateValue })),
+  assertion.equal(projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.failureStage })).failureStage, Fixture.failureStage);
+  assertion.throws(() => projectEvent(event({ type: Fixture.reconnecting, failure: Fixture.forbidden, stage: Fixture.privateValue })),
     failure => !failure.message.includes(Fixture.privateValue));
 });
 
@@ -94,15 +94,15 @@ test(CommandFixture.name, async () => {
   const fixture = childFixture();
   const observing = observeConnect(Fixture.privateValue, () => undefined, () => fixture.child, fixture.input);
   fixture.input.write(CommandFixture.pause + Fixture.line);
-  assert.equal(fixture.writes.length, Fixture.one);
+  assertion.equal(fixture.writes.length, Fixture.one);
   fixture.child.stdout.write(JSON.stringify(registration()) + Fixture.line);
   fixture.input.write(CommandFixture.pause + Fixture.line);
-  assert.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: CommandFixture.checkedCommand,
+  assertion.deepEqual(JSON.parse(fixture.writes.at(-Fixture.one)), { operation: CommandFixture.checkedCommand,
     generation: Fixture.generation, requestIdentifier: CommandFixture.commandPrefix + Fixture.one,
     targetDeviceIdentifier: Fixture.privateValue, command: { kind: CommandFixture.pause } });
   const count = fixture.writes.length;
   fixture.child.stdout.write(JSON.stringify(event({ type: Fixture.reconnecting, failure: Fixture.forbidden })) + Fixture.line);
-  fixture.input.write(CommandFixture.play + Fixture.line); assert.equal(fixture.writes.length, count);
+  fixture.input.write(CommandFixture.play + Fixture.line); assertion.equal(fixture.writes.length, count);
   fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
 });
 
@@ -111,7 +111,7 @@ const FailureFixture = Object.freeze({ authorization: 'authorization', grant: 'n
     private: 'Raw exceptions unknown codes and throwing properties never escape failure summaries' } });
 test(FailureFixture.names.known, () => {
   for (const phase of [FailureFixture.authorization, FailureFixture.grant, FailureFixture.observation]) {
-    assert.deepEqual(projectFailure({ code: Fixture.forbidden, message: Fixture.privateValue }, phase),
+    assertion.deepEqual(projectFailure({ code: Fixture.forbidden, message: Fixture.privateValue }, phase),
       { stage: Fixture.stage, phase, failure: Fixture.forbidden });
   }
 });
@@ -119,7 +119,35 @@ test(FailureFixture.names.private, () => {
   for (const failure of [new Error(Fixture.privateValue), { code: Fixture.privateValue }, null,
     Object.defineProperty({}, 'code', { get() { throw new Error(Fixture.privateValue); } })]) {
     const summary = projectFailure(failure, Fixture.privateValue);
-    assert.deepEqual(summary, { stage: Fixture.stage, phase: FailureFixture.authorization, failure: FailureFixture.network });
-    assert.equal(JSON.stringify(summary).includes(Fixture.privateValue), false);
+    assertion.deepEqual(summary, { stage: Fixture.stage, phase: FailureFixture.authorization, failure: FailureFixture.network });
+    assertion.equal(JSON.stringify(summary).includes(Fixture.privateValue), false);
   }
+});
+
+const CatalogFixture = Object.freeze({ origin: 'https://api.spotify.com', stage: 'httpResponse', admission: 'dispatchAdmission', status: 429,
+  failure: 'backpressure', summaryStage: 'native-catalog-http', privateValue: 'synthetic-private-diagnostic',
+  foreignOrigin: 'https://synthetic.example/', invalidStatus: 999 });
+test('Catalog diagnostics preserve fixed HTTP origin and status while discarding every private extra field', () => {
+  const projected = projectCatalogDiagnostic({ ...CatalogFixture, token: CatalogFixture.privateValue, query: CatalogFixture.privateValue });
+  assertion.deepEqual(projected, { stage: CatalogFixture.summaryStage, origin: CatalogFixture.origin,
+    operation: CatalogFixture.stage, status: CatalogFixture.status, failure: CatalogFixture.failure });
+  assertion.equal(JSON.stringify(projected).includes(CatalogFixture.privateValue), false);
+});
+test('Catalog diagnostics cannot claim an HTTP status for admission or malformed private transport output', () => {
+  assertion.equal(projectCatalogDiagnostic({ ...CatalogFixture, origin: CatalogFixture.foreignOrigin }), null);
+  assertion.equal(projectCatalogDiagnostic({ ...CatalogFixture, status: CatalogFixture.invalidStatus }), null);
+  assertion.equal(projectCatalogDiagnostic({ ...CatalogFixture, failure: CatalogFixture.privateValue }), null);
+  const admitted = projectCatalogDiagnostic({ ...CatalogFixture, stage: CatalogFixture.admission, status: null });
+  assertion.equal(admitted.status, null);
+});
+
+test('Native catalog diagnostic framing ignores raw errors and forwards bounded validated summaries without stopping the owner', async () => {
+  const fixture = childFixture(); const summaries = [];
+  const observing = observeConnect(Fixture.privateValue, summary => summaries.push(summary), () => fixture.child, fixture.input);
+  fixture.child.stderr.write(Fixture.privateValue + Fixture.line);
+  const diagnostic = JSON.stringify({ ...CatalogFixture, token: Fixture.privateValue }) + Fixture.line;
+  fixture.child.stderr.write(diagnostic.slice(Fixture.zero, Fixture.one)); fixture.child.stderr.write(diagnostic.slice(Fixture.one));
+  assertion.equal(summaries.length, Fixture.one); assertion.equal(summaries[Fixture.zero].status, CatalogFixture.status);
+  assertion.equal(JSON.stringify(summaries).includes(Fixture.privateValue), false);
+  fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
 });

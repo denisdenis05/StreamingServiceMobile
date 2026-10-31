@@ -4,6 +4,7 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
 interface SpotifyHostRuntimeSession {
+    fun publishLocalChanges(): CompletableFuture<Unit> = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun start(): CompletableFuture<SpotifyHostSnapshot>
     fun stop(): CompletableFuture<Unit>
     fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit>
@@ -89,6 +90,22 @@ class SpotifyHostRuntime(
             if (current == null || !active(current)) throw SpotifyConnectFailure(Superseded)
             snapshot
         }
+    }
+    fun prepareRecordings(selected: Attachment, serialized: String): CompletableFuture<Unit> = request {
+        requireAttachment(selected)
+        val current = lifetime?.takeIf { current -> active(current) && currentSnapshot?.status == SpotifyHostStatus.Hosting }
+            ?: throw SpotifyConnectFailure(Superseded)
+        val identifiers = SpotifyHostPreparationProtocol.decode(serialized)
+        val recordings = current.resources?.hostingRecordings ?: throw SpotifyConnectFailure(Superseded)
+        recordings.prepare(current.configuration.identity, identifiers) {
+            requireAttachment(selected)
+            active(current) && lifetime === current
+        }
+    }
+    fun publishLocalChanges(selected: Attachment): CompletableFuture<Unit> = request {
+        requireAttachment(selected)
+        val current = lifetime?.takeIf { current -> active(current) } ?: throw SpotifyConnectFailure(Superseded)
+        current.resources?.session?.publishLocalChanges() ?: throw SpotifyConnectFailure(Superseded)
     }
     fun stop(selected: Attachment): CompletableFuture<Unit> {
         requireAttachment(selected); return retireHosting()

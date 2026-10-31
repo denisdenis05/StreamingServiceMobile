@@ -134,6 +134,32 @@ class SpotifyNativeFollowerCoordinatorTest {
         fun currentOccurrence(): String? = actual.snapshot().optJSONObject(ProtocolFields.CurrentEntry)?.optString(ProtocolFields.EntryIdentifier)
     }
 
+    @Test fun sourceEventsRefreshImmediatelyAndCoalesceBehindOneRead() {
+        val fixture = Fixture(); fixture.source.automatic = false; fixture.start()
+        fixture.coordinator.sourceChanged(); fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.source.requests.size)
+        val request = fixture.source.requests.single()
+        request.result.complete(fixture.source.observation(request.identity)); fixture.mainQueue.drain()
+        assertEquals(DoubleCount, fixture.source.requests.size)
+        val second = fixture.source.requests.last()
+        second.result.complete(fixture.source.observation(second.identity)); fixture.mainQueue.drain()
+        assertEquals(DoubleCount, fixture.source.requests.size)
+    }
+    @Test fun sourceEventCancelsPendingTimerWithoutWaitingForReconcileInterval() {
+        val fixture = Fixture(); fixture.start()
+        fixture.coordinator.sourceChanged(); fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(DoubleCount, fixture.source.requests.size)
+        assertTrue(fixture.scheduler.tasks.dropLast(SingleCount).all { task -> task.cancelled })
+    }
+    @Test fun sourceEventsAfterDisconnectOrStopCannotRestartReads() {
+        val fixture = Fixture(); fixture.start()
+        fixture.coordinator.connectionUnavailable(); fixture.mainQueue.drain()
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.source.requests.size)
+        fixture.coordinator.stop(); fixture.mainQueue.drain()
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.source.requests.size)
+    }
     @Test fun explicitStartWaitsForFreshSourceBeforeClaimAndNeverUsesScreenPolling() {
         val fixture = Fixture(); fixture.source.automatic = false; fixture.start()
         assertTrue(fixture.commands.isEmpty())

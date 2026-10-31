@@ -35,6 +35,20 @@ class SpotifyHostRecordingBrokerTest {
         assertEquals(Recording, job.getString(RecordingField)); assertEquals(Account, job.getString(AccountField)); assertNull(fixture.broker.claim(request))
         fixture.broker.complete(request, Track); assertEquals(Track, result.result.get()); assertFalse(fixture.broker.isPending(request))
     }
+    @Test fun confirmedPreparationIsReusedWithoutAnotherHeadlessJobAndCannotEscapeItsScope() {
+        val fixture = Fixture(); val first = fixture.resolve(); val request = fixture.requests.single()
+        fixture.broker.claim(request); fixture.broker.complete(request, Track)
+        assertEquals(Track, first.result.get()); assertEquals(Track, fixture.broker.cached(fixture.identity, Recording))
+        assertEquals(Track, fixture.resolve().result.get()); assertEquals(SingleCount, fixture.requests.size)
+        fixture.current = false
+        assertNull(fixture.broker.cached(fixture.identity, Recording)); assertTrue(fixture.resolve().result.isCompletedExceptionally)
+    }
+    @Test fun canceledAndRejectedPreparationNeverPopulateTheCache() {
+        val fixture = Fixture(); val operation = fixture.resolve(); operation.cancel()
+        assertTrue(operation.result.isCompletedExceptionally); assertNull(fixture.broker.cached(fixture.identity, Recording))
+        fixture.resolve(); val request = fixture.requests.last(); fixture.broker.claim(request); fixture.broker.fail(request)
+        assertNull(fixture.broker.cached(fixture.identity, Recording))
+    }
     @Test fun retirementAndDeadlineCancelTasksAndPreventLateCompletion() {
         val retired = Fixture(); val result = retired.resolve(); retired.broker.retire()
         assertTrue(result.result.isCompletedExceptionally); assertEquals(SingleCount, retired.cancellations); assertNull(retired.broker.claim(retired.requests.single()))
@@ -56,6 +70,23 @@ class SpotifyHostRecordingBrokerTest {
         try { fixture.broker.complete(request, Recording); throw AssertionError() } catch (_failure: SpotifyConnectFailure) { Unit }
         assertTrue(result.result.isCompletedExceptionally)
     }
+    @Test fun preparationBatchHasOneOverallDeadlineAndCancelsTheActiveHeadlessJob() {
+        val fixture = Fixture()
+        val prepared = fixture.broker.prepare(fixture.identity, listOf(Recording, OtherRecording)) { true }
+        assertEquals(SingleCount, fixture.requests.size)
+        fixture.timers.first()()
+        assertTrue(prepared.isCompletedExceptionally)
+        assertEquals(SingleCount, fixture.cancellations)
+        assertEquals(SingleCount, fixture.requests.size)
+        assertNull(fixture.broker.claim(fixture.requests.single()))
+    }
+    @Test fun preparationBatchRetiresBeforeStartingAnotherRecordingWhenTheIntentChanges() {
+        val fixture = Fixture(); var wanted = true
+        val prepared = fixture.broker.prepare(fixture.identity, listOf(Recording, OtherRecording)) { wanted }
+        val request = fixture.requests.single(); fixture.broker.claim(request)
+        wanted = false; fixture.broker.complete(request, Track)
+        assertTrue(prepared.isCompletedExceptionally); assertEquals(SingleCount, fixture.requests.size)
+    }
     companion object {
         private const val Account = "synthetic-account"
         private const val SpotifyAccount = "synthetic-spotify"
@@ -65,6 +96,7 @@ class SpotifyHostRecordingBrokerTest {
         private const val Engine = "synthetic-engine"
         private const val Authentication = "synthetic-authentication"
         private const val Recording = "synthetic-recording"
+        private const val OtherRecording = "synthetic-other-recording"
         private const val Queue = "synthetic-queue"
         private const val Prefix = "synthetic-job-"
         private const val Address = "https://synthetic.example/"

@@ -33,6 +33,8 @@ class SpotifyJamPlaybackModule(private val context: ReactApplicationContext) : R
 
     @ReactMethod fun startFollowing(identifier: String, serialized: String, promise: Promise) = settle(promise) { hosting.retireHosting().thenCompose { runtime.startFollowing(attachment, identifier, serialized) } }
     @ReactMethod fun startHosting(serialized: String, promise: Promise) = settle(promise) { hosting.start(hostAttachment, serialized).thenApply(SpotifyHostSnapshotProtocol::encode) }
+    @ReactMethod fun prepareHostingRecordings(serialized: String, promise: Promise) = settle(promise) { hosting.prepareRecordings(hostAttachment, serialized) }
+    @ReactMethod fun publishHostingChanges(promise: Promise) = settle(promise) { hosting.publishLocalChanges(hostAttachment) }
     @ReactMethod fun stopHosting(promise: Promise) = settle(promise) { hosting.stop(hostAttachment) }
     @ReactMethod fun getHostingSnapshot(promise: Promise) = settle(promise) { CompletableFuture.completedFuture(SpotifyHostSnapshotProtocol.encode(hosting.snapshot(hostAttachment))) }
     @ReactMethod fun claimHostingRecording(identifier: String, promise: Promise) = settle(promise) { CompletableFuture.completedFuture(hosting.claimHostingRecording(identifier)) }

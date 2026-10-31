@@ -8,7 +8,7 @@ import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePoli
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
 export const PlaybackControlCopy = Object.freeze({ title: 'Control Spotify host playback',
-  explanation: 'Controls the active Spotify device hosting your Jam. Local following updates from Spotify afterward. Guest controls are not available yet.',
+  explanation: 'Controls the active Spotify device hosting your Jam. Local following updates from Spotify afterward. Native guest commands require fresh membership and Spotify permission.',
   play: 'Play on Spotify', pause: 'Pause on Spotify', next: 'Next on Spotify', previous: 'Previous on Spotify',
   seek: 'Seek on Spotify', position: 'Position in seconds', keyboard: 'decimal-pad', maximumPositionCharacters: 16,
   emptyText: '', pending: 'Waiting for Spotify playback acknowledgement…',

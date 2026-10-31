@@ -22,7 +22,9 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
     'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported', 'superseded'],
   failureCodes: Object.values(IntegrationFailureCode),
   phases: ['authorization', 'nativeGrant', 'observation'], authorizationPhase: 'authorization', grantPhase: 'nativeGrant', observationPhase: 'observation',
-  stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'ignore' });
+  stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'pipe',
+  catalogOrigin: 'https://api.spotify.com', catalogStage: 'native-catalog-http', minimumHttpStatus: 100, maximumHttpStatus: 599,
+  diagnosticStages: ['requestCompletion', 'dispatchAdmission', 'transport', 'httpResponse', 'responseBody', 'decode'] });
 const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, play, pause, next, previous, queue <Spotify track ID>, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
 
 function projectEvent(value) {
@@ -56,10 +58,35 @@ function projectEvent(value) {
     hasAcknowledgement: Boolean(cluster.acknowledgementIdentifier) };
 }
 
+function projectCatalogDiagnostic(value) {
+  if (!value || value.origin !== Policy.catalogOrigin || !Policy.diagnosticStages.includes(value.stage)
+    || value.status !== null && (!Number.isSafeInteger(value.status) || value.status < Policy.minimumHttpStatus || value.status > Policy.maximumHttpStatus)
+    || value.failure !== null && !Policy.allowedFailures.includes(value.failure)) return null;
+  return { stage: Policy.catalogStage, origin: Policy.catalogOrigin, operation: value.stage, status: value.status, failure: value.failure };
+}
+
 function observeConnect(storedCredential, onSummary, childFactory = spawn, input = process.stdin) {
   return new Promise((resolve, reject) => {
     const child = childFactory(path.resolve(__dirname, Policy.program), [], {
       stdio: [Policy.inputOutput, Policy.inputOutput, Policy.diagnosticOutput] });
+    let diagnosticBuffer = Buffer.alloc(Policy.emptyCount);
+    let discardingDiagnosticLine = false;
+    child.stderr?.on(Policy.dataEvent, bytes => {
+      diagnosticBuffer = Buffer.concat([diagnosticBuffer, bytes]);
+      let boundary = diagnosticBuffer.indexOf(Policy.lineSeparator);
+      while (boundary !== -Policy.firstGeneration) {
+        const line = diagnosticBuffer.subarray(Policy.emptyCount, boundary);
+        diagnosticBuffer = diagnosticBuffer.subarray(boundary + Policy.firstGeneration);
+        if (!discardingDiagnosticLine && line.length <= Policy.maximumLineBytes) {
+          try { const diagnostic = projectCatalogDiagnostic(JSON.parse(line.toString())); if (diagnostic) onSummary(diagnostic); } catch {}
+        }
+        discardingDiagnosticLine = false;
+        boundary = diagnosticBuffer.indexOf(Policy.lineSeparator);
+      }
+      if (diagnosticBuffer.length > Policy.maximumLineBytes) {
+        diagnosticBuffer = Buffer.alloc(Policy.emptyCount); discardingDiagnosticLine = true;
+      }
+    });
     let buffer = Buffer.alloc(Policy.emptyCount);
     let ended = false;
     let terminalFailure = null;
@@ -166,5 +193,5 @@ async function main() {
   } finally { cancellation.abort(); }
 }
 
-module.exports = { projectEvent, projectFailure, observeConnect };
+module.exports = { projectEvent, projectFailure, projectCatalogDiagnostic, observeConnect };
 if (require.main === module) void main();

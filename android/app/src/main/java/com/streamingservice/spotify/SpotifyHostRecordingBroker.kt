@@ -3,9 +3,11 @@ package com.streamingservice.spotify
 import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicReference
 
 interface SpotifyHostQueueMappingSource {
     fun resolve(identity: SpotifyHostIdentity, recordingIdentifier: String): SpotifyPlayerOperation<String>
+    fun cached(identity: SpotifyHostIdentity, recordingIdentifier: String): String? = null
 }
 class SpotifyHostRecordingBroker(
     private val configuration: SpotifyHostConfiguration,
@@ -24,10 +26,19 @@ class SpotifyHostRecordingBroker(
         var task: SpotifyNativeFollowerCancellation? = null
     }
     private val jobs = linkedMapOf<String, Job>()
+    private val prepared = linkedMapOf<String, String>().apply {
+        configuration.mappings.groupBy { mapping -> mapping.recordingIdentifier }.forEach { (recording, mappings) ->
+            val tracks = mappings.map { mapping -> mapping.spotifyTrackIdentifier }.distinct()
+            if (tracks.size == SingleCount) put(recording, tracks.single())
+        }
+    }
+    @Synchronized override fun cached(identity: SpotifyHostIdentity, recordingIdentifier: String): String? =
+        if (identity == configuration.identity && current()) prepared[recordingIdentifier] else null
     override fun resolve(identity: SpotifyHostIdentity, recordingIdentifier: String): SpotifyPlayerOperation<String> {
         val job: Job
         synchronized(this) {
             if (identity != configuration.identity || !current()) return rejected(Superseded)
+            prepared[recordingIdentifier]?.let { track -> return SpotifyPlayerOperation(CompletableFuture.completedFuture(track)) {} }
             if (!identifier(recordingIdentifier) || jobs.size >= MaximumJobs) return rejected(InvalidInput)
             val selected = identifiers.nextIdentifier()
             if (!identifier(selected) || jobs.containsKey(selected)) return rejected(InvalidInput)
@@ -40,6 +51,33 @@ class SpotifyHostRecordingBroker(
             synchronized(this) { if (jobs[job.identifier] === job) job.task = task else task.cancel() }
         } catch (_failure: Throwable) { finish(job, null, Network) }
         return SpotifyPlayerOperation(job.completion) { finish(job, null, Canceled) }
+    }
+    fun prepare(identity: SpotifyHostIdentity, recordingIdentifiers: List<String>, isWanted: () -> Boolean): CompletableFuture<Unit> {
+        if (recordingIdentifiers.size > SpotifyHostingPolicy.MaximumQueueTracks) return failed(InvalidInput)
+        val completion = CompletableFuture<Unit>()
+        val activeResolution = AtomicReference<SpotifyPlayerOperation<String>?>(null)
+        val deadline = try { scheduler.schedule(TimeoutMilliseconds) {
+            if (completion.completeExceptionally(SpotifyConnectFailure(Deadline))) activeResolution.getAndSet(null)?.cancel()
+        } } catch (_failure: Throwable) { return failed(Network) }
+        var preparation = CompletableFuture.completedFuture(Unit)
+        recordingIdentifiers.distinct().forEach { recording ->
+            preparation = preparation.thenCompose {
+                if (completion.isDone || !isWanted()) throw SpotifyConnectFailure(Superseded)
+                val operation = resolve(identity, recording)
+                activeResolution.set(operation)
+                if (completion.isDone) { operation.cancel(); failed(Superseded) }
+                else operation.result.thenApply {
+                    if (!isWanted()) throw SpotifyConnectFailure(Superseded)
+                    Unit
+                }
+            }
+        }
+        preparation.whenComplete { _, failure ->
+            deadline.cancel()
+            if (failure == null) completion.complete(Unit) else completion.completeExceptionally(failure)
+            activeResolution.set(null)
+        }
+        return completion
     }
     @Synchronized fun claim(identifier: String): String? {
         val job = job(identifier) ?: return null
@@ -86,7 +124,13 @@ class SpotifyHostRecordingBroker(
         val removed = synchronized(this) { if (jobs[job.identifier] !== job) false else { jobs.remove(job.identifier); true } }
         if (!removed) return
         job.timer?.cancel(); job.task?.cancel()
-        if (failure == null && track != null && current()) job.completion.complete(track)
+        if (failure == null && track != null && current()) {
+            synchronized(this) {
+                prepared[job.recording] = track
+                while (prepared.size > MaximumPreparedRecordings) prepared.remove(prepared.keys.first())
+            }
+            job.completion.complete(track)
+        }
         else job.completion.completeExceptionally(SpotifyConnectFailure(failure ?: Superseded))
     }
     private fun current(): Boolean = try { isCurrent() } catch (_failure: Throwable) { false }
@@ -99,6 +143,8 @@ class SpotifyHostRecordingBroker(
         const val TimeoutMilliseconds = 30000L
         private const val EmptyCount = 0
         private const val SingleCount = 1
+        private const val PreparedQueueRetention = 2
+        private const val MaximumPreparedRecordings = SpotifyHostingPolicy.MaximumQueueTracks * PreparedQueueRetention
         private const val MaximumJobs = 16
         private const val MaximumSearches = 1
         private const val MaximumQueryCharacters = 8192

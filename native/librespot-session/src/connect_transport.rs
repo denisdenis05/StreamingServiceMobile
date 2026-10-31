@@ -79,7 +79,7 @@ pub struct ConnectReading {
 pub enum ConnectEventData {
     Connecting,
     Registered { account_identifier: String, device_identifier: String, verification_source: RegistrationVerification, cluster: ConnectCluster },
-    Cluster { cluster: ConnectCluster },
+    Cluster { cluster: ConnectCluster, received_from_dealer: bool },
     Membership { update: Value },
     SessionMessage { message: Value },
     Command { key: String, request: Value, received_native_monotonic_milliseconds: u64, deadline_native_monotonic_milliseconds: u64 },
@@ -258,7 +258,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         response.complete(result);
                     },
                     HttpCompletion::Refreshed { result, response } => {
-                        if let Ok(cluster) = &result { authority.observe(cluster); emit(events, generation, ConnectEventData::Cluster { cluster: cluster.clone() }, cancellation).await?; }
+                        if let Ok(cluster) = &result { authority.observe(cluster); emit(events, generation, ConnectEventData::Cluster { cluster: cluster.clone(), received_from_dealer: false }, cancellation).await?; }
                         response.complete(result);
                     },
                     HttpCompletion::Command { result, response } => response.complete(result),
@@ -287,7 +287,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                         if authority.supersedes_preflight(&command.target_device_identifier, &cluster) { command.response.complete(Err(Failure::Superseded)); continue; }
                         let minimum_server_at_milliseconds = cluster.server_at_milliseconds;
                         authority.observe(&cluster);
-                        emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
+                        emit(events, generation, ConnectEventData::Cluster { cluster, received_from_dealer: false }, cancellation).await?;
                         if command.response.is_closed() || command.cancellation.is_cancelled() || cancellation.is_cancelled() { command.response.complete(Err(Failure::Canceled)); continue; }
                         if let Err(failure) = outgoing_commands.begin_dispatch(command.target_device_identifier.clone(), minimum_server_at_milliseconds, native_monotonic_milliseconds()) {
                             command.response.complete(Err(failure)); continue;
@@ -313,7 +313,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     DealerInput::Cluster(cluster) if registered => {
                         authority.observe(&cluster);
                         outgoing_commands.observe(&cluster, native_monotonic_milliseconds());
-                        emit(events, generation, ConnectEventData::Cluster { cluster }, cancellation).await?;
+                        emit(events, generation, ConnectEventData::Cluster { cluster, received_from_dealer: true }, cancellation).await?;
                     },
                     DealerInput::Membership(update) if registered => emit(events, generation, ConnectEventData::Membership { update }, cancellation).await?,
                     DealerInput::SessionMessage(message) if registered => emit(events, generation, ConnectEventData::SessionMessage { message }, cancellation).await?,

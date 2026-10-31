@@ -1,16 +1,18 @@
 import type { ReactTestRenderer } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 import { TextInput } from 'react-native';
-import { MatchEvidence, MatchStatus, RecordingQueueStatus } from 'streaming-service-spotify-jam';
-import type { RecordingQueueSnapshot } from 'streaming-service-spotify-jam';
+import { JamConnectionStatus, MatchEvidence, MatchStatus, RecordingQueueStatus } from 'streaming-service-spotify-jam';
+import type { JamSnapshot, RecordingQueueSnapshot } from 'streaming-service-spotify-jam';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 import { SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
 import type { SpotifySongSelection } from '../src/services/spotify/SpotifySongSelection';
 
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService', screen: '../src/pages/SpotifyJam/SpotifyRecordingQueue.render' });
 const Fixture = Object.freeze({ recordingIdentifier: 'recording', title: 'Song', author: 'Artist', spotifyIdentifier: '0123456789abcdefghijkl',
+  spotifyAccount: 'spotify-account', sessionIdentifier: 'queue-jam', host: 'queue-host',
   applicationAccount: 'app-account', market: 'US', otherMarket: 'GB', firstPosition: 0, initialScore: 0 });
 const Names = Object.freeze({ explicit: 'App recording matching and submission require separate presses',
+  guest: 'Native admitted guests can enqueue while unsupported guests and removed participants cannot',
   country: 'Changing the country after matching disables the previous selection',
   unavailable: 'Contradictory and unavailable candidates cannot be queued',
   account: 'A route from another app account cannot start matching',
@@ -21,9 +23,12 @@ let snapshot: RecordingQueueSnapshot;
 let currentAccount = true;
 const workflow = { getSnapshot: () => snapshot, subscribe: () => () => undefined,
   prepare: jest.fn(), enqueue: jest.fn() };
-const mobile = { getSnapshot: () => MobileSnapshot, subscribe: () => () => undefined,
+const mobile = { getSnapshot: () => mobileSnapshot, subscribe: () => () => undefined,
   isApplicationAccount: () => currentAccount };
-const MobileSnapshot = Object.freeze({ operation: SpotifyMobileOperation.Idle });
+let mobileSnapshot: { operation: SpotifyMobileOperation; canSubmitGuestCommands: boolean; session: JamSnapshot };
+function membership(): JamSnapshot { return { accountIdentifier: Fixture.spotifyAccount, status: JamConnectionStatus.Ready, failure: null,
+  session: { identifier: Fixture.sessionIdentifier, ownedByCurrentAccount: true, active: true, hostDeviceIdentifier: Fixture.host,
+    participants: [{ identifier: Fixture.spotifyAccount, displayName: Fixture.author }] } }; }
 jest.doMock(Imports.service, () => ({ spotifyRecordingQueue: workflow, spotifyMobile: mobile }));
 const Screen = require(Imports.screen).default;
 const Copy = require(Imports.screen).RecordingQueueCopy;
@@ -41,7 +46,8 @@ function button(title: string) { return rendered.root.findAllByType(DefaultButto
 function sourceTitle() { return Copy.find + Copy.separator + Fixture.title + Copy.separator + Fixture.author; }
 function candidateTitle() { return Copy.candidate + Fixture.title + Copy.separator + Fixture.author; }
 async function country(value: string = Fixture.market): Promise<void> { await act(async () => rendered.root.findByType(TextInput).props.onChangeText(value)); }
-beforeEach(() => { jest.clearAllMocks(); currentAccount = true; snapshot = empty(); });
+beforeEach(() => { jest.clearAllMocks(); currentAccount = true; snapshot = empty();
+  mobileSnapshot = { operation: SpotifyMobileOperation.Idle, canSubmitGuestCommands: false, session: membership() }; });
 afterEach(async () => { if (rendered) await act(async () => rendered.unmount()); });
 test(Names.explicit, async () => { await render(); expect(workflow.prepare).not.toHaveBeenCalled(); expect(workflow.enqueue).not.toHaveBeenCalled();
   await country(); await act(async () => button(sourceTitle()).props.onPress()); expect(workflow.prepare).toHaveBeenCalledWith(Fixture.recordingIdentifier, Fixture.market);
@@ -73,3 +79,16 @@ test(NavigationNames.action, () => { const { spotifyJamMenuAction } = require(Na
   expect(navigation.navigate).toHaveBeenCalledWith(SpotifyJamRoute, selection); });
 test(NavigationNames.registered, () => { const { spotifyJamMenuAction } = require(NavigationImports.action);
   const { menuOptions } = require(NavigationImports.menu); expect(menuOptions).toContain(spotifyJamMenuAction); });
+
+test(Names.guest, async () => {
+  snapshot = matched();
+  mobileSnapshot.session = { ...membership(), session: { ...membership().session!, ownedByCurrentAccount: false } };
+  await render(); await country();
+  expect(button(candidateTitle()).props.disabled).toBe(true);
+  mobileSnapshot = { ...mobileSnapshot, canSubmitGuestCommands: true };
+  await act(async () => rendered.update(<Screen selection={selection} />));
+  expect(button(candidateTitle()).props.disabled).toBe(false);
+  mobileSnapshot = { ...mobileSnapshot, session: { ...mobileSnapshot.session, session: { ...mobileSnapshot.session.session!, participants: [] } } };
+  await act(async () => rendered.update(<Screen selection={selection} />));
+  expect(button(candidateTitle()).props.disabled).toBe(true);
+});

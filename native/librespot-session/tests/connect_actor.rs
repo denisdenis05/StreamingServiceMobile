@@ -221,9 +221,10 @@ async fn checked_commands_refresh_the_actual_host_before_sending_the_typed_paylo
     let (result, receipt) = oneshot::channel();
     harness.actions.send(ConnectAction::CheckedCommand { generation: GENERATION, request_identifier: REQUEST.to_owned(),
         target_device_identifier: TARGET.to_owned(), command: ConnectCommand::Pause {}, command_cancellation: CancellationToken::new(), result }).await.unwrap();
-    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { .. }));
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { received_from_dealer: false, .. }));
     let mut observed = playable_cluster(TARGET); observed.acknowledgement_identifier = Some(SERVER_ACKNOWLEDGEMENT.to_owned());
     harness.incoming.send(DealerInput::Cluster(observed)).await.unwrap();
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { received_from_dealer: true, .. }));
     let confirmation = receipt.await.unwrap().unwrap(); assert!(confirmation.delivery_observed);
     assert_eq!(confirmation.acknowledgement_identifier.as_deref(), Some(SERVER_ACKNOWLEDGEMENT));
     {

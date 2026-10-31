@@ -150,7 +150,7 @@ export const spotifyMobile = new SpotifyMobileController({
       ...(selection.useNativeConnect ? {
         sharedStateVerifier: new SpotifyConnectSharedStateVerifier(spotifyConnect, identity.accountIdentifier),
         connectMetadata: spotifyConnect, connectSearch: spotifyConnect,
-        guestObservationVerifier: spotifyConnect,
+        guestObservationVerifier: spotifyConnect, guestCommandVerifier: spotifyConnect,
         hostedQueueReader: new SpotifyConnectHostedQueueReader(spotifyConnect, spotifyConnect, identity.accountIdentifier),
         playbackReader: new SpotifyConnectPlaybackReader(spotifyConnect, identity.accountIdentifier),
         queueProtocol: new SpotifyConnectQueueProtocol(spotifyConnect, identity.accountIdentifier, nextIdentifier),

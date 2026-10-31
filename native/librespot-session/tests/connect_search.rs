@@ -176,3 +176,27 @@ fn malformed_unknown_input_and_mistyped_response_values_remain_invalid() {
     let mut song = track(FIRST_TRACK); song[PLAYABLE_FIELD] = json!(PRIVATE_VALUE);
     assert!(matches!(decode_search_response(&input(), &response(vec![song])), Err(Failure::InvalidResponse)));
 }
+
+#[test]
+fn catalog_diagnostics_expose_only_fixed_origin_stage_http_status_and_safe_failure() {
+    use streaming_spotify_session::connect_search::diagnostics::{SearchDiagnostic, SearchDiagnosticStage};
+    const ORIGIN_FIELD: &str = "origin";
+    const STAGE_FIELD: &str = "stage";
+    const STATUS_FIELD: &str = "status";
+    const FAILURE_FIELD: &str = "failure";
+    const FIELD_COUNT: usize = 4;
+    const LIMITED_STATUS: u16 = 429;
+    const HTTP_RESPONSE_STAGE: &str = "httpResponse";
+    let diagnostic = SearchDiagnostic::new(SearchDiagnosticStage::HttpResponse,
+        Some(http::StatusCode::TOO_MANY_REQUESTS), Some(Failure::Backpressure));
+    let value = serde_json::to_value(diagnostic).unwrap();
+    assert_eq!(value.as_object().unwrap().len(), FIELD_COUNT);
+    assert_eq!(value[ORIGIN_FIELD], ORIGIN); assert_eq!(value[STAGE_FIELD], HTTP_RESPONSE_STAGE);
+    assert_eq!(value[STATUS_FIELD], LIMITED_STATUS); assert_eq!(value[FAILURE_FIELD], Failure::Backpressure.code());
+    for stage in [SearchDiagnosticStage::RequestCompletion, SearchDiagnosticStage::DispatchAdmission,
+        SearchDiagnosticStage::Transport, SearchDiagnosticStage::ResponseBody, SearchDiagnosticStage::Decode] {
+        let value = serde_json::to_value(SearchDiagnostic::new(stage, None, None)).unwrap();
+        assert_eq!(value.as_object().unwrap().len(), FIELD_COUNT);
+        assert!(value[STATUS_FIELD].is_null()); assert!(value[FAILURE_FIELD].is_null());
+    }
+}

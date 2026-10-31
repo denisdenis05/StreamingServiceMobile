@@ -95,8 +95,9 @@ export class SpotifyPlaybackCommandStore {
     }
     const membership = this.runtime?.sessions.getSnapshot();
     const session = membership?.session;
-    const available = Boolean(this.runtime?.sessions.capabilities.playbackControl && session?.ownedByCurrentAccount
-      && session.active && session.hostDeviceIdentifier
+    const available = Boolean(this.runtime?.sessions.capabilities.playbackControl && (session?.ownedByCurrentAccount || (this.runtime?.sessions.guestCommandsAvailable
+        && session?.participants.some(participant => participant.identifier === membership?.accountIdentifier)))
+      && session?.active && session.hostDeviceIdentifier
       && (membership?.status === JamConnectionStatus.Ready || membership?.status === JamConnectionStatus.Operating));
     this.publish({ ...this.snapshot, available, pending: this.lifetime !== null,
       uncertain: this.uncertainty !== null && this.uncertainty.runtime === this.runtime });

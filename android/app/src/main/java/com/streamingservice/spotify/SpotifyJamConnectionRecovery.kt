@@ -8,7 +8,8 @@ class SpotifyJamConnectionRecovery(
     private val unavailable: (Long, Long) -> Unit,
     private val registered: (Long, Long, String) -> Unit,
     private val stopped: (Long, Long) -> Unit,
-    private val retire: () -> Unit
+    private val retire: () -> Unit,
+    private val changed: (Long, Long) -> Unit = { _, _ -> Unit }
 ) {
     fun accept(batch: SpotifyConnectBatch) {
         try {
@@ -25,6 +26,8 @@ class SpotifyJamConnectionRecovery(
                         val account = data.getString(AccountField)
                         executor.execute { registered(handle, generation, account) }
                     }
+                    ClusterType -> if (data.optBoolean(ReceivedFromDealerField, false)) changed(handle, generation)
+                    SessionMessageType, MembershipType -> changed(handle, generation)
                     StoppedType -> executor.execute { stopped(handle, generation) }
                 }
             }
@@ -43,6 +46,10 @@ class SpotifyJamConnectionRecovery(
         private const val ConnectingType = "connecting"
         private const val ReconnectingType = "reconnecting"
         private const val RegisteredType = "registered"
+        private const val ClusterType = "cluster"
+        private const val SessionMessageType = "sessionMessage"
+        private const val MembershipType = "membership"
+        private const val ReceivedFromDealerField = "receivedFromDealer"
         private const val StoppedType = "stopped"
     }
 }

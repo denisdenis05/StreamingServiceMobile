@@ -88,6 +88,11 @@ class SpotifyJamPlaybackNativeSession(
         return started
     }
 
+    override fun sourceChanged() = synchronized(monitor) {
+        if (!retired) follower?.sourceChanged()
+        Unit
+    }
+
     override fun connectionUnavailable() = synchronized(monitor) {
         if (retired) return@synchronized
         val coordinator = follower

@@ -6,6 +6,7 @@ interface SpotifyJamPlaybackSession {
     fun start(): CompletableFuture<Unit>
     fun connectionUnavailable()
     fun reconnect(generation: Long)
+    fun sourceChanged() {}
     fun stop(): CompletableFuture<Unit>
     fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit>
     fun claimRecording(requestIdentifier: String): String?
@@ -94,6 +95,12 @@ class SpotifyJamPlaybackRuntime(
             }
         }
         return current.started.thenApply { synchronized(this) { requireAttachment(selected); requireCurrent(current); render(current) } }
+    }
+
+    @Synchronized fun sourceChanged(handle: Long, generation: Long) {
+        val current = lifetime ?: return
+        if (current.account.handle != handle || current.account.generation != generation || !current.nativeHandoff) return
+        current.session?.sourceChanged()
     }
 
     @Synchronized fun connectionUnavailable(handle: Long, generation: Long) {

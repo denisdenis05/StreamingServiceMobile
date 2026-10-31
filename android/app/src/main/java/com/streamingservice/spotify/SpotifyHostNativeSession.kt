@@ -5,6 +5,7 @@ import java.util.concurrent.CompletableFuture
 interface SpotifyHostSessionCoordinator {
     fun start(previousHostDeviceIdentifier: String, expectedCursor: SpotifyHostPlayerCursor, initialMappings: List<SpotifyHostRecordingMapping>): CompletableFuture<SpotifyHostSnapshot>
     fun stop(): CompletableFuture<Unit>
+    fun publishLocalChanges(): CompletableFuture<Unit> = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun snapshot(): SpotifyHostSnapshot
     fun accept(batch: SpotifyConnectBatch)
     fun commandHandlingReady(selected: SpotifyHostIdentity): Boolean
@@ -110,6 +111,8 @@ class SpotifyHostNativeSession(
     }
     fun commandHandlingReady(identity: SpotifyHostIdentity): Boolean = !retired && observation != null && currentIdentity(identity) && canExecute(identity)
         && coordinator?.commandHandlingReady(identity) == true
+    @Synchronized override fun publishLocalChanges(): CompletableFuture<Unit> =
+        if (retired || !current()) failed(Superseded) else coordinator?.publishLocalChanges() ?: failed(Superseded)
     @Synchronized fun snapshot(): SpotifyHostSnapshot? = coordinator?.snapshot()
 
     @Synchronized override fun synchronizeAuthentication(accessToken: String): CompletableFuture<Unit> {

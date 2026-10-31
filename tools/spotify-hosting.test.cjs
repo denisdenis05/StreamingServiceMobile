@@ -15,10 +15,12 @@ function fixture() {
     queueIdentifier: Fixture.queue, queueRevision: Fixture.revision, contentRevision: Fixture.revision, controlRevision: Fixture.revision },
     entries: [{ occurrenceIdentifier: Fixture.occurrence, recordingIdentifier: Fixture.recording }] };
   const state = { context, queue, stop: null, translation: null, initial: null, startFailure: null, startResponse: null, stopFailure: null, translationFailure: null, track: Fixture.track };
-  const calls = { starts: [], following: Fixture.emptyCount, translations: Fixture.emptyCount };
+  const calls = { preparations: [], publications: Fixture.emptyCount, starts: [], following: Fixture.emptyCount, translations: Fixture.emptyCount };
   let observed; let changed;
   const response = () => JSON.stringify({ status: SpotifyHostingStatus.Hosting, identity: { ...context, playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication }, failure: null });
-  const store = new SpotifyHostingStore({ native: { async startHosting(serialized) { calls.starts.push(JSON.parse(serialized)); if (state.startFailure) throw state.startFailure; return state.startResponse ?? response(); },
+  const store = new SpotifyHostingStore({ native: {
+    async prepareHostingRecordings(serialized) { calls.preparations.push(JSON.parse(serialized)); if (state.preparation) await state.preparation.promise; },
+    async publishHostingChanges() { calls.publications += Fixture.singleCount; }, async startHosting(serialized) { calls.starts.push(JSON.parse(serialized)); if (state.startFailure) throw state.startFailure; return state.startResponse ?? response(); },
     async stopHosting() { if (state.stopFailure) throw state.stopFailure; if (state.stop) await state.stop.promise; }, async getHostingSnapshot() { return state.initial ? state.initial.promise : Fixture.stopped; } },
     observe(listener) { observed = listener; return () => undefined; }, getContext: () => state.context,
     subscribeConnection(listener) { changed = listener; return () => undefined; }, getAccessToken: () => Fixture.token,
@@ -128,4 +130,30 @@ test('Native startup acknowledgement must match the captured player epochs and c
     assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Failed);
     assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.InvalidResponse);
   }
+});
+
+test('Active hosting prepares real recordings and schedules publication without another activation', async () => {
+  const current = fixture(); await current.store.start(Fixture.market);
+  await current.store.prepareRecordings([Fixture.recording]); await current.store.publishLocalChanges();
+  assertion.deepEqual(current.calls.preparations, [[Fixture.recording]]); assertion.equal(current.calls.publications, Fixture.singleCount);
+  assertion.equal(current.calls.starts.length, Fixture.singleCount); assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Hosting);
+});
+test('Inactive hosting preparation and local publication do not dispatch native work', async () => {
+  const current = fixture(); await flush(); await current.store.prepareRecordings([Fixture.recording]); await current.store.publishLocalChanges();
+  assertion.equal(current.calls.preparations.length, Fixture.emptyCount); assertion.equal(current.calls.publications, Fixture.emptyCount);
+});
+test('Stopped or replaced hosting rejects a delayed preparation before its caller can play', async () => {
+  const current = fixture(); await current.store.start(Fixture.market); current.state.preparation = deferred();
+  const prepared = current.store.prepareRecordings([Fixture.recording]); await flush(); await current.store.stop(); current.state.preparation.resolve();
+  await assertion.rejects(prepared, failure => failure.code === IntegrationFailureCode.Superseded);
+  assertion.equal(current.calls.publications, Fixture.emptyCount);
+});
+test('Resolving and disposed hosting cannot authorize a new explicit local selection', async () => {
+  const resolving = fixture(); await resolving.store.start(Fixture.market);
+  resolving.observed(JSON.stringify({ ...JSON.parse(resolving.response()), status: SpotifyHostingStatus.Resolving }));
+  await assertion.rejects(resolving.store.prepareRecordings([Fixture.recording]), failure => failure.code === IntegrationFailureCode.Superseded);
+  assertion.equal(resolving.calls.preparations.length, Fixture.emptyCount);
+  const disposed = fixture(); await disposed.store.start(Fixture.market); disposed.store.dispose();
+  await assertion.rejects(disposed.store.prepareRecordings([Fixture.recording]), failure => failure.code === IntegrationFailureCode.Superseded);
+  assertion.equal(disposed.calls.preparations.length, Fixture.emptyCount);
 });

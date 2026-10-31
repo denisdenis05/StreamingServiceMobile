@@ -1,3 +1,5 @@
+use crate::connect_search::diagnostics::{SearchDiagnostic, SearchDiagnosticStage};
+
 use std::{future::Future, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use http::{Method, Request};
@@ -337,8 +339,12 @@ impl ConnectSearchOperations for NativeConnectSession {
     async fn search(&mut self, input: ConnectSearchInput) -> Result<Vec<ConnectSearchTrack>, Failure> {
         let input = input.for_account_country(&self.session.country())?;
         let request = search_request(&input)?;
-        let response = execute_authenticated_request(self, &request).await?;
-        decode_search_response(&input, &response)
+        let response = execute_authenticated_request(self, &request).await.map_err(|failure| {
+            SearchDiagnostic::new(SearchDiagnosticStage::RequestCompletion, None, Some(failure)).emit(); failure
+        })?;
+        let decoded = decode_search_response(&input, &response);
+        SearchDiagnostic::new(SearchDiagnosticStage::Decode, None, decoded.as_ref().err().copied()).emit();
+        decoded
     }
 }
 
@@ -360,16 +366,29 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
         let request = request.body(request_body.into()).map_err(|_| Failure::InvalidInput)?;
         let dispatch = async {
             let response = self.session.http_client().request_fut(request)
-                .map_err(|failure| private_http_failure(failure, mutation))?.await
-                .map_err(|failure| private_http_failure(failure.into(), mutation))?;
-            if !response.status().is_success() { return Err(private_http_status_failure(response.status().as_u16(), mutation)); }
+                .map_err(|failure| {
+                    let status = match failure.error.downcast_ref() { Some(HttpClientError::StatusCode(status)) => Some(*status), _ => None };
+                    let failure = private_http_failure(failure, mutation);
+                    if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::DispatchAdmission, status, Some(failure)).emit(); }
+                    failure
+                })?.await.map_err(|failure| {
+                    let failure = private_http_failure(failure.into(), mutation);
+                    if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::Transport, None, Some(failure)).emit(); }
+                    failure
+                })?;
+            let status = response.status();
+            if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::HttpResponse, Some(status),
+                (!status.is_success()).then(|| private_http_status_failure(status.as_u16(), mutation))).emit(); }
+            if !status.is_success() { return Err(private_http_status_failure(status.as_u16(), mutation)); }
             let mut body = response.into_body();
             let mut received = Vec::new();
             while let Some(frame) = body.frame().await {
                 let frame = frame.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Network })?;
                 if let Ok(bytes) = frame.into_data() {
                     if received.len().saturating_add(bytes.len()) > MAXIMUM_FRAME_BYTES {
-                        return Err(if mutation { Failure::UnknownOutcome } else { Failure::Backpressure });
+                        let failure = if mutation { Failure::UnknownOutcome } else { Failure::Backpressure };
+                        if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::ResponseBody, Some(status), Some(failure)).emit(); }
+                        return Err(failure);
                     }
                     received.extend_from_slice(&bytes);
                 }

@@ -41,6 +41,20 @@ class SpotifyNativeFollowerCoordinator(
         return next.started
     }
 
+    fun sourceChanged() {
+        val current = lifetime ?: return
+        synchronized(monitor) {
+            if (!current(current) || current.sourceChangeQueued || current.terminal || !current.connectionAvailable) return
+            current.sourceChangeQueued = true
+        }
+        enqueue(current) {
+            current.sourceChangeQueued = false
+            if (current.terminal || !current.connectionAvailable) return@enqueue
+            current.timer?.cancel(); current.timer = null
+            if (current.readOperation != null) current.readRequested = true else read(current)
+        }
+    }
+
     fun connectionUnavailable() {
         val current = lifetime ?: return
         current.connectionAvailable = false
@@ -75,6 +89,7 @@ class SpotifyNativeFollowerCoordinator(
         current.resolutionOccurrence = null; current.resolvedRecording = null
         current.resolutionFailure = null; current.resolutionFailedSequence = null
         current.target = null; current.sourceHealthy = false
+        current.readRequested = false; current.sourceChangeQueued = false
     }
 
     fun stop(): CompletableFuture<Unit> {
@@ -123,7 +138,10 @@ class SpotifyNativeFollowerCoordinator(
                         drive(current)
                     } catch (validationFailure: Throwable) { terminate(current, reason(validationFailure)) }
                 }
-                scheduleRead(current)
+                if (current.readRequested && !current.terminal && current.connectionAvailable) {
+                    current.readRequested = false
+                    read(current)
+                } else scheduleRead(current)
             }
         }
     }
@@ -393,6 +411,8 @@ class SpotifyNativeFollowerCoordinator(
         var renewedSequence = SpotifyNativeFollowerPolicy.InitialSequence
         var recoverAfterSequence: Long? = null
         @Volatile var connectionAvailable = true
+        var readRequested = false
+        @Volatile var sourceChangeQueued = false
         var sourceHealthy = false
         var terminal = false
         var outputBusy = false

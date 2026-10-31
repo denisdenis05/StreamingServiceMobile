@@ -34,5 +34,5 @@ export const SpotifyFailureMessages: Readonly<Record<IntegrationFailureCode, str
   [IntegrationFailureCode.Deadline]: 'Spotify took too long to respond. Try refreshing the session.',
   [IntegrationFailureCode.Unsupported]: 'That operation is not available for this connection.',
   [IntegrationFailureCode.UnknownOutcome]: 'The action may have reached Spotify. Refresh shared state before another change. If unavailable, reconnect without repeating the action.',
-  [IntegrationFailureCode.Backpressure]: 'Another Spotify action is pending. Wait for it to finish.',
+  [IntegrationFailureCode.Backpressure]: 'Spotify is busy or limiting requests. Wait before trying again.',
 });

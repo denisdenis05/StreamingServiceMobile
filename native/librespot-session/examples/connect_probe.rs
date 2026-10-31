@@ -155,8 +155,20 @@ async fn receipt<Response>(result: oneshot::Receiver<Result<Response, Failure>>)
     if let Ok(serialized) = serde_json::to_string(&ControlReceipt { failure }) { println!("{serialized}"); }
 }
 
+struct CatalogDiagnosticLogger;
+static CATALOG_DIAGNOSTIC_LOGGER: CatalogDiagnosticLogger = CatalogDiagnosticLogger;
+impl log::Log for CatalogDiagnosticLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.target() == streaming_spotify_session::connect_search::diagnostics::LOG_TARGET
+    }
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) { eprintln!("{}", record.args()); }
+    }
+    fn flush(&self) {}
+}
+
 fn main() {
-    log::set_max_level(log::LevelFilter::Off);
+    if log::set_logger(&CATALOG_DIAGNOSTIC_LOGGER).is_ok() { log::set_max_level(log::LevelFilter::Info); }
     std::panic::set_hook(Box::new(|_| {}));
     let input = match read_line(&mut io::stdin().lock()).and_then(|line| line.ok_or(Failure::InvalidInput))
         .and_then(|line| serde_json::from_str::<ProbeInput>(&line).map_err(|_| Failure::InvalidInput)) {
@@ -220,7 +232,7 @@ fn main() {
         let observe = async {
             while let Some(event) = observed.recv().await {
                 generation.store(event.generation, Ordering::Release);
-                if let ConnectEventData::Registered { cluster, .. } | ConnectEventData::Cluster { cluster } = &event.data {
+                if let ConnectEventData::Registered { cluster, .. } | ConnectEventData::Cluster { cluster, .. } = &event.data {
                     write_summary(cluster, &expected_queue, None);
                 }
                 if let Ok(serialized) = serde_json::to_string(&event) { println!("{serialized}"); }
