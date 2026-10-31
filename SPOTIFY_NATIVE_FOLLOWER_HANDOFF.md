@@ -1,3 +1,21 @@
+# Approved live probe checkpoint — 2026-10-31
+
+The user approved a fresh read-only probe in execution session 52503. It reached
+nativeGrant and registered generation 1. The current native reading and decoded
+track metadata passed during `node tools/validate-spotify-native-search.cjs`.
+Catalog search returned `backpressure` and the validator exited 1. No playback or
+queue mutation was sent. The probe binary includes the bounded HTTP deferral
+source change; this live result does not establish its cause or HTTP status.
+Do not classify it as successful catalog validation or automatically retry search.
+
+Preserve execution 52503 and its in-memory native session while it remains alive.
+Check actual registration/process ownership before using the socket; never infer
+liveness from the socket file. Pairing is complete for this process, so no new code
+is needed while it remains registered. The APK is unchanged. `adb devices -l`
+currently reports no attached device. The user has a device but no second account;
+installation, Android lifecycle, guest joining and audible synchronization remain
+unverified. Continue device checks when USB debugging is connected and authorized.
+
 # Probe failure correction — 2026-10-31
 
 Fresh probe execution 31908 has ended with exit 1 before registration. The generic
