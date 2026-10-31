@@ -236,3 +236,31 @@ for (const queueIssue of Object.values(SpotifyHostingQueueIssue)) {
     current.changed(); assertion.equal(current.controller.getSnapshot().queueIssue, queueIssue);
   });
 }
+
+for (const clearQueue of [false, true]) {
+  test(`A delayed ${clearQueue ? 'withdrawal' : 'publication'} rejection cannot report failure in a replacement Jam`, async () => {
+    const pending = deferred();
+    const operation = () => pending.promise;
+    const current = fixture(clearQueue ? { stopHosting: operation } : { publishLocalChanges: operation });
+    current.state.hosting.status = SpotifyHostingStatus.Hosting; current.changed();
+    const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, clearQueue);
+    const completion = committed();
+    const rejected = assertion.rejects(completion, { code: IntegrationFailureCode.UnknownOutcome });
+    current.state.connection.scopeIdentifier = Fixture.replacement; current.changed();
+    pending.reject(new IntegrationFailure(IntegrationFailureCode.UnknownOutcome)); await rejected;
+    assertion.equal(current.controller.getSnapshot().failure, null);
+  });
+}
+
+test('A delayed publication rejection cannot overwrite a newer player action failure', async () => {
+  const pending = deferred();
+  const current = fixture({ publishLocalChanges: () => pending.promise });
+  current.state.hosting.status = SpotifyHostingStatus.Hosting; current.changed();
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false);
+  const completion = committed(); const rejected = assertion.rejects(completion);
+  await current.controller.control(HostedPlaybackCommandKind.Pause, async () => {
+    throw new IntegrationFailure(IntegrationFailureCode.Forbidden);
+  });
+  pending.reject(new IntegrationFailure(IntegrationFailureCode.UnknownOutcome)); await rejected;
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.Forbidden);
+});

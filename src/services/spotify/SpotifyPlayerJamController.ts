@@ -259,7 +259,7 @@ export class SpotifyPlayerJamController {
           if (clearQueue) await this.dependencies.stopHosting();
           else await this.dependencies.publishLocalChanges();
         } catch (failure) {
-          this.reject(this.safeCode(failure));
+          if (current()) this.reject(this.safeCode(failure));
           throw failure;
         }
       };

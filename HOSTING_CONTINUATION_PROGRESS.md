@@ -156,3 +156,24 @@ rejection and cache eviction. Ran `npx tsc --project tsconfig.spotify.json` and
 `node --test tools/spotify-library-catalog.test.cjs`: 12 cases passed. Actual
 production catalog matching and host playback still require the integrated live
 check after composition and packaging.
+
+## Delayed local queue receipt failures — 2026-10-31
+
+The player Jam controller now checks the captured player intent and Jam scope
+again before displaying a failed publication or queue-clear withdrawal. A request
+that already reached native code still rejects to its original caller; a late
+failure cannot replace the status of a newer Jam or a newer player action. No
+publication, withdrawal or local mutation is retried.
+
+Feature map: `tools/spotify-player-jam.test.cjs` has dedicated deferred regressions
+for publication failure after Jam replacement, withdrawal failure after Jam
+replacement, and publication failure after a newer action has already failed.
+All three tests failed before the fix. The existing active publication failure
+test continues to check that the original safe failure remains visible.
+
+Verification: `npx tsc --project tsconfig.spotify.json` passed.
+`node --test tools/spotify-player-jam.test.cjs tools/spotify-hosting.test.cjs
+tools/spotify-hosting-queue.test.cjs` passed 115 tests. This chapter uses source
+checks only; no emulator, Spotify session, deployment or playback request ran.
+Actual activation/publication, audible playback and cross-account/background
+acceptance remain unverified.
