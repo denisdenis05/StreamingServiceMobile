@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "types": [],
+    "rootDir": "src/services/settings",
+    "outDir": ".build/settings"
+  },
+  "include": [
+    "src/services/settings/ProfilePreferencesService.ts",
+    "src/services/settings/PlaybackSettingsService.ts",
+    "src/services/settings/StorageSettingsService.ts",
+    "src/services/settings/StorageStatistics.ts",
+    "src/services/settings/LastFmController.ts"
+  ]
+}

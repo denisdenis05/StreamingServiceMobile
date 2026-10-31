@@ -1,84 +1,83 @@
-import { Linking, Alert } from 'react-native';
-
-type Listener = (type: string, data: Record<string, string>) => void;
-
-class DeepLinkHandler {
-  private listeners: Listener[] = [];
-  private linkingListener: { remove: () => void } | null = null;
-
-  constructor() {
-    this.initialize();
+import { Linking } from 'react-native';
+export const DeepLinkEvents = Object.freeze({
+  lastFmCallback: 'lastfm_callback',
+  lastFmFailure: 'lastfm_failure',
+  notification: 'notification_click',
+});
+const DeepLinkPolicy = Object.freeze({
+  notificationPrefix: 'trackplayer://notification.click',
+  schemeDelimiter: '://',
+  applicationScheme: 'streamingservice',
+  queryDelimiter: '?',
+  callbackPath: 'lastfm/callback',
+  tokenParameter: 'token',
+  errorParameter: 'error',
+  urlEvent: 'url' as const,
+});
+type Listener = (eventType: string, eventData: Record<string, string>) => void;
+export interface DeepLinkSource {
+  subscribe(listener: (address: string) => void): { remove(): void };
+  initialAddress(): Promise<string | null>;
+}
+export class ApplicationDeepLinkHandler {
+  private readonly listeners = new Set<Listener>();
+  private readonly linkingListener: { remove(): void };
+  constructor(source: DeepLinkSource) {
+    this.linkingListener = source.subscribe(address =>
+      this.handleDeepLink(address),
+    );
+    void source
+      .initialAddress()
+      .then(address => {
+        if (address !== null) this.handleDeepLink(address);
+      })
+      .catch(() => undefined);
   }
-
-  private initialize() {
-    // Listen for deep links when app is already running
-    this.linkingListener = Linking.addEventListener('url', event => {
-      this.handleDeepLink(event.url);
-    });
-
-    // Check if app was opened via deep link
-    Linking.getInitialURL().then(url => {
-      if (url) this.handleDeepLink(url);
-    });
-  }
-
-  private handleDeepLink(url: string) {
-    if (url.startsWith('trackplayer://notification.click')) {
-      this.notifyListeners('notification_click', {});
-      return;
-    }
-
-    const [scheme, rest] = url.split('://');
-    if (scheme !== 'streamingservice' || !rest) return;
-
-    const [path, queryString] = rest.split('?');
-    if (!queryString) return;
-
-    const params = new URLSearchParams(queryString);
-
-    if (path === 'lastfm/callback') {
-      const token = params.get('token');
-      const error = params.get('error');
-
-      if (error) {
-        Alert.alert('Connection Failed', this.getErrorMessage(error));
-        return;
-      }
-
-      if (token) {
-        this.notifyListeners('lastfm_callback', { token });
-      }
-    }
-  }
-
-  private getErrorMessage(error: string) {
-    switch (error) {
-      case 'missing_token':
-        return 'Authorization token is missing. Please try again.';
-      case 'missing_user_id':
-        return 'User ID is missing. Please try again.';
-      case 'server_error':
-        return 'Server error occurred. Please try again.';
-      default:
-        return 'An unknown error occurred. Please try again.';
-    }
-  }
-
-  public addListener(callback: Listener) {
-    this.listeners.push(callback);
+  addListener(callback: Listener): () => void {
+    this.listeners.add(callback);
     return () => {
-      this.listeners = this.listeners.filter(l => l !== callback);
+      this.listeners.delete(callback);
     };
   }
-
-  private notifyListeners(type: string, data: Record<string, string>) {
-    this.listeners.forEach(callback => callback(type, data));
+  cleanup(): void {
+    this.linkingListener.remove();
+    this.listeners.clear();
   }
-
-  public cleanup() {
-    this.linkingListener?.remove();
-    this.listeners = [];
+  private handleDeepLink(address: string): void {
+    if (address.startsWith(DeepLinkPolicy.notificationPrefix)) {
+      this.notify(DeepLinkEvents.notification, {});
+      return;
+    }
+    const [scheme, remainingAddress] = address.split(
+      DeepLinkPolicy.schemeDelimiter,
+    );
+    if (scheme !== DeepLinkPolicy.applicationScheme || !remainingAddress)
+      return;
+    const [path, queryString] = remainingAddress.split(
+      DeepLinkPolicy.queryDelimiter,
+    );
+    if (path !== DeepLinkPolicy.callbackPath || !queryString) return;
+    const query = new URLSearchParams(queryString);
+    const error = query.get(DeepLinkPolicy.errorParameter);
+    if (error) {
+      this.notify(DeepLinkEvents.lastFmFailure, {});
+      return;
+    }
+    const token = query.get(DeepLinkPolicy.tokenParameter);
+    if (token) this.notify(DeepLinkEvents.lastFmCallback, { token });
+  }
+  private notify(eventType: string, eventData: Record<string, string>): void {
+    this.listeners.forEach(callback => {
+      try {
+        callback(eventType, eventData);
+      } catch {}
+    });
   }
 }
-
-export default new DeepLinkHandler();
+export default new ApplicationDeepLinkHandler({
+  subscribe: listener =>
+    Linking.addEventListener(DeepLinkPolicy.urlEvent, event =>
+      listener(event.url),
+    ),
+  initialAddress: () => Linking.getInitialURL(),
+});

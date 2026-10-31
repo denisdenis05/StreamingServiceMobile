@@ -80,6 +80,7 @@ export function imageDisplayed(address: string, elapsedMilliseconds: number, hea
   const displayedRequest = displayedAddress === undefined ? undefined : requestsByPath.get(displayedAddress);
   recordAssetCacheEvent({ kind: 'displayed', identity: cache.identity(displayedRequest ?? imageRequest(address, headers)), elapsedMilliseconds });
 }
+export function getImageCacheDirectory(): string { return RNFS.CachesDirectoryPath + ImageCachePolicy.directory; }
 export async function clearImageCache(): Promise<void> {
   lastRequests.clear(); requestsByPath.clear(); await cache.clear(); await retireLegacyImageCache();
 }

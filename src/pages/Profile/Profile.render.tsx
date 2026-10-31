@@ -1,118 +1,112 @@
+import React, { useEffect, useSyncExternalStore } from 'react';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import PageContainer from '../../components/PageContainer';
-import { ContentContainer, LastFmButton } from './Profile.style.tsx';
-import { useEffect, useRef, useState } from 'react';
-import { useApi } from '../../hooks/useApi.ts';
-import { Alert, Linking } from 'react-native';
-import { useAuth } from '../../hooks/AuthContext';
-import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
-import { SpotifyJamCopy, SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
-
-const Profile = ({ navigation, route }: { navigation: any; route: any }) => {
-  const [lastFmConnected, setLastFmConnected] = useState(false);
-  const [lastFmLoading, setLastFmLoading] = useState(false);
-  const api = useApi();
-  const { logout } = useAuth();
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
+import Navbar from '../../components/Navbar';
+import { profilePreferences } from '../../services/settings/SettingsServices';
+import { SettingsCopy as copy } from '../Settings/Settings.copy';
+import {
+  SettingsNavigation,
+  SettingsRoutes,
+} from '../Settings/Settings.routes';
+import { SettingsRow, SettingsSymbols } from '../Settings/Settings.components';
+import { SettingsIcon } from '../Settings/Settings.icons';
+import { colors } from '../../constants/styling';
+import { settingsStyles as styles } from '../Settings/Settings.style';
+const ProfileRoutes = Object.freeze({ create: 'CreatePlaylist' });
+export default function Profile({
+  navigation,
+  route,
+}: {
+  navigation: SettingsNavigation;
+  route: { name: string };
+}) {
+  const profile = useSyncExternalStore(
+    profilePreferences.subscribe,
+    profilePreferences.getSnapshot,
+  );
   useEffect(() => {
-    checkLastFmStatus();
-    return () => {
-      if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-    };
+    void profilePreferences.restore();
   }, []);
-
-  const checkLastFmStatus = async () => {
-    try {
-      const response = await api.get('lastfm/status');
-      setLastFmConnected(response.data.connected);
-    } catch (error) {
-      console.error('Error checking Last.fm status:', error);
-    }
-  };
-
-  const handleLastFmConnect = async () => {
-    if (lastFmConnected) {
-      Alert.alert(
-        'Last.fm Connected',
-        'Your Last.fm account is already connected. Would you like to disconnect?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Disconnect',
-            style: 'destructive',
-            onPress: handleLastFmDisconnect,
-          },
-        ]
-      );
-      return;
-    }
-
-    try {
-      setLastFmLoading(true);
-
-      const response = await api.get('lastfm/auth-url');
-      const { authUrl } = response.data;
-
-      const supported = await Linking.canOpenURL(authUrl);
-      if (supported) {
-        await Linking.openURL(authUrl);
-
-        Alert.alert(
-          'Complete Authorization',
-          'Please complete the Last.fm authorization in your browser, then return to the app.',
-          [
-            {
-              text: "I've completed authorization",
-              onPress: () => {
-                statusTimeoutRef.current = setTimeout(() => {
-                  checkLastFmStatus();
-                }, 1000);
-              },
-            },
-          ]
-        );
-      } else {
-        Alert.alert('Error', 'Cannot open Last.fm authorization URL');
-      }
-    } catch (error) {
-      console.error('Error connecting to Last.fm:', error);
-      Alert.alert('Error', 'Failed to connect to Last.fm. Please try again.');
-    } finally {
-      setLastFmLoading(false);
-    }
-  };
-
-  const handleLastFmDisconnect = async () => {
-    try {
-      setLastFmLoading(true);
-      await api.delete('lastfm/disconnect');
-      setLastFmConnected(false);
-      Alert.alert('Success', 'Last.fm account disconnected successfully');
-    } catch (error) {
-      console.error('Error disconnecting Last.fm:', error);
-      Alert.alert('Error', 'Failed to disconnect Last.fm account');
-    } finally {
-      setLastFmLoading(false);
-    }
-  };
-
+  const displayName = profile.displayName || copy.profileFallback;
   return (
     <PageContainer>
-      <ContentContainer>
-        <DefaultButton title={SpotifyJamCopy.title} onPress={() => navigation.navigate(SpotifyJamRoute)} />
-        <LastFmButton
-          connected={lastFmConnected}
-          loading={lastFmLoading}
-          onPress={handleLastFmConnect}
-        />
-        <DefaultButton
-          title="Logout"
-          onPress={logout}
-          style={{ backgroundColor: '#d51007' }}
-        />
-      </ContentContainer>
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text accessibilityRole="header" style={styles.title}>
+            {copy.profile}
+          </Text>
+          <TouchableOpacity
+            style={styles.iconButton}
+            accessibilityRole="button"
+            accessibilityLabel={copy.title}
+            onPress={() => navigation.navigate(SettingsRoutes.main)}
+          >
+            <SettingsIcon symbol={SettingsSymbols.settings} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.person}>
+          <View style={styles.avatar}>
+            {!profile.displayName && (
+              <SettingsIcon
+                symbol={SettingsSymbols.account}
+                color={colors.textOnAccent}
+              />
+            )}
+            <Text style={styles.avatarText}>
+              {profile.displayName
+                ? Array.from(profile.displayName)[
+                    ProfilePresentation.initialStart
+                  ]?.toLocaleUpperCase()
+                : null}
+            </Text>
+          </View>
+          <Text style={styles.section}>{displayName}</Text>
+          <Text style={styles.muted}>{copy.profileDescription}</Text>
+          <TouchableOpacity
+            style={styles.outlineButton}
+            accessibilityRole="button"
+            accessibilityLabel={copy.edit}
+            onPress={() => navigation.navigate(SettingsRoutes.account)}
+          >
+            <Text style={styles.icon}>{copy.edit}</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.section}>{copy.library}</Text>
+        <View style={styles.grid}>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={copy.collection}
+            style={styles.tile}
+            onPress={() => navigation.navigate(SettingsRoutes.library)}
+          >
+            <SettingsIcon symbol={SettingsSymbols.library} />
+            <Text style={styles.text}>{copy.collection}</Text>
+            <Text style={styles.muted}>{copy.collectionDescription}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel={copy.create}
+            style={styles.tile}
+            onPress={() => navigation.navigate(ProfileRoutes.create)}
+          >
+            <SettingsIcon symbol={SettingsSymbols.liked} />
+            <Text style={styles.text}>{copy.create}</Text>
+            <Text style={styles.muted}>{copy.createDescription}</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.section}>{copy.personalize}</Text>
+        <View style={styles.settingsLink}>
+          <SettingsRow
+            title={copy.title}
+            subtitle={copy.settingsDescription}
+            symbol={SettingsSymbols.settings}
+            onPress={() => navigation.navigate(SettingsRoutes.main)}
+          />
+        </View>
+        <Text style={styles.muted}>{copy.footer}</Text>
+      </ScrollView>
+      <Navbar navigation={navigation} route={route} />
     </PageContainer>
   );
-};
-
-export default Profile;
+}
+const ProfilePresentation = Object.freeze({ initialStart: 0 });

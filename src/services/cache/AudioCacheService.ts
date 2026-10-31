@@ -24,6 +24,9 @@ function cacheFor(scope: AudioCacheScope): AssetCache {
 function requestFor(address: string, scope: AudioCacheScope, headers?: Readonly<Record<string, string>>): AssetRequest {
   return { address, scope: scopeIdentity(scope), ...(headers === undefined ? {} : { headers }) };
 }
+export function getAccountAudioCacheDirectory(scope: AudioCacheScope): string {
+  return RNFS.CachesDirectoryPath + AudioCachePolicy.directory + scopeIdentity(scope);
+}
 export function getCacheFilePath(address: string, scope: AudioCacheScope): string { return cacheFor(scope).path(requestFor(address, scope)); }
 export async function findCachedTrackAddress(address: string, scope: AudioCacheScope): Promise<string | null> {
   return cacheFor(scope).find(requestFor(address, scope));
