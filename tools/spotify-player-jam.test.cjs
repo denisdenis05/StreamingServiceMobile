@@ -9,7 +9,7 @@ const Fixture = Object.freeze({ scope: 'synthetic-jam-scope', replacement: 'synt
   maximumQueue: 80, tooManyOffset: 1 });
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { for (let turn = Fixture.initial; turn < Fixture.flushTurns; turn += Fixture.single) await Promise.resolve(); }
-function fixture() {
+function fixture(additionalDependencies = {}) {
   const state = { connection: { scopeIdentifier: Fixture.scope, owned: true, native: true, admitted: true, hasHost: true },
     hosting: { status: SpotifyHostingStatus.Stopped, failure: null }, following: { status: SharedPlaybackStatus.Detached, failure: null },
     remoteAllowed: true, prepare: null, mutation: null, publishFailure: null, startFailure: null };
@@ -25,7 +25,7 @@ function fixture() {
     async stopFollowing() { calls.stopFollow += Fixture.single; if (state.mutation) await state.mutation.promise; state.following.status = SharedPlaybackStatus.Detached; },
     async prepareRecordings(identifiers) { calls.prepare.push(identifiers); if (state.prepare) await state.prepare.promise; },
     async publishLocalChanges() { calls.publications += Fixture.single; if (state.publishFailure) throw state.publishFailure; },
-    async remoteControl(kind) { calls.remote.push(kind); }, async remoteSeek(seconds) { calls.seek.push(seconds); } });
+    async remoteControl(kind) { calls.remote.push(kind); }, async remoteSeek(seconds) { calls.seek.push(seconds); }, ...additionalDependencies });
   const local = async () => { calls.local += Fixture.single; if (state.mutation) await state.mutation.promise; };
   return { state, calls, controller, local, changed: () => changed() };
 }
@@ -148,3 +148,91 @@ test('Ordinary local playback errors return to the player without becoming a Jam
   await assertion.rejects(current.controller.control(HostedPlaybackCommandKind.Play, async () => { throw new Error(Fixture.privateFailure); }));
   assertion.equal(current.controller.getSnapshot().failure, null);
 });
+
+test('Start sharing creates membership then waits for acknowledged hosting with remembered country', async () => {
+  let current;
+  const transitions = [];
+  current = fixture({ getIdentity: () => Fixture.scope, getCanCreate: () => true,
+    listeningCountry: { getSnapshot: () => Fixture.normalizedMarket, set: () => undefined },
+    async createJam() { transitions.push(Fixture.scope); current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, admitted: true, hasHost: false }; current.changed(); } });
+  current.state.connection = null; current.changed();
+  await current.controller.startSharing();
+  assertion.deepEqual(transitions, [Fixture.scope]); assertion.deepEqual(current.calls.host, [Fixture.normalizedMarket]);
+  assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Hosting);
+});
+test('Join and listen does not report sharing after membership succeeds but following fails', async () => {
+  let current;
+  current = fixture({ getIdentity: () => Fixture.scope, getCanJoin: () => true,
+    async joinJam() { current.state.connection.owned = false; current.changed(); },
+    async startFollowing() { throw new IntegrationFailure(IntegrationFailureCode.Network); } });
+  current.controller.setMarket(Fixture.market); await current.controller.joinAndListen(Fixture.scope);
+  assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Failed);
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.Network);
+  assertion.equal(current.calls.follow.length, Fixture.initial);
+});
+test('Account replacement during creation cannot start hosting in the replacement account', async () => {
+  const pending = deferred(); let identity = Fixture.scope;
+  const current = fixture({ getIdentity: () => identity, getCanCreate: () => true, createJam: () => pending.promise });
+  current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
+  const starting = current.controller.startSharing(); identity = Fixture.replacement; current.changed();
+  pending.resolve(); await starting;
+  assertion.equal(current.calls.host.length, Fixture.initial); assertion.equal(current.controller.getSnapshot().pending, false);
+});
+test('Duplicate start sharing is ignored while membership creation is pending', async () => {
+  const pending = deferred(); const creations = [];
+  const current = fixture({ getCanCreate: () => true, createJam: () => { creations.push(Fixture.scope); return pending.promise; } });
+  current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
+  const starting = current.controller.startSharing(); await current.controller.startSharing();
+  assertion.deepEqual(creations, [Fixture.scope]); pending.resolve(); await starting;
+  assertion.equal(current.calls.host.length, Fixture.initial);
+});
+test('Failed membership creation cannot start hosting and preserves its known failure', async () => {
+  const current = fixture({ getCanCreate: () => true, async createJam() { throw new IntegrationFailure(IntegrationFailureCode.Backpressure); } });
+  current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed(); await current.controller.startSharing();
+  assertion.equal(current.calls.host.length, Fixture.initial);
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.Backpressure);
+});
+test('Join and listen waits for actual admitted membership before following', async () => {
+  let current;
+  current = fixture({ getIdentity: () => Fixture.scope, getCanJoin: () => true,
+    async joinJam() { current.state.connection = { scopeIdentifier: Fixture.replacement, owned: false, native: true, admitted: true, hasHost: true }; current.changed(); } });
+  current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
+  await current.controller.joinAndListen(Fixture.scope);
+  assertion.deepEqual(current.calls.follow, [Fixture.normalizedMarket]);
+  assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Following);
+});
+test('Stop during membership creation prevents delayed playback startup', async () => {
+  const pending = deferred(); let current;
+  current = fixture({ getCanCreate: () => true, async createJam() { await pending.promise;
+    current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, admitted: true, hasHost: true }; current.changed(); } });
+  current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
+  const starting = current.controller.startSharing(); await current.controller.stop(); pending.resolve(); await starting;
+  assertion.deepEqual(current.calls.host, []);
+});
+test('A complete invalid country is rejected without truncating into a different country', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.normalizedMarket + Fixture.invalidMarket);
+  await current.controller.startHosting(); assertion.deepEqual(current.calls.host, []);
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.InvalidInput);
+});
+
+test('Future queue matching and partial misses remain separate from current following failure', () => {
+  const current = fixture(); current.state.following = { status: SharedPlaybackStatus.Following, failure: null,
+    upcomingQueuePending: true, upcomingQueueFailure: IntegrationFailureCode.NotFound, unavailableUpcomingCount: Fixture.single };
+  current.changed(); const snapshot = current.controller.getSnapshot();
+  assertion.equal(snapshot.mode, SpotifyPlayerJamMode.Following); assertion.equal(snapshot.failure, null);
+  assertion.equal(snapshot.pending, false); assertion.equal(snapshot.upcomingQueuePending, true);
+  assertion.equal(snapshot.upcomingQueueFailure, IntegrationFailureCode.NotFound);
+  assertion.equal(snapshot.unavailableUpcomingCount, Fixture.single);
+  current.state.following.status = SharedPlaybackStatus.Detached; current.changed();
+  assertion.equal(current.controller.getSnapshot().upcomingQueuePending, false);
+  assertion.equal(current.controller.getSnapshot().upcomingQueueFailure, null);
+  assertion.equal(current.controller.getSnapshot().unavailableUpcomingCount, Fixture.initial);
+});
+
+const { SpotifyHostingQueueIssue } = require('../.build/spotify/SpotifyHostingQueue');
+for (const queueIssue of Object.values(SpotifyHostingQueueIssue)) {
+  test(`Player preserves specific hosting queue issue ${queueIssue}`, () => {
+    const current = fixture(); current.state.hosting = { status: SpotifyHostingStatus.Failed, failure: IntegrationFailureCode.Unsupported, queueIssue };
+    current.changed(); assertion.equal(current.controller.getSnapshot().queueIssue, queueIssue);
+  });
+}

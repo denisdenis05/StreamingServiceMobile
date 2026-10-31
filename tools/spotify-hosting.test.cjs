@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assertion = require('node:assert/strict');
-const { SpotifyHostingStore, SpotifyHostingStatus } = require('../.build/spotify/SpotifyHostingStore');
+const { SpotifyHostingStore, SpotifyHostingStatus, SpotifyHostingFailureStage } = require('../.build/spotify/SpotifyHostingStore');
+const { SpotifyHostingQueueFailure, SpotifyHostingQueueIssue } = require('../.build/spotify/SpotifyHostingQueue');
 const { IntegrationFailureCode } = require('streaming-service-spotify-jam');
 const Fixture = Object.freeze({ account: 'synthetic-account', spotify: 'synthetic-spotify', jam: 'synthetic-jam', device: 'synthetic-device', previous: 'synthetic-host',
   address: 'https://synthetic.example/', token: 'synthetic-token', handle: 3, generation: 7, market: 'GB', track: '4uLU6hMCjMI75M1A2tKUQC',
@@ -23,8 +24,8 @@ function fixture() {
     async publishHostingChanges() { calls.publications += Fixture.singleCount; }, async startHosting(serialized) { calls.starts.push(JSON.parse(serialized)); if (state.startFailure) throw state.startFailure; return state.startResponse ?? response(); },
     async stopHosting() { if (state.stopFailure) throw state.stopFailure; if (state.stop) await state.stop.promise; }, async getHostingSnapshot() { return state.initial ? state.initial.promise : Fixture.stopped; } },
     observe(listener) { observed = listener; return () => undefined; }, getContext: () => state.context,
-    subscribeConnection(listener) { changed = listener; return () => undefined; }, getAccessToken: () => Fixture.token,
-    async whenPlayerReady() {}, async captureQueue() { return state.queue; }, async translate() { calls.translations += Fixture.singleCount; if (state.translationFailure) throw state.translationFailure; if (state.translation) await state.translation.promise; return state.track; },
+    subscribeConnection(listener) { changed = listener; return () => undefined; }, getAccessToken: () => state.missingToken ? null : Fixture.token,
+    async whenPlayerReady() { if (state.readinessFailure) throw state.readinessFailure; }, async captureQueue() { if (state.captureFailure) throw state.captureFailure; return state.queue; }, async translate() { calls.translations += Fixture.singleCount; if (state.translationFailure) throw state.translationFailure; if (state.translation) await state.translation.promise; return state.track; },
     async stopFollowing() { calls.following += Fixture.singleCount; } });
   return { store, state, calls, response, observed: event => observed(event), changed: () => changed() };
 }
@@ -62,6 +63,37 @@ test('Changed local queue during translation fails before native activation', as
   const current = fixture(); current.state.translation = deferred(); const start = current.store.start(Fixture.market); await flush();
   current.state.queue = { ...current.state.queue, expectedCursor: { ...current.state.queue.expectedCursor, controlRevision: Fixture.revision + Fixture.singleCount } };
   current.state.translation.resolve(); await start; assertion.equal(current.calls.starts.length, Fixture.emptyCount);
+  assertion.equal(current.store.getSnapshot().failureStage, SpotifyHostingFailureStage.QueueValidation);
+});
+test('A delayed stopped snapshot cannot erase a newer catalog failure or its actionable stage', async () => {
+  const current = fixture(); await flush();
+  current.state.translation = deferred();
+  const start = current.store.start(Fixture.market); await flush();
+  current.state.initial = deferred(); current.changed();
+  current.state.track = Fixture.invalidTrack;
+  current.state.translation.resolve(); await start;
+  assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Failed);
+  current.state.initial.resolve(Fixture.stopped); await flush();
+  assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Failed);
+  assertion.equal(current.store.getSnapshot().failureStage, SpotifyHostingFailureStage.CatalogMatching);
+});
+test('Membership refresh cannot dismiss a failed hosting attempt with an idle native snapshot', async () => {
+  const current = fixture(); await flush();
+  current.state.translationFailure = { code: IntegrationFailureCode.Backpressure };
+  await current.store.start(Fixture.market); current.changed(); await flush();
+  assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.Backpressure);
+  assertion.equal(current.store.getSnapshot().failureStage, SpotifyHostingFailureStage.CatalogMatching);
+});
+test('Native cleanup after failed activation preserves its error until an explicit stop clears it', async () => {
+  const current = fixture(); await flush();
+  current.state.startFailure = { code: IntegrationFailureCode.Network };
+  await current.store.start(Fixture.market);
+  current.observed(Fixture.stopped);
+  assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.Network);
+  assertion.equal(current.store.getSnapshot().failureStage, SpotifyHostingFailureStage.NativeActivation);
+  await current.store.stop();
+  assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Stopped);
+  assertion.equal(current.store.getSnapshot().failure, null);
 });
 test('Foreign or malformed native observations never become hosting acknowledgement', async () => {
   const current = fixture(); await flush(); current.observed(JSON.stringify({ status: SpotifyHostingStatus.Hosting, identity: { handle: Fixture.handle }, failure: null }));
@@ -156,4 +188,50 @@ test('Resolving and disposed hosting cannot authorize a new explicit local selec
   const disposed = fixture(); await disposed.store.start(Fixture.market); disposed.store.dispose();
   await assertion.rejects(disposed.store.prepareRecordings([Fixture.recording]), failure => failure.code === IntegrationFailureCode.Superseded);
   assertion.equal(disposed.calls.preparations.length, Fixture.emptyCount);
+});
+
+for (const [field, stage] of [
+  ['stopFailure', SpotifyHostingFailureStage.Cleanup],
+  ['readinessFailure', SpotifyHostingFailureStage.PlayerReadiness],
+  ['captureFailure', SpotifyHostingFailureStage.QueueCapture],
+  ['translationFailure', SpotifyHostingFailureStage.CatalogMatching],
+  ['startFailure', SpotifyHostingFailureStage.NativeActivation],
+]) {
+  test(`Hosting failures identify ${stage} without copying raw rejection data`, async () => {
+    const current = fixture(); current.state[field] = { code: IntegrationFailureCode.Network, message: Fixture.privateFailure };
+    await current.store.start(Fixture.market);
+    assertion.equal(current.store.getSnapshot().failureStage, stage);
+    assertion.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
+  });
+}
+test('Invalid market and absent credentials identify validation and authentication stages', async () => {
+  const invalid = fixture(); await invalid.store.start(Fixture.invalidMarket);
+  assertion.equal(invalid.store.getSnapshot().failureStage, SpotifyHostingFailureStage.Validation);
+  const authentication = fixture(); authentication.state.missingToken = true; await authentication.store.start(Fixture.market);
+  assertion.equal(authentication.store.getSnapshot().failureStage, SpotifyHostingFailureStage.Authentication);
+});
+test('Native publication stages are retained and unknown stages cannot expose raw data', async () => {
+  const current = fixture(); await current.store.start(Fixture.market);
+  for (const stage of [SpotifyHostingFailureStage.Publication, Fixture.privateFailure]) {
+    current.observed(JSON.stringify({ ...JSON.parse(current.response()), status: SpotifyHostingStatus.Failed,
+      failure: IntegrationFailureCode.Network, failureStage: stage }));
+    assertion.equal(current.store.getSnapshot().failureStage, stage === Fixture.privateFailure ? SpotifyHostingFailureStage.Observation : stage);
+    assertion.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
+  }
+});
+
+for (const queueIssue of Object.values(SpotifyHostingQueueIssue)) {
+  test(`Queue capture retains actionable safe issue ${queueIssue}`, async () => {
+    const current = fixture(); current.state.captureFailure = new SpotifyHostingQueueFailure(queueIssue);
+    await current.store.start(Fixture.market);
+    assertion.equal(current.store.getSnapshot().queueIssue, queueIssue);
+    assertion.equal(current.store.getSnapshot().failureStage, SpotifyHostingFailureStage.QueueCapture);
+    assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.Unsupported);
+  });
+}
+test('Untrusted queue issues and raw messages cannot enter hosting snapshots', async () => {
+  const current = fixture(); current.state.captureFailure = { code: IntegrationFailureCode.Unsupported, queueIssue: Fixture.privateFailure };
+  await current.store.start(Fixture.market);
+  assertion.equal(current.store.getSnapshot().queueIssue, null);
+  assertion.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
 });

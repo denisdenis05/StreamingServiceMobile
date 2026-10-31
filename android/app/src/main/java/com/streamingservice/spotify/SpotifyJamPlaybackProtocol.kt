@@ -58,7 +58,10 @@ class SpotifyJamPlaybackProtocol(private val tokens: SpotifyJamPlaybackTokenDeco
         .put(PlayerEngineEpochField, follower?.identity?.playerIdentity?.engineEpoch ?: JSONObject.NULL)
         .put(PlayerAuthenticationEpochField, follower?.identity?.playerIdentity?.authenticationEpoch ?: JSONObject.NULL)
         .put(RecordingField, follower?.recordingIdentifier ?: JSONObject.NULL).put(DriftField, follower?.driftMilliseconds ?: JSONObject.NULL)
-        .put(FailureField, follower?.failure?.name ?: JSONObject.NULL).toString()
+        .put(FailureField, follower?.failure?.name ?: JSONObject.NULL)
+        .put(UpcomingQueuePendingField, follower?.upcomingQueuePending ?: false)
+        .put(UnavailableUpcomingCountField, follower?.unavailableUpcomingCount ?: SpotifyNativeFollowerPolicy.EmptyCount)
+        .put(UpcomingQueueFailureField, follower?.upcomingQueueFailure?.name ?: JSONObject.NULL).toString()
 
     fun validateIdentifier(identifier: String) { if (identifier.isBlank() || identifier.length > MaximumIdentifierCharacters || identifier.any { character -> character.isWhitespace() || character.isISOControl() }) fail() }
     private fun text(value: JSONObject, field: String): String {
@@ -92,6 +95,9 @@ class SpotifyJamPlaybackProtocol(private val tokens: SpotifyJamPlaybackTokenDeco
         private const val OccurrenceField = "occurrenceIdentifier"
         private const val RecordingField = "recordingIdentifier"
         private const val DriftField = "driftMilliseconds"
+        private const val UpcomingQueuePendingField = "upcomingQueuePending"
+        private const val UnavailableUpcomingCountField = "unavailableUpcomingCount"
+        private const val UpcomingQueueFailureField = "upcomingQueueFailure"
         private const val FailureField = "failure"
         private const val SubjectField = "sub"
         private const val ExpiryField = "exp"

@@ -187,6 +187,20 @@ class SpotifyHostCoordinatorTest {
         assertEquals(fixture.nextSequence, fixture.deactivations.single().getLong(SequenceField))
         assertEquals(SpotifyHostStatus.Failed, fixture.coordinator.snapshot().status)
     }
+    @Test fun asynchronousActivationRetainsWrappedSafeCategoryAndActivationStage() {
+        val fixture = Fixture()
+        fixture.activationCompletion = fixture.failed(java.util.concurrent.CompletionException(java.util.concurrent.ExecutionException(SpotifyConnectFailure(UnknownOutcome))))
+        val started = fixture.start()
+        assertTrue(started.isCompletedExceptionally)
+        assertEquals(UnknownOutcome, fixture.coordinator.snapshot().failure)
+        assertEquals(SpotifyHostFailureStage.NativeActivation, fixture.coordinator.snapshot().failureStage)
+    }
+    @Test fun publicationAndCleanupFailuresReportTheirActualStages() {
+        val publication = Fixture(); publication.start().get(); publication.publicationFailure = UnknownOutcome; publication.tick()
+        assertEquals(SpotifyHostFailureStage.Publication, publication.coordinator.snapshot().failureStage)
+        val cleanup = Fixture(); cleanup.start().get(); cleanup.demotionFailure = UnknownOutcome; cleanup.stop()
+        assertEquals(SpotifyHostFailureStage.Cleanup, cleanup.coordinator.snapshot().failureStage)
+    }
     @Test fun explicitStopPausesDemotesAndRetiresBeforeCompleting() {
         val fixture = Fixture(); fixture.start().get(); val stopped = fixture.stop(); stopped.get()
         assertEquals(SingleCount, fixture.pauseCount); assertEquals(SingleCount, fixture.deactivations.size); assertTrue(fixture.retired)

@@ -1,7 +1,9 @@
 import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { SpotifyHostingQueueFailure, SpotifyHostingQueueIssue } from './SpotifyHostingQueue';
 import type { SpotifyHostingQueue } from './SpotifyHostingQueue';
 
 export enum SpotifyHostingStatus { Stopped = 'Stopped', Resolving = 'Resolving', Preparing = 'Preparing', Starting = 'Starting', Hosting = 'Hosting', Stopping = 'Stopping', Failed = 'Failed' }
+export enum SpotifyHostingFailureStage { Validation = 'Validation', Cleanup = 'Cleanup', PlayerReadiness = 'PlayerReadiness', QueueCapture = 'QueueCapture', CatalogMatching = 'CatalogMatching', QueueValidation = 'QueueValidation', Authentication = 'Authentication', NativeActivation = 'NativeActivation', Observation = 'Observation', Publication = 'Publication', RecordingPreparation = 'RecordingPreparation', Stop = 'Stop' }
 export interface SpotifyHostingContext {
   readonly streamingServiceAccountIdentifier: string;
   readonly baseAddress: string;
@@ -19,7 +21,7 @@ export interface SpotifyHostingNative {
   stopHosting(): Promise<void>;
   getHostingSnapshot(): Promise<string>;
 }
-export interface SpotifyHostingSnapshot { readonly status: SpotifyHostingStatus; readonly failure: IntegrationFailureCode | null }
+export interface SpotifyHostingSnapshot { readonly status: SpotifyHostingStatus; readonly failure: IntegrationFailureCode | null; readonly failureStage?: SpotifyHostingFailureStage | null; readonly queueIssue?: SpotifyHostingQueueIssue | null }
 export interface SpotifyHostingDependencies {
   readonly native: SpotifyHostingNative | null;
   readonly observe: (listener: (event: unknown) => void) => () => void;
@@ -61,15 +63,20 @@ export class SpotifyHostingStore {
     this.observation += Policy.observationIncrement;
     this.intent?.abort(); const intent = new AbortController(); this.intent = intent;
     this.publish(SpotifyHostingStatus.Preparing);
+    let stage = SpotifyHostingFailureStage.Validation;
     try {
       if (!Policy.market.test(market)) throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
       const native = this.dependencies.native;
       const context = this.dependencies.getContext();
       if (!native || !context) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
       this.context = context;
+      stage = SpotifyHostingFailureStage.Cleanup;
       await Promise.all([native.stopHosting(), this.dependencies.stopFollowing()]); this.requireCurrent(intent, context);
+      stage = SpotifyHostingFailureStage.PlayerReadiness;
       await this.dependencies.whenPlayerReady(); this.requireCurrent(intent, context);
+      stage = SpotifyHostingFailureStage.QueueCapture;
       const queue = await this.dependencies.captureQueue(); this.requireCurrent(intent, context);
+      stage = SpotifyHostingFailureStage.CatalogMatching;
       const matches = new Map<string, string>();
       const mappings: { occurrenceIdentifier: string; recordingIdentifier: string; spotifyTrackIdentifier: string }[] = [];
       for (const entry of queue.entries) {
@@ -81,11 +88,14 @@ export class SpotifyHostingStore {
         }
         mappings.push({ ...entry, spotifyTrackIdentifier: track });
       }
+      stage = SpotifyHostingFailureStage.QueueValidation;
       const currentQueue = await this.dependencies.captureQueue(); this.requireCurrent(intent, context);
       if (JSON.stringify(queue) !== JSON.stringify(currentQueue)) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      stage = SpotifyHostingFailureStage.Authentication;
       const accessToken = this.dependencies.getAccessToken();
       if (!accessToken) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
       this.publish(SpotifyHostingStatus.Starting);
+      stage = SpotifyHostingFailureStage.NativeActivation;
       const response = await native.startHosting(JSON.stringify({ streamingServiceAccountIdentifier: context.streamingServiceAccountIdentifier,
         baseAddress: context.baseAddress, spotifyAccountIdentifier: context.spotifyAccountIdentifier, jamSessionIdentifier: context.jamSessionIdentifier,
         hostDeviceIdentifier: context.deviceIdentifier, handle: context.handle, generation: context.generation, market, accessToken,
@@ -97,7 +107,8 @@ export class SpotifyHostingStore {
       this.observe(response);
     } catch (failure) {
       if (this.intent !== intent || intent.signal.aborted || this.disposed) return;
-      this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure));
+      this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure), stage,
+        failure instanceof SpotifyHostingQueueFailure && Object.values(SpotifyHostingQueueIssue).includes(failure.queueIssue) ? failure.queueIssue : null);
     }
   }
   async prepareRecordings(recordingIdentifiers: readonly string[]): Promise<void> {
@@ -134,7 +145,7 @@ export class SpotifyHostingStore {
       await this.dependencies.native?.stopHosting();
       if (this.intent === intent) { this.context = null; this.publish(SpotifyHostingStatus.Stopped); }
     } catch (failure) {
-      if (this.intent === intent) this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure));
+      if (this.intent === intent) this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure), SpotifyHostingFailureStage.Stop);
       throw failure;
     }
   }
@@ -167,8 +178,11 @@ export class SpotifyHostingStore {
     if (current && this.dependencies.native) {
       this.context = current;
       const observation = this.observation;
+      const snapshotAtRequest = this.snapshot;
       void this.dependencies.native.getHostingSnapshot().then(event => {
-        if (observation === this.observation && sameScope(current, this.dependencies.getContext())) this.observe(event);
+        if (observation === this.observation && this.snapshot === snapshotAtRequest
+          && this.snapshot.status !== SpotifyHostingStatus.Failed
+          && sameScope(current, this.dependencies.getContext())) this.observe(event);
       }).catch(() => undefined);
     }
   }
@@ -176,7 +190,7 @@ export class SpotifyHostingStore {
     if (this.disposed) return;
     try {
       if (typeof event !== Policy.stringType || (event as string).length > Policy.maximumSnapshotCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-      const value = JSON.parse(event as string) as { status: SpotifyHostingStatus; identity: null | Record<string, unknown>; failure: string | null };
+      const value = JSON.parse(event as string) as { status: SpotifyHostingStatus; identity: null | Record<string, unknown>; failure: string | null; failureStage?: unknown };
       if (!Object.values(SpotifyHostingStatus).includes(value.status) || value.status === SpotifyHostingStatus.Preparing) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
       if (value.identity !== null) {
         const context = this.dependencies.getContext();
@@ -185,13 +199,16 @@ export class SpotifyHostingStore {
           || value.identity.handle !== context.handle || value.identity.generation !== context.generation) return;
         this.context = context;
       } else if (value.status !== SpotifyHostingStatus.Stopped) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-      if (this.snapshot.status === SpotifyHostingStatus.Preparing && value.status === SpotifyHostingStatus.Stopped) return;
-      this.publish(value.status, value.failure === null ? null : hostingFailureCode({ code: value.failure }));
-    } catch { this.publish(SpotifyHostingStatus.Failed, IntegrationFailureCode.InvalidResponse); }
+      if ((this.snapshot.status === SpotifyHostingStatus.Preparing || this.snapshot.status === SpotifyHostingStatus.Failed)
+        && value.status === SpotifyHostingStatus.Stopped) return;
+      this.publish(value.status, value.failure === null ? null : hostingFailureCode({ code: value.failure }), value.failure === null ? null
+        : Object.values(SpotifyHostingFailureStage).includes(value.failureStage as SpotifyHostingFailureStage)
+          ? value.failureStage as SpotifyHostingFailureStage : SpotifyHostingFailureStage.Observation);
+    } catch { this.publish(SpotifyHostingStatus.Failed, IntegrationFailureCode.InvalidResponse, SpotifyHostingFailureStage.Observation); }
   }
-  private publish(status: SpotifyHostingStatus, failure: IntegrationFailureCode | null = null): void {
+  private publish(status: SpotifyHostingStatus, failure: IntegrationFailureCode | null = null, failureStage: SpotifyHostingFailureStage | null = null, queueIssue: SpotifyHostingQueueIssue | null = null): void {
     if (this.disposed) return;
-    this.snapshot = Object.freeze({ status, failure }); this.listeners.forEach(listener => { try { listener(); } catch {} });
+    this.snapshot = Object.freeze({ status, failure, failureStage, queueIssue }); this.listeners.forEach(listener => { try { listener(); } catch {} });
   }
 }
 function sameScope(first: SpotifyHostingContext, second: SpotifyHostingContext | null): boolean {

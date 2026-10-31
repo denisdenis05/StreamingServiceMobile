@@ -40,6 +40,7 @@ export interface SpotifyJamPlaybackPlayerIdentity {
 
 export const SpotifyJamPlaybackPolicy = Object.freeze({ maximumSnapshotCharacters: 131072,
   maximumIdentifierCharacters: 2048, maximumRequestIdentifierCharacters: 128, firstIdentifier: 1,
+  maximumUpcomingOccurrences: 2000, emptyCount: 0,
   maximumTokenCharacters: 65536, stringType: 'string', objectType: 'object', booleanType: 'boolean', numberType: 'number', secureProtocol: 'https:',
   identifierPattern: /^[^\s\u0000-\u001f\u007f]+$/, marketPattern: /^[A-Z]{2}$/ } as const);
 
@@ -121,11 +122,25 @@ export function decodeSpotifyJamPlayback(serialized: unknown): SpotifyJamPlaybac
     const recordingIdentifier = response.recordingIdentifier === null ? null : validateSpotifyPlaybackIdentifier(response.recordingIdentifier);
     if (response.driftMilliseconds !== null && (typeof response.driftMilliseconds !== SpotifyJamPlaybackPolicy.numberType || !Number.isFinite(response.driftMilliseconds))) throw new Error();
     if (response.failure !== null && (typeof response.failure !== SpotifyJamPlaybackPolicy.stringType || !Object.prototype.hasOwnProperty.call(Failures, response.failure as string))) throw new Error();
-    const failure = nativeStatus === NativeStatus.Suspended ? null : response.failure === null ? null : Failures[response.failure as string]!;
+    const legacyUpcomingFailure = nativeStatus === NativeStatus.Following && response.failure === NativeQueueFailure.RecordingUnavailable;
+    const hasQueue = response.upcomingQueuePending !== undefined || response.unavailableUpcomingCount !== undefined || response.upcomingQueueFailure !== undefined;
+    let queue: Pick<SharedPlaybackSnapshot, 'upcomingQueuePending' | 'unavailableUpcomingCount' | 'upcomingQueueFailure'> = {};
+    if (hasQueue) {
+      if (typeof response.upcomingQueuePending !== SpotifyJamPlaybackPolicy.booleanType
+        || !Number.isSafeInteger(response.unavailableUpcomingCount) || (response.unavailableUpcomingCount as number) < SpotifyJamPlaybackPolicy.emptyCount
+        || (response.unavailableUpcomingCount as number) > SpotifyJamPlaybackPolicy.maximumUpcomingOccurrences
+        || response.upcomingQueueFailure !== null && (typeof response.upcomingQueueFailure !== SpotifyJamPlaybackPolicy.stringType
+          || !Object.prototype.hasOwnProperty.call(Failures, response.upcomingQueueFailure as string))) throw new Error();
+      queue = { upcomingQueuePending: response.upcomingQueuePending as boolean, unavailableUpcomingCount: response.unavailableUpcomingCount as number,
+        upcomingQueueFailure: response.upcomingQueueFailure === null ? null : Failures[response.upcomingQueueFailure as string]! };
+    } else if (legacyUpcomingFailure) queue = { upcomingQueueFailure: IntegrationFailureCode.NotFound };
+    const failure = nativeStatus === NativeStatus.Suspended || legacyUpcomingFailure ? null : response.failure === null ? null : Failures[response.failure as string]!;
     const snapshot = Object.freeze({ status: Statuses[nativeStatus], identity: Object.freeze({ accountIdentifier: context.spotifyAccountIdentifier,
       sessionIdentifier: context.jamSessionIdentifier, authorityIdentifier: context.hostDeviceIdentifier }), occurrenceIdentifier,
-      recordingIdentifier, sequence: null, driftMilliseconds: response.driftMilliseconds as number | null, failure });
+      recordingIdentifier, sequence: null, driftMilliseconds: response.driftMilliseconds as number | null, failure, ...queue });
     return Object.freeze({ ...context, identifier, market: response.market as string, nativeHandoff: response.nativeHandoff as boolean,
       terminal: nativeStatus === NativeStatus.Failed || nativeStatus === NativeStatus.Suspended, playerIdentity, snapshot });
   } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
 }
+
+const NativeQueueFailure = Object.freeze({ RecordingUnavailable: 'RecordingUnavailable' });

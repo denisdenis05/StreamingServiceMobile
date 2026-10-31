@@ -10,6 +10,8 @@ import {
 import { colors, fonts, typography } from '../../constants/styling';
 import { playerJam } from '../../services/PlayerJamRuntime';
 import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
+import { SpotifyUpcomingQueueCopy } from '../../services/spotify/SpotifyUpcomingQueueCopy';
+import { SpotifyHostingFailureMessages, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
 import { SettingsIcon, SettingsSymbol } from '../Settings/Settings.icons';
@@ -28,7 +30,10 @@ export const PlayerJamCopy = Object.freeze({
   updating: 'Updating shared playback…',
   market: 'Two-letter listening country',
   marketLength: 2,
-  host: 'Host from this player',
+  host: 'Start sharing',
+  join: 'Join and listen',
+  invitation: 'Spotify Jam invitation',
+  emptyInvitation: '',
   follow: 'Follow Spotify host',
   stop: 'Stop sharing or following',
   details: 'Open Jam, invitations & QR',
@@ -80,10 +85,12 @@ export default function SpotifyPlayerJam({
     playerJam.getSnapshot,
   );
   const [visible, setVisible] = useState(false);
+  const [invitation, setInvitation] = useState<string>(PlayerJamCopy.emptyInvitation);
   const shared =
     snapshot.mode === SpotifyPlayerJamMode.Hosting ||
     snapshot.mode === SpotifyPlayerJamMode.Following ||
     snapshot.mode === SpotifyPlayerJamMode.Resolving;
+  const queueIssueMessage = spotifyHostingQueueIssueMessage(snapshot.queueIssue);
   const validMarket = snapshot.market.length === PlayerJamCopy.marketLength;
   const button = (title: string, onPress: () => void, disabled = false) => (
     <Pressable
@@ -166,7 +173,7 @@ export default function SpotifyPlayerJam({
                 </Text>
               </>
             )}
-            {snapshot.connected && (
+            {(snapshot.connected || snapshot.canCreate || snapshot.canJoin) && (
               <TextInput
                 accessibilityLabel={PlayerJamCopy.market}
                 placeholder={PlayerJamCopy.market}
@@ -179,16 +186,32 @@ export default function SpotifyPlayerJam({
                 style={styles.input}
               />
             )}
-            {snapshot.canHost &&
+            {(snapshot.canHost || snapshot.canCreate) &&
               button(
                 PlayerJamCopy.host,
                 () => {
-                  void playerJam.startHosting();
+                  void playerJam.startSharing();
                 },
                 snapshot.pending ||
                   !validMarket ||
                   snapshot.mode === SpotifyPlayerJamMode.Hosting,
               )}
+            {snapshot.canJoin && !shared && (
+              <>
+                <TextInput
+                  accessibilityLabel={PlayerJamCopy.invitation}
+                  placeholder={PlayerJamCopy.invitation}
+                  value={invitation}
+                  editable={!snapshot.pending}
+                  autoCorrect={false}
+                  onChangeText={setInvitation}
+                  style={styles.input}
+                />
+                {button(PlayerJamCopy.join, () => {
+                  void playerJam.joinAndListen(invitation);
+                }, snapshot.pending || !validMarket || !invitation.trim())}
+              </>
+            )}
             {snapshot.canFollow &&
               button(
                 PlayerJamCopy.follow,
@@ -215,7 +238,12 @@ export default function SpotifyPlayerJam({
                 {PlayerJamCopy.unsupportedOptions}
               </Text>
             )}
-            {snapshot.failure !== null && (
+            {snapshot.upcomingQueuePending && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.pending}</Text>}
+            {(snapshot.unavailableUpcomingCount ?? SpotifyUpcomingQueueCopy.emptyCount) > SpotifyUpcomingQueueCopy.emptyCount && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.unavailable}</Text>}
+            {snapshot.upcomingQueueFailure && !snapshot.upcomingQueuePending && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.failure}</Text>}
+            {queueIssueMessage && <Text accessibilityRole="alert" style={styles.subtitle}>{queueIssueMessage}</Text>}
+            {!queueIssueMessage && snapshot.failureStage && <Text style={styles.subtitle}>{SpotifyHostingFailureMessages[snapshot.failureStage]}</Text>}
+            {!queueIssueMessage && snapshot.failure !== null && (
               <Text accessibilityRole="alert" style={styles.subtitle}>
                 {SpotifyFailureMessages[snapshot.failure]}
               </Text>

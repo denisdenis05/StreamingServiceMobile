@@ -7,8 +7,10 @@ import DefaultButton from '../src/components/DefaultButton/DefaultButton.render'
 import { SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
 import type { SpotifySongSelection } from '../src/services/spotify/SpotifySongSelection';
 
+import { SpotifyListeningCountryStore } from '../src/services/spotify/SpotifyListeningCountryStore';
+const listeningCountry = new SpotifyListeningCountryStore({ deviceRegion: () => null, read: async () => null, write: async () => undefined });
 const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService', screen: '../src/pages/SpotifyJam/SpotifyRecordingQueue.render' });
-const Fixture = Object.freeze({ recordingIdentifier: 'recording', title: 'Song', author: 'Artist', spotifyIdentifier: '0123456789abcdefghijkl',
+const Fixture = Object.freeze({ emptyCountry: '', recordingIdentifier: 'recording', title: 'Song', author: 'Artist', spotifyIdentifier: '0123456789abcdefghijkl',
   spotifyAccount: 'spotify-account', sessionIdentifier: 'queue-jam', host: 'queue-host',
   applicationAccount: 'app-account', market: 'US', otherMarket: 'GB', firstPosition: 0, initialScore: 0 });
 const Names = Object.freeze({ explicit: 'App recording matching and submission require separate presses',
@@ -29,7 +31,7 @@ let mobileSnapshot: { operation: SpotifyMobileOperation; canSubmitGuestCommands:
 function membership(): JamSnapshot { return { accountIdentifier: Fixture.spotifyAccount, status: JamConnectionStatus.Ready, failure: null,
   session: { identifier: Fixture.sessionIdentifier, ownedByCurrentAccount: true, active: true, hostDeviceIdentifier: Fixture.host,
     participants: [{ identifier: Fixture.spotifyAccount, displayName: Fixture.author }] } }; }
-jest.doMock(Imports.service, () => ({ spotifyRecordingQueue: workflow, spotifyMobile: mobile }));
+jest.doMock(Imports.service, () => ({ spotifyListeningCountry: listeningCountry, spotifyRecordingQueue: workflow, spotifyMobile: mobile }));
 const Screen = require(Imports.screen).default;
 const Copy = require(Imports.screen).RecordingQueueCopy;
 let rendered: ReactTestRenderer;
@@ -46,7 +48,7 @@ function button(title: string) { return rendered.root.findAllByType(DefaultButto
 function sourceTitle() { return Copy.find + Copy.separator + Fixture.title + Copy.separator + Fixture.author; }
 function candidateTitle() { return Copy.candidate + Fixture.title + Copy.separator + Fixture.author; }
 async function country(value: string = Fixture.market): Promise<void> { await act(async () => rendered.root.findByType(TextInput).props.onChangeText(value)); }
-beforeEach(() => { jest.clearAllMocks(); currentAccount = true; snapshot = empty();
+beforeEach(() => { jest.clearAllMocks(); listeningCountry.set(Fixture.emptyCountry); currentAccount = true; snapshot = empty();
   mobileSnapshot = { operation: SpotifyMobileOperation.Idle, canSubmitGuestCommands: false, session: membership() }; });
 afterEach(async () => { if (rendered) await act(async () => rendered.unmount()); });
 test(Names.explicit, async () => { await render(); expect(workflow.prepare).not.toHaveBeenCalled(); expect(workflow.enqueue).not.toHaveBeenCalled();

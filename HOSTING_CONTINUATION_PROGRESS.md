@@ -72,3 +72,60 @@ when requested, and keep physical verification separate.
 
 Recommended chapter: Preserve host startup failures and fence hosting cleanup.
 No commit or staging was performed in the shared working tree.
+
+## Hosting failure stages and Android emulator packaging — 2026-10-31
+
+Hosting snapshots now identify fixed safe failure stages independently from the
+existing safe failure categories. JavaScript distinguishes validation, cleanup,
+player readiness, queue capture, catalog matching, queue revalidation,
+authentication and native activation. Native observations preserve only the typed
+stage allowlist; unknown values become Observation without exposing raw text.
+The native host reports activation, publication, background catalog matching and
+cleanup stages. Coordinator failure classification now unwraps nested Java
+completion/execution wrappers while preventing cause cycles, preserving the
+actual known Spotify failure category instead of replacing it with a player
+failure. This source defect does not establish the cause of the reported phone
+Network error.
+
+The Android Spotify library builder accepts arm64-v8a and x86_64 individually or
+together. Each ABI uses its own Rust target, NDK compiler, environment and output
+folder. Unsupported or duplicate ABIs fail explicitly. Gradle includes the selected
+architectures in task inputs so switching from an ARM build cannot reuse an
+up-to-date native task without producing the emulator library.
+
+Feature mapping: `tools/spotify-hosting.test.cjs` covers safe phase reporting,
+privacy, authentication and queue changes; `SpotifyHostCoordinatorTest` covers
+wrapped activation errors and publication/cleanup stages;
+`SpotifyHostSnapshotProtocolTest` covers typed native serialization;
+`tools/test-spotify-android-build.py` covers individual/combined ABI delivery and
+unsupported/duplicate rejection using injected Cargo invocations.
+
+Ran `python3 tools/test-spotify-android-build.py`: 3 passed. Ran
+`npx tsc --project tsconfig.spotify.json && node --test
+tools/spotify-hosting.test.cjs`: TypeScript passed and 57 tests passed. Native JVM
+execution and real emulator packaging are handled by the integrated session.
+These changes neither establish catalog access nor prove audio playback.
+
+Integrated review added two regression cases: a delayed native stopped snapshot
+and a later membership refresh cannot erase a newer hosting failure/stage. Native
+poll reads are fenced by their captured state; actual native events remain
+authoritative. Focused hosting tests now pass 59 cases.
+
+## Actionable host queue capture failures — 2026-10-31
+
+Queue capture now distinguishes three safe local issues: no selected song or empty
+queue, more than 80 occurrences, and existing external playback ownership. The
+store retains only its locally typed allowlisted queue issue alongside the
+existing Unsupported code and capture stage. Raw rejection fields cannot supply
+UI text. Invalid lengths and missing recording/occurrence identities remain
+InvalidResponse. The queue must still pass the existing cursor, ownership,
+occurrence and membership revalidation before hosting.
+
+Dedicated tests: `spotify-hosting-queue.test.cjs` covers empty/current absence,
+capacity overflow and exact-bound acceptance, external ownership, malformed lengths
+and malformed recording identities. `spotify-hosting.test.cjs` covers each safe
+issue reaching the snapshot and rejection of untrusted issue fields.
+`npx tsc --project tsconfig.spotify.json` passed;
+`node --test tools/spotify-hosting-queue.test.cjs tools/spotify-hosting.test.cjs`
+passed all 76 cases. UI copy and emulator verification are integrated by the
+owning session. No live catalog or playback outcome is inferred from these tests.

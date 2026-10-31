@@ -4,6 +4,9 @@ import { IntegrationFailureCode, JamConnectionStatus, JamJoinMode, SpotifyLoginM
 import PageContainer from '../../components/PageContainer';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
+import { playerJam } from '../../services/PlayerJamRuntime';
+import { SpotifyHostingFailureMessages, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
 import { spotifyMobile } from '../../services/SpotifyMobileService';
 import { SpotifyAuthenticationAction, SpotifyMobileOperation } from '../../services/spotify/SpotifyMobileController';
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
@@ -29,6 +32,7 @@ interface SpotifyJamNavigation {
 export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) {
   const selection = spotifyRouteSongSelection(route?.params);
   const snapshot = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
+  const sharing = useSyncExternalStore(playerJam.subscribe, playerJam.getSnapshot);
   useEffect(() => {
     const current = spotifyMobile.getSnapshot();
     if (!current.connected && current.operation === SpotifyMobileOperation.Idle && current.failure === null) void spotifyMobile.restore();
@@ -43,7 +47,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const [mode, setMode] = useState(JamJoinMode.Control);
   const [shareFailure, setShareFailure] = useState(false);
   const [sessionChanged, setSessionChanged] = useState(false);
-  const busy = snapshot.operation !== SpotifyMobileOperation.Idle;
+  const queueIssueMessage = spotifyHostingQueueIssueMessage(sharing.queueIssue);
+  const busy = snapshot.operation !== SpotifyMobileOperation.Idle || sharing.pending;
   const session = snapshot.session?.session ?? null;
   const uncertain = snapshot.session?.status === JamConnectionStatus.Uncertain;
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
@@ -111,7 +116,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   function join(): void {
     const address = invitation;
     setInvitation(SpotifyMobilePolicy.emptyText);
-    void spotifyMobile.joinSession(address, mode);
+    if (mode === JamJoinMode.Control) void playerJam.joinAndListen(address);
+    else void spotifyMobile.joinSession(address, mode);
   }
   async function queue(): Promise<void> {
     setQueueReceipt(null);
@@ -213,6 +219,14 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
           <DefaultText style={styles.sectionTitle}>{session === null ? SpotifyJamCopy.noSession
             : session.ownedByCurrentAccount ? SpotifyJamCopy.ownedSession : SpotifyJamCopy.guestSession}</DefaultText>
           {uncertain && <DefaultText style={styles.error}>{SpotifyJamCopy.uncertainty}</DefaultText>}
+            {sharing.pending && <DefaultText>{SpotifyJamCopy.preparingSharing}</DefaultText>}
+            {sharing.failure !== null && <>
+              {queueIssueMessage && <DefaultText style={styles.error}>{queueIssueMessage}</DefaultText>}
+              {!queueIssueMessage && sharing.failureStage && <DefaultText style={styles.error}>{SpotifyHostingFailureMessages[sharing.failureStage]}</DefaultText>}
+              {!queueIssueMessage && <DefaultText style={styles.error}>{SpotifyFailureMessages[sharing.failure]}</DefaultText>}
+              {session && sharing.mode !== SpotifyPlayerJamMode.Hosting && sharing.mode !== SpotifyPlayerJamMode.Following &&
+                <DefaultText>{SpotifyJamCopy.membershipWithoutPlayback}</DefaultText>}
+            </>}
           {session !== null ? <>
             {!session.active && <DefaultText>{SpotifyJamCopy.inactiveSession}</DefaultText>}
             <DefaultText>{SpotifyJamCopy.participants}</DefaultText>
@@ -235,7 +249,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
             {session.ownedByCurrentAccount ? <DefaultButton title={SpotifyJamCopy.end} onPress={end} disabled={!canMutate} />
               : <DefaultButton title={SpotifyJamCopy.leave} onPress={() => { void spotifyMobile.leaveSession(); }} disabled={!canMutate} />}
           </> : <>
-            <DefaultButton title={SpotifyJamCopy.create} onPress={() => { void spotifyMobile.createSession(); }} disabled={!canMutate} />
+            <DefaultButton title={SpotifyJamCopy.create} onPress={() => { void playerJam.startSharing(); }} disabled={!canMutate} />
             <TextInput value={invitation} onChangeText={setInvitation} placeholder={SpotifyJamCopy.invitePlaceholder}
               accessibilityLabel={SpotifyJamCopy.invitePlaceholder} autoCapitalize={InputPolicy.capitalization} autoCorrect={false}
               maxLength={SpotifyMobilePolicy.maximumInvitationCharacters} editable={!busy} style={styles.input} />
@@ -244,7 +258,7 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
               style={mode === JamJoinMode.Control ? styles.selected : styles.neutral} />
             <DefaultButton title={SpotifyJamCopy.remoteMode} onPress={() => setMode(JamJoinMode.Remote)} disabled={busy || nativeJoining}
               style={mode === JamJoinMode.Remote ? styles.selected : styles.neutral} />
-            <DefaultButton title={SpotifyJamCopy.join} onPress={join}
+            <DefaultButton title={mode === JamJoinMode.Control ? SpotifyJamCopy.join : SpotifyJamCopy.joinRemote} onPress={join}
               disabled={!canMutate || !canJoinNative || !invitation.trim() || mode === JamJoinMode.Remote && snapshot.selectedDeviceIdentifier === null} />
           </>}
         </View>

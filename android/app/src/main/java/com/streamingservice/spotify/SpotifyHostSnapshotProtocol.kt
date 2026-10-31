@@ -11,10 +11,12 @@ object SpotifyHostSnapshotProtocol {
             .put(HandleField, identity.handle).put(GenerationField, identity.generation)
             .put(EngineField, identity.playerIdentity.engineEpoch).put(AuthenticationField, identity.playerIdentity.authenticationEpoch)
         return JSONObject().put(StatusField, snapshot?.status?.name ?: SpotifyHostStatus.Stopped.name)
-            .put(IdentityField, value).put(FailureField, snapshot?.failure ?: JSONObject.NULL).toString()
+            .put(IdentityField, value).put(FailureField, snapshot?.failure ?: JSONObject.NULL)
+            .put(FailureStageField, snapshot?.failureStage?.name ?: JSONObject.NULL).toString()
     }
     private const val StatusField = "status"
     private const val IdentityField = "identity"
+    private const val FailureStageField = "failureStage"
     private const val FailureField = "failure"
     private const val AccountField = "streamingServiceAccountIdentifier"
     private const val SpotifyAccountField = "spotifyAccountIdentifier"

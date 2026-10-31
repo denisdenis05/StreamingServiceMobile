@@ -241,7 +241,22 @@ class SpotifyJamPlaybackRuntimeTest {
         assertEquals(AuthenticationEpoch, snapshot.getString(PlayerAuthenticationEpochField))
         assertFalse(snapshot.has(SpotifyJamPlaybackProtocol.AccessTokenField))
     }
+    @Test fun partialUpcomingDiagnosticsDoNotReplaceTheCurrentPlaybackFailure() {
+        val fixture = Fixture()
+        val account = fixture.protocol.configuration(configuration()).account
+        val follower = SpotifyNativeFollowerSnapshot(SpotifyNativeFollowerStatus.Following, null, Occurrence, Recording, null, null,
+            false, SingleCount, SpotifyNativeFollowerFailureReason.SourceUnavailable)
+        val snapshot = JSONObject(fixture.protocol.snapshot(Identifier, account, follower, true))
+        assertTrue(snapshot.isNull(FailureField))
+        assertFalse(snapshot.getBoolean(UpcomingQueuePendingField))
+        assertEquals(SingleCount, snapshot.getInt(UnavailableUpcomingCountField))
+        assertEquals(SpotifyNativeFollowerFailureReason.SourceUnavailable.name, snapshot.getString(UpcomingQueueFailureField))
+    }
     companion object {
+        private const val FailureField = "failure"
+        private const val UpcomingQueuePendingField = "upcomingQueuePending"
+        private const val UnavailableUpcomingCountField = "unavailableUpcomingCount"
+        private const val UpcomingQueueFailureField = "upcomingQueueFailure"
         private const val EmptyCount = 0
         private const val SingleCount = 1
         private const val DoubleCount = 2

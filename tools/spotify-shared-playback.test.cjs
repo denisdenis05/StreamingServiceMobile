@@ -222,3 +222,42 @@ test(ConnectFixture.names.buffering, async () => {
   assert.equal(current.store.getSnapshot().status, library.SharedPlaybackStatus.Buffering);
   await current.store.dispose();
 });
+
+const QueueFixture = Object.freeze({ upcomingOccurrence: 'actual-upcoming-occurrence',
+  preserveName: 'Native follower queue preparation retains repeated recordings and authoritative occurrence order',
+  cancellationName: 'Canceling a projected queue lookup prevents native queue replacement',
+  missingName: 'A missing projected local recording cannot publish a partial native queue' });
+test(QueueFixture.preserveName, async () => {
+  const current = environment(); const cancellation = new AbortController();
+  const lease = await current.output.acquire(identity, cancellation.signal);
+  await lease.prepareQueue([
+    { recordingIdentifier: Fixture.recording, occurrenceIdentifier: Fixture.occurrence },
+    { recordingIdentifier: Fixture.recording, occurrenceIdentifier: QueueFixture.upcomingOccurrence },
+  ], Fixture.occurrence, cancellation.signal);
+  const replacement = current.state.calls.find(call => call.operation === player.NativePlayerOperation.Replace);
+  assert.deepEqual(replacement.entries.map(entry => entry.entryIdentifier), [Fixture.occurrence, QueueFixture.upcomingOccurrence]);
+  assert.equal(replacement.playing, false);
+  assert.equal(replacement.context.expectedQueueRevision, Fixture.one);
+  assert.equal(replacement.context.expectedPlaybackControlRevision, Fixture.one);
+  await lease.release();
+});
+test(QueueFixture.cancellationName, async () => {
+  const current = environment(); const lookup = deferred(); current.state.lookup = () => lookup.promise;
+  const cancellation = new AbortController(); const lease = await current.output.acquire(identity, cancellation.signal);
+  const preparation = lease.prepareQueue([{ recordingIdentifier: Fixture.recording, occurrenceIdentifier: Fixture.occurrence }], Fixture.occurrence, cancellation.signal);
+  await flush(); cancellation.abort();
+  await assert.rejects(preparation, failure(library.IntegrationFailureCode.Canceled));
+  lookup.resolve(current.state.recording); await flush();
+  assert.equal(current.state.calls.filter(call => call.operation === player.NativePlayerOperation.Replace).length, Fixture.zero);
+  await lease.release();
+});
+test(QueueFixture.missingName, async () => {
+  const current = environment(); current.state.lookup = async identifier => identifier === Fixture.recording ? current.state.recording : null;
+  const cancellation = new AbortController(); const lease = await current.output.acquire(identity, cancellation.signal);
+  await assert.rejects(lease.prepareQueue([
+    { recordingIdentifier: Fixture.recording, occurrenceIdentifier: Fixture.occurrence },
+    { recordingIdentifier: Fixture.otherRecording, occurrenceIdentifier: QueueFixture.upcomingOccurrence },
+  ], Fixture.occurrence, cancellation.signal), failure(library.IntegrationFailureCode.NotFound));
+  assert.equal(current.state.calls.filter(call => call.operation === player.NativePlayerOperation.Replace).length, Fixture.zero);
+  await lease.release();
+});

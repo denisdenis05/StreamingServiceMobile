@@ -3,6 +3,7 @@ import {
   IntegrationFailure,
   IntegrationFailureCode,
   JamConnectionStatus,
+  JamJoinMode,
 } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { spotifyIntegration } from './SpotifyIntegration';
@@ -13,6 +14,7 @@ import {
   spotifyPlaybackCommands,
   spotifyPlaybackFollower,
 } from './SpotifyMobileService';
+import { spotifyListeningCountry } from './SpotifyListeningCountryPlatform';
 import {
   playbackQueueChanges,
   PlaybackQueueChangeKind,
@@ -20,6 +22,26 @@ import {
 import { SpotifyPlayerJamController } from './spotify/SpotifyPlayerJamController';
 import type { SpotifyPlayerJamConnection } from './spotify/SpotifyPlayerJamController';
 const PlayerJamScopePolicy = Object.freeze({ emptyDescriptor: null });
+function identity(): string | null {
+  const account = authenticationSession.getSnapshot();
+  const mobile = spotifyMobile.getSnapshot();
+  if (!account.isLoggedIn || account.accountIdentifier === null || !mobile.connected || !mobile.session?.accountIdentifier)
+    return null;
+  return JSON.stringify([account.accountIdentifier, mobile.session.accountIdentifier]);
+}
+function nativeReady(): boolean {
+  const mobile = spotifyMobile.getSnapshot();
+  return identity() !== null && spotifyIntegration.usesNativeConnect
+    && !!mobile.session?.accountIdentifier
+    && spotifyConnect.getPlaybackConnection(mobile.session.accountIdentifier) !== null;
+}
+async function membership(operation: () => Promise<boolean>): Promise<void> {
+  const expectedIdentity = identity();
+  if (expectedIdentity === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+  const accepted = await operation();
+  if (identity() !== expectedIdentity) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+  if (!accepted) throw new IntegrationFailure(spotifyMobile.getSnapshot().failure ?? IntegrationFailureCode.Network);
+}
 function connection(): SpotifyPlayerJamConnection | null {
   const mobile = spotifyMobile.getSnapshot();
   const snapshot = mobile.session;
@@ -75,6 +97,12 @@ async function remote(operation: () => Promise<void>): Promise<void> {
 }
 export const playerJam = new SpotifyPlayerJamController({
   getConnection: connection,
+  getIdentity: identity,
+  getCanCreate: () => nativeReady() && !spotifyMobile.getSnapshot().session?.session?.active,
+  getCanJoin: nativeReady,
+  createJam: () => membership(() => spotifyMobile.createSession()),
+  joinJam: invitation => membership(() => spotifyMobile.joinSession(invitation, JamJoinMode.Control)),
+  listeningCountry: spotifyListeningCountry,
   getHosting: spotifyHosting.getSnapshot,
   getFollowing: spotifyPlaybackFollower.getSnapshot,
   remoteControlsAvailable: () =>
@@ -88,6 +116,7 @@ export const playerJam = new SpotifyPlayerJamController({
       spotifyHosting.subscribe(listener),
       spotifyPlaybackFollower.subscribe(listener),
       spotifyPlaybackCommands.subscribe(listener),
+      spotifyListeningCountry.subscribe(listener),
     ];
     return () => subscriptions.forEach(unsubscribe => unsubscribe());
   },

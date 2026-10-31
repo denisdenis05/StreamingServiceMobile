@@ -1,9 +1,10 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { TextInput, View } from 'react-native';
 import { SharedPlaybackStatus, SpotifyLoginMethod } from 'streaming-service-spotify-jam';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
-import { spotifyMobile, spotifyPlaybackFollower } from '../../services/SpotifyMobileService';
+import { spotifyMobile, spotifyPlaybackFollower, spotifyListeningCountry } from '../../services/SpotifyMobileService';
+import { SpotifyUpcomingQueueCopy } from '../../services/spotify/SpotifyUpcomingQueueCopy';
 import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
@@ -29,7 +30,8 @@ const StatusMessages: Readonly<Partial<Record<SharedPlaybackStatus, string>>> = 
 export default function SpotifySharedPlayback() {
   const snapshot = useSyncExternalStore(spotifyPlaybackFollower.subscribe, spotifyPlaybackFollower.getSnapshot);
   const connection = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
-  const [market, setMarket] = useState<string>(SharedPlaybackCopy.emptyText);
+  const market = useSyncExternalStore(spotifyListeningCountry.subscribe, spotifyListeningCountry.getSnapshot);
+  const setMarket = spotifyListeningCountry.set;
   const session = connection.session?.session;
   const available = connection.connected && session && (session.ownedByCurrentAccount || connection.authenticationMethod === SpotifyLoginMethod.Librespot && session.participants?.some(participant => participant.identifier === connection.session?.accountIdentifier)) && session.active && session.hostDeviceIdentifier;
   const following = snapshot.status !== SharedPlaybackStatus.Detached && snapshot.status !== SharedPlaybackStatus.Failed;
@@ -46,6 +48,9 @@ export default function SpotifySharedPlayback() {
     <DefaultButton title={SharedPlaybackCopy.stop} disabled={!following || snapshot.status === SharedPlaybackStatus.Stopping}
       onPress={() => { void spotifyPlaybackFollower.stop().catch(() => undefined); }} style={styles.neutral} />
     {message && <DefaultText>{message}</DefaultText>}
+    {following && snapshot.upcomingQueuePending && <DefaultText>{SpotifyUpcomingQueueCopy.pending}</DefaultText>}
+    {following && (snapshot.unavailableUpcomingCount ?? SpotifyUpcomingQueueCopy.emptyCount) > SpotifyUpcomingQueueCopy.emptyCount && <DefaultText>{SpotifyUpcomingQueueCopy.unavailable}</DefaultText>}
+    {following && snapshot.upcomingQueueFailure && !snapshot.upcomingQueuePending && <DefaultText>{SpotifyUpcomingQueueCopy.failure}</DefaultText>}
     {snapshot.failure !== null && <DefaultText style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
   </View>;
 }

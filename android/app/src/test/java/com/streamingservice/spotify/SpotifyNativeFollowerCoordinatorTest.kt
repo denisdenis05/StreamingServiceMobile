@@ -64,6 +64,8 @@ class SpotifyNativeFollowerCoordinatorTest {
         data class Request(val identity: SpotifyNativeFollowerIdentity, val result: CompletableFuture<SpotifyConnectPlaybackObservation>, var cancelled: Boolean = false)
         val requests = mutableListOf<Request>()
         var automatic = true
+        var upcomingOccurrences = emptyList<SpotifyConnectQueueOccurrence>()
+        var queueRevision = QueueRevision
         var occurrenceIdentifier = FirstOccurrence
         var trackIdentifier = FirstTrack
         var positionMilliseconds = SourcePositionMilliseconds
@@ -73,9 +75,9 @@ class SpotifyNativeFollowerCoordinatorTest {
         var uncertaintyMilliseconds = SourceUncertaintyMilliseconds
         var failure: Throwable? = null
         fun observation(identity: SpotifyNativeFollowerIdentity): SpotifyConnectPlaybackObservation = SpotifyConnectPlaybackObservation(
-            identity.handle, identity.generation, identity.hostDeviceIdentifier, QueueRevision, trackIdentifier, occurrenceIdentifier,
+            identity.handle, identity.generation, identity.hostDeviceIdentifier, queueRevision, trackIdentifier, occurrenceIdentifier,
             positionMilliseconds, durationMilliseconds, progressing, buffering, clock.elapsedMilliseconds.toDouble(), clock.elapsedMilliseconds,
-            uncertaintyMilliseconds, ServerMilliseconds, ServerMilliseconds
+            uncertaintyMilliseconds, ServerMilliseconds, ServerMilliseconds, upcomingOccurrences
         )
         override fun read(identity: SpotifyNativeFollowerIdentity): SpotifyFollowerOperation<SpotifyConnectPlaybackObservation> {
             val request = Request(identity, CompletableFuture())
@@ -132,6 +134,96 @@ class SpotifyNativeFollowerCoordinatorTest {
         fun tick(elapsedMilliseconds: Long = TickMilliseconds) { clock.elapsedMilliseconds += elapsedMilliseconds; scheduler.fireDue(); mainQueue.drain() }
         fun operations(operation: PlayerOperation): List<JSONObject> = commands.filter { command -> command.getString(ProtocolFields.Operation) == operation.protocolValue }
         fun currentOccurrence(): String? = actual.snapshot().optJSONObject(ProtocolFields.CurrentEntry)?.optString(ProtocolFields.EntryIdentifier)
+    }
+
+    @Test fun authoritativeUpcomingOccurrencesPreserveRepeatedTracksAndNeverAdvanceLocally() {
+        val fixture = Fixture()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, FirstTrack))
+        fixture.start()
+        val replacement = fixture.operations(PlayerOperation.Replace).single()
+        val entries = replacement.getJSONArray(ProtocolFields.Entries)
+        assertEquals(DoubleCount, entries.length())
+        assertEquals(FirstOccurrence, entries.getJSONObject(EmptyCount).getString(ProtocolFields.EntryIdentifier))
+        assertEquals(SecondOccurrence, entries.getJSONObject(SingleCount).getString(ProtocolFields.EntryIdentifier))
+        assertEquals(SingleCount, fixture.resolver.requests.size)
+        fixture.actual.recordNaturalCompletion()
+        assertEquals(FirstOccurrence, fixture.currentOccurrence())
+        assertFalse(fixture.output.playing)
+    }
+
+    @Test fun queueChangesWithTheSameCurrentOccurrenceReplaceTheUpcomingProjectionImmediately() {
+        val fixture = Fixture(); fixture.start()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, FirstTrack))
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(DoubleCount, fixture.operations(PlayerOperation.Replace).size)
+        assertEquals(DoubleCount, fixture.operations(PlayerOperation.Replace).last().getJSONArray(ProtocolFields.Entries).length())
+        fixture.source.upcomingOccurrences = emptyList()
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.operations(PlayerOperation.Replace).last().getJSONArray(ProtocolFields.Entries).length())
+    }
+
+    @Test fun staleUpcomingResolutionCannotPublishAfterRemoteQueueReplacement() {
+        val fixture = Fixture()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+        fixture.resolver.automatic = false; fixture.start()
+        val first = fixture.resolver.requests.single()
+        first.result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        val upcoming = fixture.resolver.requests.last()
+        fixture.source.upcomingOccurrences = emptyList()
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertTrue(upcoming.cancelled)
+        fixture.resolver.requests.last().result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        upcoming.result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.operations(PlayerOperation.Replace).last().getJSONArray(ProtocolFields.Entries).length())
+    }
+
+    @Test fun missingUpcomingRecordingIsOmittedWhileTheActualCurrentRecordingCanPlay() {
+        val fixture = Fixture()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+        fixture.resolver.automatic = false; fixture.start()
+        fixture.resolver.requests.single().result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        fixture.resolver.requests.last().result.complete(SpotifyFollowerRecordingResolution.Unavailable); fixture.mainQueue.drain()
+        assertEquals(SingleCount, fixture.operations(PlayerOperation.Replace).single().getJSONArray(ProtocolFields.Entries).length())
+        assertEquals(SpotifyNativeFollowerStatus.Following, fixture.coordinator.snapshot().status)
+    }
+
+    @Test fun currentPlaybackStartsBeforeAnUncooperativeUpcomingMatchAndQueueRefreshKeepsItPlaying() {
+        val fixture = Fixture()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+        fixture.resolver.automatic = false; fixture.start()
+        fixture.resolver.requests.single().result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Following, fixture.coordinator.snapshot().status)
+        val upcoming = fixture.resolver.requests.last()
+        val pauses = fixture.operations(PlayerOperation.Pause).size
+        fixture.source.upcomingOccurrences = emptyList()
+        fixture.coordinator.sourceChanged(); fixture.mainQueue.drain()
+        assertTrue(upcoming.cancelled)
+        assertTrue(fixture.output.playing)
+        assertEquals(pauses, fixture.operations(PlayerOperation.Pause).size)
+        assertEquals(SourcePositionMilliseconds, fixture.output.positionMilliseconds)
+        upcoming.result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        assertEquals(SingleCount, fixture.operations(PlayerOperation.Replace).last().getJSONArray(ProtocolFields.Entries).length())
+    }
+
+    @Test fun futureLookupFailureRetainsCurrentPlaybackAndReportsPartialQueueWithoutRetrying() {
+        val fixture = Fixture()
+        fixture.source.upcomingOccurrences = listOf(SpotifyConnectQueueOccurrence(SecondOccurrence, SecondTrack))
+        fixture.resolver.automatic = false; fixture.start()
+        fixture.resolver.requests.single().result.complete(fixture.resolver.selected); fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        fixture.resolver.requests.last().result.completeExceptionally(SpotifyNativeFollowerFailure(SpotifyNativeFollowerFailureReason.SourceUnavailable))
+        fixture.mainQueue.drain()
+        assertTrue(fixture.output.playing)
+        assertEquals(SpotifyNativeFollowerStatus.Following, fixture.coordinator.snapshot().status)
+        assertNull(fixture.coordinator.snapshot().failure)
+        assertEquals(SpotifyNativeFollowerFailureReason.SourceUnavailable, fixture.coordinator.snapshot().upcomingQueueFailure)
+        assertEquals(SingleCount, fixture.coordinator.snapshot().unavailableUpcomingCount)
+        assertFalse(fixture.coordinator.snapshot().upcomingQueuePending)
+        fixture.tick()
+        assertEquals(DoubleCount, fixture.resolver.requests.size)
+        assertTrue(fixture.output.playing)
     }
 
     @Test fun sourceEventsRefreshImmediatelyAndCoalesceBehindOneRead() {

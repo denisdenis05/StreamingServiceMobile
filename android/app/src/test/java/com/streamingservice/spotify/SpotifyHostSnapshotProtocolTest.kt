@@ -15,11 +15,18 @@ class SpotifyHostSnapshotProtocolTest {
         assertEquals(Generation, value.getJSONObject(IdentityField).getLong(GenerationField))
         assertFalse(value.toString().contains(TokenField)); assertFalse(value.toString().contains(TitleField))
     }
+    @Test fun failedSnapshotIncludesOnlyTheTypedFailureStage() {
+        val identity = SpotifyHostIdentity(Account, SpotifyAccount, Jam, Device, Handle, Generation, SpotifyPlayerIdentity(Engine, Authentication))
+        val value = JSONObject(SpotifyHostSnapshotProtocol.encode(SpotifyHostSnapshot(identity, SpotifyHostStatus.Failed, Network, SpotifyHostFailureStage.Publication)))
+        assertEquals(SpotifyHostFailureStage.Publication.name, value.getString(FailureStageField))
+    }
     @Test fun detachedSnapshotHasNoInventedIdentity() {
         val value = JSONObject(SpotifyHostSnapshotProtocol.encode(null))
         assertEquals(SpotifyHostStatus.Stopped.name, value.getString(StatusField)); assertTrue(value.isNull(IdentityField))
     }
     companion object {
+        private const val Network = "network"
+        private const val FailureStageField = "failureStage"
         private const val Account = "synthetic-account"
         private const val SpotifyAccount = "synthetic-spotify-account"
         private const val Jam = "synthetic-jam"

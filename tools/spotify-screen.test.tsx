@@ -1,3 +1,5 @@
+import { SpotifyHostingQueueIssue } from '../src/services/spotify/SpotifyHostingQueue';
+import { SpotifyHostingQueueIssueMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
 import type { ReactTestRenderer } from 'react-test-renderer';
 import { act, create } from 'react-test-renderer';
 import { Alert, Share, TextInput } from 'react-native';
@@ -7,16 +9,20 @@ import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobil
 import { SpotifyJamCopy } from '../src/pages/SpotifyJam/SpotifyJam.copy';
 import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../src/services/spotify/SpotifyMobilePolicy';
 import { SpotifyAuthorizationReturnStatus } from '../src/services/spotify/SpotifyLoginBrowser';
+import { SpotifyPlayerJamMode } from '../src/services/spotify/SpotifyPlayerJamController';
+import { SpotifyHostingFailureStage } from '../src/services/spotify/SpotifyHostingStore';
+import { SpotifyHostingFailureMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyConnectStatus } from '../src/services/spotify/SpotifyConnectStore';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
-const Imports = Object.freeze({ service: '../src/services/SpotifyMobileService',
+const Imports = Object.freeze({ player: '../src/services/PlayerJamRuntime', service: '../src/services/SpotifyMobileService',
   screen: '../src/pages/SpotifyJam/SpotifyJam.render', membership: '../src/pages/SpotifyJam/SpotifyJamMembership.render', hostedQueue: '../src/pages/SpotifyJam/SpotifyHostedQueue.render', container: '../src/components/PageContainer' });
 const Methods = Object.freeze({ alert: 'alert', share: 'share' } as const);
 const Fixture = Object.freeze({ spotifyAccount: 'spotify-account', displayName: 'Listener', deviceIdentifier: 'device', deviceName: 'Phone',
   sessionIdentifier: 'session', otherSessionIdentifier: 'replacement-session', token: 'temporary-test-token', clientIdentifier: '0123456789abcdef0123456789abcdef', trackIdentifier: '0123456789abcdefghijkl', invitation: 'spotify:socialsession:invitation-test',
   firstPosition: 0, confirmationPosition: 1, alertButtonsArgumentIndex: 2, singleInvocationCount: 1 });
-const Names = Object.freeze({ connect: 'Login opens only on a press and supplies the public client identifier and callback',
+const Names = Object.freeze({ matchingFailure: 'Created membership retains visible matching failure when shared hosting fails',
+  membershipPreparing: 'Joining membership keeps playback preparation visible while following starts', connect: 'Login opens only on a press and supplies the public client identifier and callback',
   nativeWaiting: 'Native connection readiness is separate from login and blocks joining until registered',
   nativeReady: 'Registered native connection allows control joining while remote playback stays unavailable',
   create: 'Connected screen creates a Jam only when requested', join: 'Join sends the invitation in the selected membership mode',
@@ -33,6 +39,11 @@ const controller = {
   reconcileSharedState: jest.fn(), createSession: jest.fn(), joinSession: jest.fn(), refreshSession: jest.fn(), leaveSession: jest.fn(), endSession: jest.fn(),
   reloadDevices: jest.fn(), selectDevice: jest.fn(), invitationAddress: jest.fn(() => Fixture.invitation),
 };
+interface SharingSnapshot { queueIssue?: SpotifyHostingQueueIssue | null; pending: boolean; failure: IntegrationFailureCode | null; failureStage?: SpotifyHostingFailureStage | null; mode: SpotifyPlayerJamMode }
+let sharingSnapshot: SharingSnapshot;
+const playerJam = { subscribe: () => () => undefined, getSnapshot: () => sharingSnapshot,
+  startSharing: () => controller.createSession(), joinAndListen: (invitation: string) => controller.joinSession(invitation, JamJoinMode.Control) };
+jest.doMock(Imports.player, () => ({ playerJam }));
 const HostingScreen = '../src/pages/SpotifyJam/SpotifyHosting.render';
 jest.doMock(HostingScreen, () => ({ __esModule: true, default: () => null }));
 const SharedPlaybackScreen = '../src/pages/SpotifyJam/SpotifySharedPlayback.render';
@@ -63,6 +74,7 @@ function input(placeholder: string) { return rendered.root.findAllByType(TextInp
 
 beforeEach(() => {
   jest.clearAllMocks(); snapshot = connection();
+  sharingSnapshot = { pending: false, failure: null, failureStage: null, mode: SpotifyPlayerJamMode.Available };
 });
 afterEach(async () => {
   if (rendered) await act(async () => rendered.unmount());
@@ -101,7 +113,7 @@ test(Names.create, async () => {
 test(Names.join, async () => {
   await render(); await act(async () => input(SpotifyJamCopy.invitePlaceholder).props.onChangeText(Fixture.invitation));
   await act(async () => button(SpotifyJamCopy.remoteMode).props.onPress());
-  await act(async () => button(SpotifyJamCopy.join).props.onPress());
+  await act(async () => button(SpotifyJamCopy.joinRemote).props.onPress());
   expect(controller.joinSession).toHaveBeenCalledWith(Fixture.invitation, JamJoinMode.Remote);
   expect(input(SpotifyJamCopy.invitePlaceholder).props.value).toBe(SpotifyMobilePolicy.emptyText);
 });
@@ -343,4 +355,32 @@ test(GuestQueueScreenNames.absent, async () => {
 });
 test(GuestQueueScreenNames.unadmitted, async () => {
   snapshot = { ...connection(true, false), canSubmitGuestCommands: true }; await render(); expect(button(SpotifyJamCopy.addToQueue)).toBeUndefined();
+});
+
+test(Names.matchingFailure, async () => {
+  await render();
+  snapshot = connection(true, true);
+  sharingSnapshot = { pending: false, mode: SpotifyPlayerJamMode.Failed, failure: IntegrationFailureCode.Backpressure,
+    failureStage: SpotifyHostingFailureStage.CatalogMatching };
+  await act(async () => rendered.update(<SpotifyJam navigation={navigation} />));
+  const presentation = JSON.stringify(rendered.toJSON());
+  expect(presentation).toContain(SpotifyJamCopy.ownedSession);
+  expect(presentation).toContain(SpotifyJamCopy.membershipWithoutPlayback);
+  expect(presentation).toContain(SpotifyFailureMessages[IntegrationFailureCode.Backpressure]);
+  expect(presentation).toContain(SpotifyHostingFailureMessages[SpotifyHostingFailureStage.CatalogMatching]);
+});
+test(Names.membershipPreparing, async () => {
+  snapshot = connection(true, false);
+  sharingSnapshot = { pending: true, mode: SpotifyPlayerJamMode.Available, failure: null };
+  await render(); expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyJamCopy.preparingSharing);
+});
+
+const QueueIssueTestName = 'Main Jam queue issue %s gives a specific correction while membership remains';
+test.each(Object.values(SpotifyHostingQueueIssue))(QueueIssueTestName, async queueIssue => {
+  snapshot = connection(true, true);
+  sharingSnapshot = { pending: false, mode: SpotifyPlayerJamMode.Failed, failure: IntegrationFailureCode.Unsupported, queueIssue };
+  await render(); const presentation = JSON.stringify(rendered.toJSON());
+  expect(presentation).toContain(SpotifyHostingQueueIssueMessages[queueIssue]);
+  expect(presentation).toContain(SpotifyJamCopy.membershipWithoutPlayback);
+  expect(presentation).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.Unsupported]);
 });

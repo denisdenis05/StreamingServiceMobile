@@ -50,7 +50,10 @@ data class SpotifyNativeFollowerSnapshot(
     val occurrenceIdentifier: String?,
     val recordingIdentifier: String?,
     val driftMilliseconds: Double?,
-    val failure: SpotifyNativeFollowerFailureReason?
+    val failure: SpotifyNativeFollowerFailureReason?,
+    val upcomingQueuePending: Boolean = false,
+    val unavailableUpcomingCount: Int = SpotifyNativeFollowerPolicy.EmptyCount,
+    val upcomingQueueFailure: SpotifyNativeFollowerFailureReason? = null
 )
 
 object SpotifyNativeFollowerPolicy {
@@ -63,6 +66,7 @@ object SpotifyNativeFollowerPolicy {
     const val CorrectionThresholdMilliseconds = 250.0
     const val ReconcileIntervalMilliseconds = 1000L
     const val LocalSampleUncertaintyMilliseconds = 1.0
+    const val MaximumUpcomingOccurrences = 2000
     const val MaximumPendingEvents = 16
     const val EmptyCount = 0
     const val InitialSequence = 0L

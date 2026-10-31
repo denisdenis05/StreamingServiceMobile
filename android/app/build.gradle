@@ -85,6 +85,7 @@ def spotifyLibrespotArchitecturesArgument = "--architectures"
 def spotifyLibrespotPreBuildTask = "preBuild"
 
 tasks.register(spotifyLibrespotBuildTask, Exec) {
+    inputs.property(spotifyLibrespotArchitecturesProperty, project.findProperty(spotifyLibrespotArchitecturesProperty) ?: spotifyLibrespotArmArchitecture)
     inputs.file(spotifyLibrespotBuildScript)
     inputs.files(fileTree(spotifyLibrespotSources) {
         include("Cargo.toml", "Cargo.lock", "src/**/*.rs")

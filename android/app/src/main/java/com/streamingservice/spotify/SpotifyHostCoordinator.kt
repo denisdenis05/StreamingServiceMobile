@@ -5,7 +5,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
 enum class SpotifyHostStatus { Starting, Resolving, Hosting, Stopping, Stopped, Failed }
-data class SpotifyHostSnapshot(val identity: SpotifyHostIdentity, val status: SpotifyHostStatus, val failure: String? = null)
+enum class SpotifyHostFailureStage { NativeActivation, Publication, CatalogMatching, Cleanup }
+data class SpotifyHostSnapshot(val identity: SpotifyHostIdentity, val status: SpotifyHostStatus, val failure: String? = null, val failureStage: SpotifyHostFailureStage? = null)
 
 class SpotifyHostCoordinator(
     private val identity: SpotifyHostIdentity,
@@ -39,6 +40,8 @@ class SpotifyHostCoordinator(
     private var startupTimer: SpotifyNativeFollowerCancellation? = null
     private var timer: SpotifyNativeFollowerCancellation? = null
     @Volatile private var resolving = false
+    private var stage = SpotifyHostFailureStage.NativeActivation
+    private var failureStage: SpotifyHostFailureStage? = null
     @Volatile private var failure: String? = null
     @Volatile private var currentSnapshot = SpotifyHostSnapshot(identity, SpotifyHostStatus.Stopped)
     private val dispatcher = SpotifyHostCommandDispatcher(identity, player, transport, SpotifyHostCommandEventDecoder(clock), clock, scheduler,
@@ -134,6 +137,7 @@ class SpotifyHostCoordinator(
     private fun refresh() {
         if (closing || work != null) return
         if (!current()) { terminate(Superseded); return }
+        stage = SpotifyHostFailureStage.Publication
         perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
             sample { queue ->
                 lastCursor = queue.snapshot.cursor
@@ -168,6 +172,7 @@ class SpotifyHostCoordinator(
         }
     }
     private fun resolve(queue: SpotifyHostPlayerQueue, entry: SpotifyHostQueueEntry) {
+        stage = SpotifyHostFailureStage.CatalogMatching
         resolving = true
         publish(SpotifyHostStatus.Resolving)
         if (closing) return
@@ -196,7 +201,7 @@ class SpotifyHostCoordinator(
         val pause = if (cursor == null) CompletableFuture.completedFuture(Unit)
             else try { player.pause(identity, cursor) } catch (failure: Throwable) { failedFuture(failure) }
         pause.whenComplete { _, pauseFailure -> decide {
-            if (pauseFailure != null && failure == null && !conflict(pauseFailure)) failure = PlayerFailed
+            if (pauseFailure != null && failure == null && !conflict(pauseFailure)) { failure = PlayerFailed; failureStage = SpotifyHostFailureStage.Cleanup }
             if (!activationAttempted) finishCleanup(null)
             else cleanupOperation(transport.registration(identity)) { actual ->
                 cleanupOperation(transport.withdraw(identity, actual)) { finishCleanup(null) }
@@ -212,7 +217,7 @@ class SpotifyHostCoordinator(
     private fun finishCleanup(cleanupFailure: Throwable?) {
         if (stopped.isDone) return
         player.retire()
-        if (cleanupFailure != null) failure = CleanupFailed
+        if (cleanupFailure != null) { failure = CleanupFailed; failureStage = SpotifyHostFailureStage.Cleanup }
         publish(if (failure == null) SpotifyHostStatus.Stopped else SpotifyHostStatus.Failed)
         if (cleanupFailure == null) stopped.complete(Unit) else stopped.completeExceptionally(SpotifyConnectFailure(CleanupFailed))
     }
@@ -234,10 +239,11 @@ class SpotifyHostCoordinator(
     private fun terminate(code: String) {
         if (closing) return
         failure = code
+        failureStage = stage
         stop()
     }
     private fun publish(status: SpotifyHostStatus) {
-        currentSnapshot = SpotifyHostSnapshot(identity, status, failure)
+        currentSnapshot = SpotifyHostSnapshot(identity, status, failure, failureStage)
         try { observer(currentSnapshot) } catch (_failure: Throwable) { Unit }
     }
     private fun decide(action: () -> Unit) {
@@ -248,12 +254,19 @@ class SpotifyHostCoordinator(
         }
         try { executor.execute { run() } }
         catch (_failure: Throwable) { synchronized(this) {
-            if (closing) run() else { failure = Backpressure; stop() }
+            if (closing) run() else { failure = Backpressure; failureStage = stage; stop() }
         } }
     }
     private fun current(): Boolean = try { isCurrent(identity) } catch (_failure: Throwable) { false }
-    private fun safeCode(failure: Throwable): String = (failure as? SpotifyConnectFailure)?.code
-        ?.takeIf { code -> SpotifyConnectFailureCode.entries.any { selected -> selected.wireValue == code } } ?: PlayerFailed
+    private fun safeCode(failure: Throwable): String {
+        var cause = failure
+        val visited = mutableSetOf<Throwable>()
+        while (visited.add(cause) && (cause is java.util.concurrent.CompletionException || cause is java.util.concurrent.ExecutionException)) {
+            cause = cause.cause ?: break
+        }
+        return (cause as? SpotifyConnectFailure)?.code
+            ?.takeIf { code -> SpotifyConnectFailureCode.entries.any { selected -> selected.wireValue == code } } ?: PlayerFailed
+    }
     private fun conflict(failure: Throwable): Boolean = (failure as? SpotifyPlayerFailure)?.reason == SpotifyPlayerFailureReason.Conflict
     private fun failedFuture(failure: Throwable) = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
     companion object {

@@ -381,3 +381,27 @@ test(RecoveryNames.late, async () => {
   inspection.resolve(JSON.stringify(wire(identifier, { generation: Fixture.nextGeneration }))); await flush();
   assertion.equal(current.store.getSnapshot().status, SharedPlaybackStatus.Following);
 });
+
+const QueueSnapshotFixture = Object.freeze({ name: 'Native partial queue decoding preserves current Following and sanitizes bounded queue diagnostics',
+  malformedName: 'Native queue diagnostics reject invalid counts types and unknown failures', recordingUnavailable: 'RecordingUnavailable',
+  maximumUpcomingOccurrences: 2000, invalidCount: 2001 });
+test(QueueSnapshotFixture.name, () => {
+  const observation = decodeSpotifyJamPlayback(JSON.stringify(wire(Fixture.restoredIdentifier, {
+    upcomingQueuePending: false, unavailableUpcomingCount: Fixture.singleCount, upcomingQueueFailure: Fixture.sourceUnavailable,
+  })));
+  assertion.equal(observation.snapshot.status, SharedPlaybackStatus.Following);
+  assertion.equal(observation.snapshot.failure, null);
+  assertion.equal(observation.snapshot.upcomingQueueFailure, IntegrationFailureCode.Network);
+  assertion.equal(observation.snapshot.unavailableUpcomingCount, Fixture.singleCount);
+  assertion.equal(observation.snapshot.upcomingQueuePending, false);
+  const legacy = decodeSpotifyJamPlayback(JSON.stringify(wire(Fixture.restoredIdentifier, { failure: QueueSnapshotFixture.recordingUnavailable })));
+  assertion.equal(legacy.snapshot.failure, null);
+  assertion.equal(legacy.snapshot.upcomingQueueFailure, IntegrationFailureCode.NotFound);
+});
+test(QueueSnapshotFixture.malformedName, () => {
+  for (const overrides of [
+    { upcomingQueuePending: Fixture.privateMessage, unavailableUpcomingCount: Fixture.singleCount, upcomingQueueFailure: null },
+    { upcomingQueuePending: false, unavailableUpcomingCount: QueueSnapshotFixture.invalidCount, upcomingQueueFailure: null },
+    { upcomingQueuePending: false, unavailableUpcomingCount: Fixture.singleCount, upcomingQueueFailure: Fixture.privateMessage },
+  ]) assertion.throws(() => decodeSpotifyJamPlayback(JSON.stringify(wire(Fixture.restoredIdentifier, overrides))), { code: IntegrationFailureCode.InvalidResponse });
+});

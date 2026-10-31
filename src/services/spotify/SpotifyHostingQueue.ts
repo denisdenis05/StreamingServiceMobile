@@ -3,6 +3,10 @@ import { QueuePageStatus } from 'streaming-service-player';
 import type { PlayerCursor, PlayerObservation } from 'streaming-service-player';
 
 export const SpotifyHostingQueuePolicy = Object.freeze({ maximumEntries: 80, minimumEntries: 1, firstOffset: 0, minimumRevision: 0 } as const);
+export enum SpotifyHostingQueueIssue { EmptyQueue = 'EmptyQueue', CapacityExceeded = 'CapacityExceeded', ExternalAuthority = 'ExternalAuthority' }
+export class SpotifyHostingQueueFailure extends IntegrationFailure {
+  constructor(readonly queueIssue: SpotifyHostingQueueIssue) { super(IntegrationFailureCode.Unsupported); }
+}
 export interface SpotifyHostingQueue {
   readonly playerEngineEpoch: string;
   readonly playerAuthenticationEpoch: string;
@@ -11,8 +15,10 @@ export interface SpotifyHostingQueue {
 }
 export async function captureSpotifyHostingQueue(player: Pick<PlayerObservation, 'getSnapshot' | 'getQueuePage'>): Promise<SpotifyHostingQueue> {
   const snapshot = await player.getSnapshot();
-  if (snapshot.externalAuthorityIdentifier !== null || !snapshot.currentEntry || !Number.isSafeInteger(snapshot.queueLength) || snapshot.queueLength < SpotifyHostingQueuePolicy.minimumEntries
-    || snapshot.queueLength > SpotifyHostingQueuePolicy.maximumEntries) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+  if (snapshot.externalAuthorityIdentifier !== null) throw new SpotifyHostingQueueFailure(SpotifyHostingQueueIssue.ExternalAuthority);
+  if (!Number.isSafeInteger(snapshot.queueLength) || snapshot.queueLength < SpotifyHostingQueuePolicy.firstOffset) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+  if (!snapshot.currentEntry || snapshot.queueLength < SpotifyHostingQueuePolicy.minimumEntries) throw new SpotifyHostingQueueFailure(SpotifyHostingQueueIssue.EmptyQueue);
+  if (snapshot.queueLength > SpotifyHostingQueuePolicy.maximumEntries) throw new SpotifyHostingQueueFailure(SpotifyHostingQueueIssue.CapacityExceeded);
   const cursor = snapshot.cursor;
   if (!cursor.queueIdentifier || cursor.queueContentRevision === undefined || cursor.playbackControlRevision === undefined
     || ![cursor.queueRevision, cursor.queueContentRevision, cursor.playbackControlRevision].every(value => Number.isSafeInteger(value) && value >= SpotifyHostingQueuePolicy.minimumRevision)) {
@@ -30,7 +36,7 @@ export async function captureSpotifyHostingQueue(player: Pick<PlayerObservation,
     throw new IntegrationFailure(IntegrationFailureCode.Superseded);
   }
   const entries = result.page.entries.map(entry => {
-    if (!entry.recordingIdentifier || !entry.entryIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    if (!entry.recordingIdentifier || !entry.entryIdentifier) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
     return Object.freeze({ occurrenceIdentifier: entry.entryIdentifier, recordingIdentifier: entry.recordingIdentifier });
   });
   if (!entries.some(entry => entry.occurrenceIdentifier === snapshot.currentEntry?.entryIdentifier)

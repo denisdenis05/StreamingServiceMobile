@@ -1,5 +1,6 @@
 package com.streamingservice.spotify
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -32,6 +33,45 @@ class SpotifyConnectObservationDecoderTest {
         assertEquals(OCCURRENCE, sample.occurrenceIdentifier)
         assertEquals(REVISION, sample.queueRevision)
         assertTrue(sample.progressing)
+    }
+
+    @Test
+    fun upcomingQueuePreservesActualRepeatedTrackOccurrencesInRemoteOrder() {
+        val response = response()
+        playback(response).put(NEXT_TRACKS_FIELD, JSONArray()
+            .put(JSONObject().put(URI_FIELD, TRACK_URI).put(OCCURRENCE_FIELD, NEXT_OCCURRENCE)))
+        val sample = decoder.decode(response.toString(), boundary())
+        assertEquals(listOf(SpotifyConnectQueueOccurrence(NEXT_OCCURRENCE, TRACK_IDENTIFIER)), sample.upcomingOccurrences)
+    }
+
+    @Test
+    fun duplicateRemoteOccurrenceIdentifiersCannotEnterThePlayerQueue() {
+        val response = response()
+        playback(response).put(NEXT_TRACKS_FIELD, JSONArray()
+            .put(JSONObject().put(URI_FIELD, TRACK_URI).put(OCCURRENCE_FIELD, OCCURRENCE)))
+        requireFailure(INVALID_RESPONSE) { decoder.decode(response.toString(), boundary()) }
+    }
+
+    @Test
+    fun structuralAndUnidentifiedUpcomingEntriesAreOmittedWithoutInventedOccurrences() {
+        val response = response()
+        playback(response).put(NEXT_TRACKS_FIELD, JSONArray()
+            .put(JSONObject().put(URI_FIELD, DELIMITER_URI).put(OCCURRENCE_FIELD, JSONObject.NULL))
+            .put(JSONObject().put(URI_FIELD, TRACK_URI).put(OCCURRENCE_FIELD, JSONObject.NULL)))
+        assertTrue(decoder.decode(response.toString(), boundary()).upcomingOccurrences.isEmpty())
+    }
+
+    @Test
+    fun oversizedAndMalformedUpcomingQueuesFailBeforeProjection() {
+        val response = response()
+        val tracks = JSONArray()
+        repeat(SpotifyNativeFollowerPolicy.MaximumUpcomingOccurrences + ADDITIONAL_OCCURRENCE_COUNT) { position ->
+            tracks.put(JSONObject().put(URI_FIELD, TRACK_URI).put(OCCURRENCE_FIELD, NEXT_OCCURRENCE + position))
+        }
+        playback(response).put(NEXT_TRACKS_FIELD, tracks)
+        requireFailure(INVALID_RESPONSE) { decoder.decode(response.toString(), boundary()) }
+        playback(response).put(NEXT_TRACKS_FIELD, TRACK_URI)
+        requireFailure(INVALID_RESPONSE) { decoder.decode(response.toString(), boundary()) }
     }
 
     @Test
@@ -120,6 +160,9 @@ class SpotifyConnectObservationDecoderTest {
     }
 
     companion object {
+        private const val ADDITIONAL_OCCURRENCE_COUNT = 1
+        private const val NEXT_TRACKS_FIELD = "nextTracks"
+        private const val NEXT_OCCURRENCE = "next-occurrence"
         private const val HANDLE = 7L
         private const val GENERATION = 3L
         private const val OTHER_IDENTIFIER = 9L

@@ -16,6 +16,10 @@ internal object SpotifyNativeFollowerTiming {
     fun validateObservation(identity: SpotifyNativeFollowerIdentity, observation: SpotifyConnectPlaybackObservation, requestStartedMilliseconds: Long, nowMilliseconds: Long) {
         if (observation.handle != identity.handle || observation.generation != identity.generation
             || observation.hostDeviceIdentifier != identity.hostDeviceIdentifier) fail(SpotifyNativeFollowerFailureReason.Superseded)
+        val occurrences = listOf(SpotifyConnectQueueOccurrence(observation.occurrenceIdentifier, observation.spotifyTrackIdentifier)) + observation.upcomingOccurrences
+        if (observation.upcomingOccurrences.size > SpotifyNativeFollowerPolicy.MaximumUpcomingOccurrences
+            || occurrences.map { occurrence -> occurrence.occurrenceIdentifier }.toSet().size != occurrences.size
+            || occurrences.any { occurrence -> !identifier(occurrence.occurrenceIdentifier) || !SpotifyNativeFollowerPolicy.TrackIdentifierPattern.matches(occurrence.spotifyTrackIdentifier) }) fail(SpotifyNativeFollowerFailureReason.InvalidObservation)
         if (!identifier(observation.occurrenceIdentifier) || !identifier(observation.queueRevision)
             || !SpotifyNativeFollowerPolicy.TrackIdentifierPattern.matches(observation.spotifyTrackIdentifier)
             || listOf(observation.positionMilliseconds, observation.durationMilliseconds, observation.observedElapsedRealtimeMilliseconds,

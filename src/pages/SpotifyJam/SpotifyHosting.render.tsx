@@ -1,9 +1,10 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { TextInput, View } from 'react-native';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
-import { spotifyHosting, spotifyMobile } from '../../services/SpotifyMobileService';
+import { spotifyHosting, spotifyMobile, spotifyListeningCountry } from '../../services/SpotifyMobileService';
 import { SpotifyHostingStatus } from '../../services/spotify/SpotifyHostingStore';
+import { SpotifyHostingFailureMessages, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 export const SpotifyHostingCopy = Object.freeze({ title: 'Host from this app',
@@ -16,7 +17,9 @@ const Messages = Object.freeze({ [SpotifyHostingStatus.Resolving]: SpotifyHostin
 export default function SpotifyHosting() {
   const snapshot = useSyncExternalStore(spotifyHosting.subscribe, spotifyHosting.getSnapshot);
   const connection = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
-  const [market, setMarket] = useState<string>(SpotifyHostingCopy.empty);
+  const market = useSyncExternalStore(spotifyListeningCountry.subscribe, spotifyListeningCountry.getSnapshot);
+  const setMarket = spotifyListeningCountry.set;
+  const queueIssueMessage = spotifyHostingQueueIssueMessage(snapshot.queueIssue);
   const busy = snapshot.status !== SpotifyHostingStatus.Stopped && snapshot.status !== SpotifyHostingStatus.Failed;
   const available = connection.connected && connection.session?.session?.ownedByCurrentAccount && connection.session.session.active;
   const message = snapshot.status in Messages ? Messages[snapshot.status as keyof typeof Messages] : null;
@@ -30,6 +33,8 @@ export default function SpotifyHosting() {
     <DefaultButton title={SpotifyHostingCopy.stop} disabled={!busy || snapshot.status === SpotifyHostingStatus.Stopping}
       onPress={() => { void spotifyHosting.stop().catch(() => undefined); }} style={styles.neutral} />
     {message && <DefaultText>{message}</DefaultText>}
-    {snapshot.failure !== null && <DefaultText style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
+    {queueIssueMessage && <DefaultText style={styles.error}>{queueIssueMessage}</DefaultText>}
+    {!queueIssueMessage && snapshot.failureStage && <DefaultText style={styles.error}>{SpotifyHostingFailureMessages[snapshot.failureStage]}</DefaultText>}
+    {!queueIssueMessage && snapshot.failure !== null && <DefaultText style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
   </View>;
 }

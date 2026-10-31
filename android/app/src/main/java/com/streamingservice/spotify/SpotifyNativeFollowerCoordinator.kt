@@ -86,8 +86,8 @@ class SpotifyNativeFollowerCoordinator(
         current.timer?.cancel(); current.timer = null
         current.readOperation?.cancel(); current.readOperation = null
         current.resolutionOperation?.cancel(); current.resolutionOperation = null
-        current.resolutionOccurrence = null; current.resolvedRecording = null
-        current.resolutionFailure = null; current.resolutionFailedSequence = null
+        current.resolvedQueue.clear(); current.unavailableTracks.clear()
+        current.resolutionFailure = null; current.resolutionFailedSequence = null; current.upcomingQueueFailure = null
         current.target = null; current.sourceHealthy = false
         current.readRequested = false; current.sourceChangeQueued = false
     }
@@ -131,10 +131,14 @@ class SpotifyNativeFollowerCoordinator(
                         current.target = observation
                         current.sequence += SpotifyNativeFollowerPolicy.SequenceIncrement
                         current.sourceHealthy = true
-                        if (current.resolutionOccurrence != null && current.resolutionOccurrence != observation.occurrenceIdentifier) {
-                            current.resolutionOperation?.cancel(); current.resolutionOperation = null; current.resolutionOccurrence = null
-                            current.resolvedRecording = null; current.resolutionFailure = null
+                        if (previous != null && !sameQueue(previous, observation)) {
+                            current.resolutionOperation?.cancel(); current.resolutionOperation = null
+                            current.resolutionFailure = null; current.upcomingQueueFailure = null
+                            current.unavailableTracks.clear()
+                            val tracks = queueOccurrences(observation).map { occurrence -> occurrence.spotifyTrackIdentifier }.toSet()
+                            current.resolvedQueue.keys.retainAll(tracks)
                         }
+                        current.unavailableTracks.remove(observation.spotifyTrackIdentifier)
                         drive(current)
                     } catch (validationFailure: Throwable) { terminate(current, reason(validationFailure)) }
                 }
@@ -205,8 +209,9 @@ class SpotifyNativeFollowerCoordinator(
             return
         }
         current.paused = !sample.playing
-        if (current.preparedOccurrence != sampledTarget.occurrenceIdentifier) {
-            if (sample.playing && sample.occurrenceIdentifier != null) {
+        if (current.preparedOccurrence != sampledTarget.occurrenceIdentifier || current.preparedQueue?.let { prepared -> !sameQueue(prepared, sampledTarget) } != false
+            || unresolvedOccurrence(current, sampledTarget) == null && current.preparedRecordings != mappedQueue(current, sampledTarget)) {
+            if (sample.playing && sample.occurrenceIdentifier != null && sample.occurrenceIdentifier != sampledTarget.occurrenceIdentifier) {
                 playerStep(current, player.pause(lease, sample.occurrenceIdentifier)) { current.paused = true; drive(current) }
                 return
             }
@@ -241,8 +246,8 @@ class SpotifyNativeFollowerCoordinator(
         if (playing != wasPlaying) {
             val lease = requireNotNull(current.lease)
             val operation = if (playing) player.play(lease, target.occurrenceIdentifier) else player.pause(lease, target.occurrenceIdentifier)
-            playerStep(current, operation) { current.paused = !playing; if (current.target !== target) drive(current) else publish(current, SpotifyNativeFollowerStatus.Following, drift = drift) }
-        } else publish(current, SpotifyNativeFollowerStatus.Following, drift = drift)
+            playerStep(current, operation) { current.paused = !playing; if (current.target !== target) drive(current) else following(current, target, drift) }
+        } else following(current, target, drift)
     }
 
     private fun resolveOrPrepare(current: Lifetime, target: SpotifyConnectPlaybackObservation) {
@@ -250,48 +255,86 @@ class SpotifyNativeFollowerCoordinator(
             hold(current, SpotifyNativeFollowerStatus.Unavailable, current.resolutionFailure)
             return
         }
-        val resolvedRecording = current.resolvedRecording
-        if (resolvedRecording != null && current.resolutionOccurrence == target.occurrenceIdentifier) {
+        val selected = current.resolvedQueue[target.spotifyTrackIdentifier]
+        if (selected != null) {
+            val recordings = mappedQueue(current, target)
             publish(current, SpotifyNativeFollowerStatus.Preparing)
-            val recording = SpotifyPlayerRecording(target.occurrenceIdentifier, resolvedRecording.recordingIdentifier, resolvedRecording.title, resolvedRecording.artist)
-            playerStep(current, player.prepare(requireNotNull(current.lease), recording)) {
+            playerStep(current, player.prepareQueue(requireNotNull(current.lease), recordings, target.occurrenceIdentifier)) {
                 current.preparedOccurrence = target.occurrenceIdentifier
-                current.recordingIdentifier = resolvedRecording.recordingIdentifier
-                current.paused = true
+                current.preparedQueue = target
+                current.preparedRecordings = recordings
+                current.recordingIdentifier = selected.recordingIdentifier
                 drive(current)
             }
             return
         }
+        resolveOccurrence(current, target, SpotifyConnectQueueOccurrence(target.occurrenceIdentifier, target.spotifyTrackIdentifier))
+    }
+
+    private fun following(current: Lifetime, target: SpotifyConnectPlaybackObservation, drift: Double) {
+        publish(current, SpotifyNativeFollowerStatus.Following, drift = drift)
+        unresolvedOccurrence(current, target)?.let { occurrence -> resolveOccurrence(current, target, occurrence) }
+    }
+
+    private fun queueOccurrences(target: SpotifyConnectPlaybackObservation): List<SpotifyConnectQueueOccurrence> =
+        listOf(SpotifyConnectQueueOccurrence(target.occurrenceIdentifier, target.spotifyTrackIdentifier)) + target.upcomingOccurrences
+
+    private fun unresolvedOccurrence(current: Lifetime, target: SpotifyConnectPlaybackObservation): SpotifyConnectQueueOccurrence? =
+        queueOccurrences(target).firstOrNull { occurrence -> occurrence.spotifyTrackIdentifier !in current.resolvedQueue && occurrence.spotifyTrackIdentifier !in current.unavailableTracks }
+
+    private fun mappedQueue(current: Lifetime, target: SpotifyConnectPlaybackObservation): List<SpotifyPlayerRecording> =
+        queueOccurrences(target).mapNotNull { occurrence ->
+            current.resolvedQueue[occurrence.spotifyTrackIdentifier]?.let { recording ->
+                SpotifyPlayerRecording(occurrence.occurrenceIdentifier, recording.recordingIdentifier, recording.title, recording.artist)
+            }
+        }
+
+    private fun resolveOccurrence(current: Lifetime, target: SpotifyConnectPlaybackObservation, unresolved: SpotifyConnectQueueOccurrence) {
         if (current.resolutionOperation != null) return
-        current.resolutionOccurrence = target.occurrenceIdentifier
-        publish(current, SpotifyNativeFollowerStatus.Resolving)
-        val operation = resolver.resolve(current.identity, target.spotifyTrackIdentifier)
+        if (unresolved.occurrenceIdentifier == target.occurrenceIdentifier) publish(current, SpotifyNativeFollowerStatus.Resolving)
+        val operation = resolver.resolve(current.identity, unresolved.spotifyTrackIdentifier)
         current.resolutionOperation = operation
         operation.result.whenComplete { resolution, failure ->
             enqueue(current) {
                 if (current.resolutionOperation !== operation) return@enqueue
                 current.resolutionOperation = null
                 if (!current.connectionAvailable) return@enqueue
-                if (current.target?.occurrenceIdentifier != target.occurrenceIdentifier) { drive(current); return@enqueue }
+                if (current.target?.let { observed -> !sameQueue(observed, target) } != false) { drive(current); return@enqueue }
                 if (failure != null) {
                     val failureReason = reason(failure)
                     if (failureReason == SpotifyNativeFollowerFailureReason.AuthorizationRequired || failureReason == SpotifyNativeFollowerFailureReason.Superseded) {
                         terminate(current, failureReason)
                         return@enqueue
                     }
-                    current.resolutionFailure = SpotifyNativeFollowerFailureReason.RecordingUnavailable
-                    current.resolutionFailedSequence = current.sequence
-                    drive(current)
-                    return@enqueue
+                    current.unavailableTracks.add(unresolved.spotifyTrackIdentifier)
+                    if (unresolved.occurrenceIdentifier != target.occurrenceIdentifier) {
+                        current.upcomingQueueFailure = failureReason
+                        current.unavailableTracks.addAll(target.upcomingOccurrences.filter { occurrence -> occurrence.spotifyTrackIdentifier !in current.resolvedQueue }
+                            .map { occurrence -> occurrence.spotifyTrackIdentifier })
+                    }
+                    if (unresolved.occurrenceIdentifier == target.occurrenceIdentifier) {
+                        current.resolutionFailure = SpotifyNativeFollowerFailureReason.RecordingUnavailable
+                        current.resolutionFailedSequence = current.sequence
+                    }
+                } else when (resolution) {
+                    is SpotifyFollowerRecordingResolution.Matched -> current.resolvedQueue[unresolved.spotifyTrackIdentifier] = resolution.recording
+                    SpotifyFollowerRecordingResolution.Ambiguous, SpotifyFollowerRecordingResolution.Unavailable -> {
+                        current.unavailableTracks.add(unresolved.spotifyTrackIdentifier)
+                        if (unresolved.occurrenceIdentifier != target.occurrenceIdentifier) current.upcomingQueueFailure = SpotifyNativeFollowerFailureReason.RecordingUnavailable
+                        if (unresolved.occurrenceIdentifier == target.occurrenceIdentifier) {
+                            current.resolutionFailure = if (resolution == SpotifyFollowerRecordingResolution.Ambiguous) SpotifyNativeFollowerFailureReason.AmbiguousRecording else SpotifyNativeFollowerFailureReason.RecordingUnavailable
+                            current.resolutionFailedSequence = current.sequence
+                        }
+                    }
                 }
-                when (resolution) {
-                    is SpotifyFollowerRecordingResolution.Matched -> { current.resolvedRecording = resolution.recording; drive(current) }
-                    SpotifyFollowerRecordingResolution.Ambiguous -> { current.resolutionFailure = SpotifyNativeFollowerFailureReason.AmbiguousRecording; current.resolutionFailedSequence = current.sequence; drive(current) }
-                    SpotifyFollowerRecordingResolution.Unavailable -> { current.resolutionFailure = SpotifyNativeFollowerFailureReason.RecordingUnavailable; current.resolutionFailedSequence = current.sequence; drive(current) }
-                }
+                drive(current)
             }
         }
     }
+
+    private fun sameQueue(left: SpotifyConnectPlaybackObservation, right: SpotifyConnectPlaybackObservation): Boolean =
+        left.queueRevision == right.queueRevision && left.occurrenceIdentifier == right.occurrenceIdentifier
+            && left.spotifyTrackIdentifier == right.spotifyTrackIdentifier && left.upcomingOccurrences == right.upcomingOccurrences
 
     private fun hold(current: Lifetime, status: SpotifyNativeFollowerStatus, failure: SpotifyNativeFollowerFailureReason? = null) {
         val lease = current.lease
@@ -359,7 +402,11 @@ class SpotifyNativeFollowerCoordinator(
 
     private fun publish(current: Lifetime, status: SpotifyNativeFollowerStatus, failure: SpotifyNativeFollowerFailureReason? = null, drift: Double? = null) {
         if (!current(current)) return
-        val snapshot = SpotifyNativeFollowerSnapshot(status, current.identity, current.target?.occurrenceIdentifier, current.recordingIdentifier, drift, failure)
+        val upcoming = current.target?.upcomingOccurrences.orEmpty()
+        val unavailableUpcomingCount = upcoming.count { occurrence -> occurrence.spotifyTrackIdentifier in current.unavailableTracks }
+        val upcomingQueuePending = upcoming.any { occurrence -> occurrence.spotifyTrackIdentifier !in current.resolvedQueue && occurrence.spotifyTrackIdentifier !in current.unavailableTracks }
+        val snapshot = SpotifyNativeFollowerSnapshot(status, current.identity, current.target?.occurrenceIdentifier, current.recordingIdentifier, drift, failure,
+            upcomingQueuePending, unavailableUpcomingCount, current.upcomingQueueFailure)
         currentSnapshot = snapshot
         notifyObserver(snapshot)
     }
@@ -418,10 +465,13 @@ class SpotifyNativeFollowerCoordinator(
         var outputBusy = false
         var driveRequested = false
         var paused = true
+        var preparedRecordings = emptyList<SpotifyPlayerRecording>()
+        var preparedQueue: SpotifyConnectPlaybackObservation? = null
+        val resolvedQueue = mutableMapOf<String, SpotifyFollowerRecording>()
+        val unavailableTracks = mutableSetOf<String>()
         var preparedOccurrence: String? = null
         var recordingIdentifier: String? = null
-        var resolutionOccurrence: String? = null
-        var resolvedRecording: SpotifyFollowerRecording? = null
+        var upcomingQueueFailure: SpotifyNativeFollowerFailureReason? = null
         var resolutionFailure: SpotifyNativeFollowerFailureReason? = null
         var resolutionFailedSequence: Long? = null
     }

@@ -1,0 +1,78 @@
+# Jam playback repair — 2026-10-31
+
+The user reported successful Jam creation/QR/second-account admission but no
+shared playback. Host from player with RO returned Network. Membership and app
+hosting were separate actions, country fields were empty, and following only
+projected the current song. These are source defects/UX gaps; the earlier APK
+was not proven to deliver complete shared playback.
+
+## Patch queue
+
+| Patch | State |
+| --- | --- |
+| Shared automatic/remembered country with optional override | Implemented; platform and scoped domain tests pass |
+| Start sharing creates membership then confirms actual app hosting | Implemented; real composition and stale identity tests pass |
+| Join and listen explicitly joins then starts verified following | Implemented; guest admission and failure tests pass |
+| Preserve membership without claiming shared playback after startup failure | Implemented; UI regression covers retained membership |
+| Actionable capture/catalog/auth/activation/publication failure stages | Implemented; wrapped native errors retain known codes |
+| Prevent stale idle native polls from erasing hosting errors | Implemented; two dedicated regressions pass |
+| Current-first upcoming queue matching and authoritative projection | Implemented; partial-queue diagnostics keep current playback active |
+| Player bounded external queue and current playback preservation | Committed in Player 2a66a2a; 289 Android JVM and 19 focused Swift cases passed |
+| True x86_64 native emulator build alongside ARM64 | Implemented; build and installation passed |
+| Emulator registration, hosting activation and same-account control | Registration and membership creation observed; activation/audio remain unverified |
+| Two-account remote playback and measured synchronization | No second account currently available |
+
+## Emulator checkpoint
+
+The connected device is WayDroid x86_64. Its previous installed debug app could
+not load the Metro script. The previous base APK was retained in the ignored
+artifact folder. A bundled preliminary release with actual x86_64 native Spotify
+support installed using adb install -r; application data was retained. Home,
+Profile, Settings and Spotify Jam actually rendered. No account/song text or
+credentials were exported; temporary UI hierarchy files were removed.
+
+The emulator generated a device-pairing request. The user approved it; actual
+React UI reported this device connected to Spotify. One Start sharing action
+created/loaded owned Jam membership; the user independently saw the Jam in their
+Spotify application. This does not prove app host activation, audio, queue
+publication or another device playing. The currently installed preliminary APK
+predates final current-first queue/error-preservation fixes and will be replaced
+only after those sources are integrated. The old desktop probe was cancelled by
+the T3 restart; do not infer a live handle from its old socket.
+
+## Source checks so far
+
+- Mobile Spotify: 563 Node and 159 Jest, before the final partial-queue refinements.
+- Mobile player: 341. Settings: 25 Node and 25 Jest. Full TypeScript passed.
+- App Android JVM: 445; Player Android JVM: 289, zero failures, before the final
+  partial-queue refinement. Host observation regression suite: 59 passed.
+- Player npm test: 387 cases plus architecture and TypeScript passed.
+- x86_64 Rust release native library build passed in 36 seconds.
+- Preliminary x86 release/JVM assembly passed in 81 seconds. Installation and
+  actual React rendering passed; startup timing is not audio evidence.
+
+Feature maps: JAM_LISTENING_FLOW_PROGRESS.md, HOSTING_CONTINUATION_PROGRESS.md,
+FOLLOWER_QUEUE_PROGRESS.md and Player PROGRESS.md. Final frozen-source tests,
+chapter commits, artifact identity and real emulator scenarios follow below.
+
+## Integrated source checkpoint
+
+Spotify library chapter committed as 4582186; Player chapter is 2a66a2a. Final
+source integration passed 569 Spotify Node/163 Jest cases before the final local
+queue-issue UI addition; the refreshed integrated suite result is recorded in
+build/spotify-jam/jam-repair-integrated-spotify.log. Full TypeScript passed.
+Frozen native run passed 447 app JVM and 289 Player JVM cases and x86 release
+assembly in 40 seconds. Three safe queue issue types now distinguish missing
+current playback, the 80-entry hosting bound and existing follower ownership;
+their copy is shown in all three sharing views. Domain queue/store/player
+regression suite passed 112 cases; UI focused coverage passed 68 cases.
+
+The final-source emulator APK installed with saved login retained. Actual native
+connection restored. Host current app queue failed at QueueCapture/Unsupported,
+before catalog matching/activation; no active playback device was established.
+The user confirmed Spotify only showed Jam/participants. A local song was then
+selected for the next check. Standard uiautomator cannot become idle during the
+player progress animation; a temporary read-only UiAutomation helper exports
+only allowlisted static UI labels/bounds, never titles, accounts or credentials.
+The queue-issue copy addition is being rebuilt before repeating that explicit
+check. No desktop probe was restarted.

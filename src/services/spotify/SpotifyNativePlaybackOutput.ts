@@ -2,7 +2,7 @@ import { CommandResultStatus, PlaybackInterruption, PlaybackState } from 'stream
 import type { CommandContext, CommandResult, PlayerCapabilities, PlayerExternalAuthority, PlayerSnapshot, QueueCommandContext, QueueEntry } from 'streaming-service-player';
 import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
 import type { CatalogSong, SharedPlaybackClock, SharedPlaybackExecution, SharedPlaybackIdentity, SharedPlaybackLease,
-  SharedPlaybackOutput, SharedPlaybackLocalSample } from 'streaming-service-spotify-jam';
+  SharedPlaybackOutput, SharedPlaybackRecordingOccurrence, SharedPlaybackLocalSample } from 'streaming-service-spotify-jam';
 
 interface SharedNativePlayer extends PlayerExternalAuthority {
   initialize(): Promise<PlayerCapabilities>;
@@ -22,6 +22,7 @@ export interface SpotifyNativePlaybackDependencies {
 }
 
 const NativePlaybackPolicy = Object.freeze({ minimumMilliseconds: 0, midpointDivisor: 2,
+  maximumQueueEntries: 2001, singleOccurrenceCount: 1,
   maximumSampleRoundTripMilliseconds: 1500 });
 
 interface NativePlaybackLifetime {
@@ -77,26 +78,40 @@ export class SpotifyNativePlaybackOutput implements SharedPlaybackOutput {
       throw this.failure(failure);
     }
     return {
-      prepare: (recording, occurrence, signal) => this.prepare(owner, recording, occurrence, signal),
+      prepare: (recording, occurrence, signal) => this.prepareQueue(owner, [{ recordingIdentifier: recording, occurrenceIdentifier: occurrence }], occurrence, signal),
+      prepareQueue: (recordings, occurrence, signal) => this.prepareQueue(owner, recordings, occurrence, signal),
       sample: signal => this.sample(owner, signal),
       apply: (execution, signal) => this.apply(owner, execution, signal),
       release: () => this.release(owner),
     };
   }
 
-  private prepare(owner: NativePlaybackLifetime, recording: string, occurrence: string, cancellation: AbortSignal): Promise<void> {
+  private prepareQueue(owner: NativePlaybackLifetime, recordings: readonly SharedPlaybackRecordingOccurrence[], occurrence: string, cancellation: AbortSignal): Promise<void> {
+    const captured = recordings.map(recording => Object.freeze({ ...recording }));
     return this.enqueue(async () => {
       this.requireCurrent(owner, cancellation);
-      const song = await this.resolveRecording(owner, recording, cancellation);
-      this.requireCurrent(owner, cancellation);
-      if (!song || song.identifier !== recording) throw new IntegrationFailure(IntegrationFailureCode.NotFound);
+      if (!captured.length || captured.length > NativePlaybackPolicy.maximumQueueEntries
+        || captured.filter(recording => recording.occurrenceIdentifier === occurrence).length !== NativePlaybackPolicy.singleOccurrenceCount
+        || new Set(captured.map(recording => recording.occurrenceIdentifier)).size !== captured.length) throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
+      const songs = new Map<string, CatalogSong>();
+      const entries: QueueEntry[] = [];
+      for (const recording of captured) {
+        let song = songs.get(recording.recordingIdentifier);
+        if (!song) {
+          song = await this.resolveRecording(owner, recording.recordingIdentifier, cancellation) ?? undefined;
+          this.requireCurrent(owner, cancellation);
+          if (!song || song.identifier !== recording.recordingIdentifier) throw new IntegrationFailure(IntegrationFailureCode.NotFound);
+          songs.set(recording.recordingIdentifier, song);
+        }
+        entries.push({ entryIdentifier: recording.occurrenceIdentifier, recordingIdentifier: song.identifier,
+          title: song.title, artist: song.author,
+          ...(song.durationMilliseconds === undefined ? {} : { durationHintMilliseconds: song.durationMilliseconds }) });
+      }
       const snapshot = await this.snapshot(owner, cancellation);
       this.requireApplied(await this.dependencies.native.replaceQueueAndSelect({ ...this.context(owner),
         expectedQueueRevision: snapshot.cursor.queueRevision,
         ...(snapshot.cursor.queueIdentifier === undefined ? {} : { expectedQueueIdentifier: snapshot.cursor.queueIdentifier }),
-        ...(snapshot.cursor.playbackControlRevision === undefined ? {} : { expectedPlaybackControlRevision: snapshot.cursor.playbackControlRevision }) }, [{ entryIdentifier: occurrence,
-        recordingIdentifier: recording, title: song.title, artist: song.author,
-        ...(song.durationMilliseconds === undefined ? {} : { durationHintMilliseconds: song.durationMilliseconds }) }], occurrence, false));
+        ...(snapshot.cursor.playbackControlRevision === undefined ? {} : { expectedPlaybackControlRevision: snapshot.cursor.playbackControlRevision }) }, entries, occurrence, false));
       this.requireCurrent(owner, cancellation);
       owner.occurrenceIdentifier = occurrence;
     });

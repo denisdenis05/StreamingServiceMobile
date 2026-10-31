@@ -7,6 +7,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.security.SecureRandom
+import java.util.Locale
 
 class SpotifyProofKeyModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
     private val factory = SpotifyProofKeyFactory(SecureRandom()) { bytes ->
@@ -14,6 +15,8 @@ class SpotifyProofKeyModule(reactContext: ReactApplicationContext) : ReactContex
     }
 
     override fun getName(): String = MODULE_NAME
+
+    override fun getConstants(): Map<String, Any> = mapOf(DEVICE_REGION_FIELD to Locale.getDefault().country)
 
     @ReactMethod
     fun generate(promise: Promise) {
@@ -31,6 +34,7 @@ class SpotifyProofKeyModule(reactContext: ReactApplicationContext) : ReactContex
 
     companion object {
         private const val MODULE_NAME = "SpotifyProofKey"
+        private const val DEVICE_REGION_FIELD = "deviceRegion"
         private const val VERIFIER_FIELD = "verifier"
         private const val CHALLENGE_FIELD = "challenge"
         private const val STATE_FIELD = "state"

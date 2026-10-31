@@ -10,6 +10,8 @@ data class SpotifyConnectObservationBoundary(
     val receivedElapsedRealtimeMilliseconds: Long
 )
 
+data class SpotifyConnectQueueOccurrence(val occurrenceIdentifier: String, val spotifyTrackIdentifier: String)
+
 data class SpotifyConnectPlaybackObservation(
     val handle: Long,
     val generation: Long,
@@ -25,7 +27,8 @@ data class SpotifyConnectPlaybackObservation(
     val observedElapsedRealtimeMilliseconds: Long,
     val uncertaintyMilliseconds: Double,
     val serverAtMilliseconds: Long,
-    val stateChangedAtServerMilliseconds: Long
+    val stateChangedAtServerMilliseconds: Long,
+    val upcomingOccurrences: List<SpotifyConnectQueueOccurrence> = emptyList()
 )
 
 class SpotifyConnectObservationDecoder {
@@ -75,9 +78,26 @@ class SpotifyConnectObservationDecoder {
                 minOf(duration, estimatedPosition), duration, progressing, buffering,
                 boundary.sentElapsedRealtimeMilliseconds + roundTrip.toDouble() / MIDPOINT_DIVISOR,
                 boundary.receivedElapsedRealtimeMilliseconds, roundTrip.toDouble() / MIDPOINT_DIVISOR + NATIVE_PRECISION_MILLISECONDS,
-                serverTime, stateTime)
+                serverTime, stateTime, upcoming(playback, occurrence))
         } catch (failure: SpotifyConnectFailure) { throw failure }
         catch (_failure: Throwable) { fail(INVALID_RESPONSE_FAILURE) }
+    }
+
+    private fun upcoming(playback: JSONObject, currentOccurrence: String): List<SpotifyConnectQueueOccurrence> {
+        if (!playback.has(NEXT_TRACKS_FIELD)) return emptyList()
+        val tracks = playback.getJSONArray(NEXT_TRACKS_FIELD)
+        if (tracks.length() > SpotifyNativeFollowerPolicy.MaximumUpcomingOccurrences) fail(INVALID_RESPONSE_FAILURE)
+        val identifiers = hashSetOf(currentOccurrence)
+        return buildList {
+            for (position in FIRST_QUEUE_POSITION until tracks.length()) {
+                val track = tracks.getJSONObject(position)
+                val matchedTrack = TRACK_PATTERN.matchEntire(text(track, URI_FIELD)) ?: continue
+                if (track.isNull(OCCURRENCE_FIELD)) continue
+                val occurrence = text(track, OCCURRENCE_FIELD)
+                if (!identifiers.add(occurrence)) fail(INVALID_RESPONSE_FAILURE)
+                add(SpotifyConnectQueueOccurrence(occurrence, matchedTrack.groupValues[TRACK_IDENTIFIER_POSITION]))
+            }
+        }
     }
 
     private fun integer(value: JSONObject, field: String): Long {
@@ -97,6 +117,8 @@ class SpotifyConnectObservationDecoder {
     private fun fail(code: String): Nothing = throw SpotifyConnectFailure(code)
 
     companion object {
+        private const val FIRST_QUEUE_POSITION = 0
+        private const val NEXT_TRACKS_FIELD = "nextTracks"
         private const val MINIMUM_TIME_MILLISECONDS = 0L
         private const val FIRST_IDENTIFIER = 1L
         private const val MAXIMUM_ROUND_TRIP_MILLISECONDS = 1500L

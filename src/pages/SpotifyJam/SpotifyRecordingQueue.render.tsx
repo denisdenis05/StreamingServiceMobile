@@ -1,11 +1,11 @@
-import { useState, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import { TextInput, View } from 'react-native';
 import { JamConnectionStatus, MatchEvidence, MatchStatus, RecordingQueueStatus } from 'streaming-service-spotify-jam';
 import DefaultText from '../../components/DefaultText';
 import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
-import { spotifyMobile, spotifyRecordingQueue } from '../../services/SpotifyMobileService';
+import { spotifyMobile, spotifyRecordingQueue, spotifyListeningCountry } from '../../services/SpotifyMobileService';
 import type { SpotifySongSelection } from '../../services/spotify/SpotifySongSelection';
-import { SpotifyFailureMessages, SpotifyMobilePolicy } from '../../services/spotify/SpotifyMobilePolicy';
+import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
 export const RecordingQueueCopy = Object.freeze({ heading: 'Share a song from your library',
@@ -19,7 +19,8 @@ export const RecordingQueueCopy = Object.freeze({ heading: 'Share a song from yo
 export default function SpotifyRecordingQueue({ selection }: { readonly selection: SpotifySongSelection }) {
   const mobile = useSyncExternalStore(spotifyMobile.subscribe, spotifyMobile.getSnapshot);
   const snapshot = useSyncExternalStore(spotifyRecordingQueue.subscribe, spotifyRecordingQueue.getSnapshot);
-  const [market, setMarket] = useState<string>(SpotifyMobilePolicy.emptyText);
+  const market = useSyncExternalStore(spotifyListeningCountry.subscribe, spotifyListeningCountry.getSnapshot);
+  const setMarket = spotifyListeningCountry.set;
   const busy = snapshot.status === RecordingQueueStatus.Matching || snapshot.status === RecordingQueueStatus.Submitting;
   const currentAccount = spotifyMobile.isApplicationAccount(selection.applicationAccountIdentifier);
   const canFind = currentAccount && !busy && RecordingQueueCopy.marketPattern.test(market.toUpperCase());

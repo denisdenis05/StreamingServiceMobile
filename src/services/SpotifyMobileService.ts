@@ -18,6 +18,7 @@ import { spotifyLibrespotAuthentication, openSpotifyVerificationPage } from './S
 import { SpotifyLoginProviders } from './spotify/SpotifyLoginProviders';
 import { SpotifyAuthorizationStartup } from './spotify/SpotifyAuthorizationStartup';
 import { SpotifyMobilePolicy } from './spotify/SpotifyMobilePolicy';
+export { spotifyListeningCountry } from './SpotifyListeningCountryPlatform';
 import { SpotifyNativePlaybackOutput } from './spotify/SpotifyNativePlaybackOutput';
 import { SpotifyPlaybackFollowerStore } from './spotify/SpotifyPlaybackFollowerStore';
 import { SpotifyNativeFollowerStore } from './spotify/SpotifyNativeFollowerStore';

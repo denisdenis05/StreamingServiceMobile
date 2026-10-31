@@ -149,15 +149,27 @@ class SpotifyPlayerServicePort(
         return lease
     }
 
-    fun prepare(lease: SpotifyPlayerLease, recording: SpotifyPlayerRecording): SpotifyPlayerOperation<Unit> = submit {
-        listOf(recording.occurrenceIdentifier, recording.recordingIdentifier, recording.title, recording.artist).forEach(::requireText)
-        val snapshot = requireLease(lease)
-        execute(snapshot, lease, PlayerOperation.Replace) { command ->
-            val entry = JSONObject().put(ProtocolFields.EntryIdentifier, recording.occurrenceIdentifier)
-                .put(ProtocolFields.RecordingIdentifier, recording.recordingIdentifier)
-                .put(ProtocolFields.Title, recording.title).put(ProtocolFields.Artist, recording.artist)
-            command.put(ProtocolFields.Entries, JSONArray().put(entry))
-                .put(ProtocolFields.ActiveEntryIdentifier, recording.occurrenceIdentifier).put(ProtocolFields.PlayWhenReady, false)
+    fun prepare(lease: SpotifyPlayerLease, recording: SpotifyPlayerRecording): SpotifyPlayerOperation<Unit> =
+        prepareQueue(lease, listOf(recording), recording.occurrenceIdentifier)
+
+    fun prepareQueue(lease: SpotifyPlayerLease, recordings: List<SpotifyPlayerRecording>, occurrenceIdentifier: String): SpotifyPlayerOperation<Unit> {
+        val captured = recordings.toList()
+        return submit {
+            if (captured.isEmpty() || captured.size > SpotifyNativeFollowerPolicy.MaximumUpcomingOccurrences + SingleEntryCount
+                || captured.count { recording -> recording.occurrenceIdentifier == occurrenceIdentifier } != SingleEntryCount
+                || captured.map { recording -> recording.occurrenceIdentifier }.toSet().size != captured.size) fail(SpotifyPlayerFailureReason.InvalidInput)
+            val entries = JSONArray()
+            captured.forEach { recording ->
+                listOf(recording.occurrenceIdentifier, recording.recordingIdentifier, recording.title, recording.artist).forEach(::requireText)
+                entries.put(JSONObject().put(ProtocolFields.EntryIdentifier, recording.occurrenceIdentifier)
+                    .put(ProtocolFields.RecordingIdentifier, recording.recordingIdentifier)
+                    .put(ProtocolFields.Title, recording.title).put(ProtocolFields.Artist, recording.artist))
+            }
+            val snapshot = requireLease(lease)
+            execute(snapshot, lease, PlayerOperation.Replace) { command ->
+                command.put(ProtocolFields.Entries, entries).put(ProtocolFields.ActiveEntryIdentifier, occurrenceIdentifier)
+                    .put(ProtocolFields.PlayWhenReady, false)
+            }
         }
     }
 
@@ -380,6 +392,7 @@ class SpotifyPlayerServicePort(
     }
 
     companion object {
+        private const val SingleEntryCount = 1
         private const val DefaultMaximumPendingOperations = 32
         private const val EmptyCount = 0
         private const val InitialGeneration = 0L
