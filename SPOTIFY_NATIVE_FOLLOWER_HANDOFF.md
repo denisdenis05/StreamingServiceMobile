@@ -59,15 +59,20 @@ No installation or physical-device result is claimed.
 
 ## Live session and concrete next steps
 
-The historical approved probe is no longer running. Fresh read-only probe
-execution 44183 exited with status 1 after reporting a network error and then
-authorization failure Unauthorized. Its pairing link is obsolete. No registration
-or current-session catalog result was observed. Preserve existing Spotify
-processes. When pairing is available, start a fresh read-only probe and verify
-actual approval/registration; a socket alone is not evidence. Then run
-`node tools/validate-spotify-native-search.cjs` once and
-inspect only the bounded allowlisted diagnostic phase/status. Do not retry a
-throttled search automatically or infer the earlier Backpressure HTTP cause.
+After the previous probe exited, the user approved fresh read-only execution
+12242. Native grant and actual generation-1 registration were observed. Preserve
+this running probe and all existing Spotify processes; inspect current output
+before future use rather than assuming the socket or saved session is live.
+
+`node tools/validate-spotify-native-search.cjs` ran once against that session.
+Current playback read and metadata decoding passed; catalog search failed with
+Backpressure. Allowlisted native diagnostics confirmed an actual HTTP 429 from
+https://api.spotify.com at phase httpResponse, followed by requestCompletion
+Backpressure. This attempt reached the API and was rate-limited; it was not a
+local dispatch-admission failure. The cause/scope/duration of the server limit
+is unknown, and this observation does not prove the cause of earlier attempts.
+No automatic retry, playback command or queue mutation was issued. A later
+explicit check after the limit clears is needed to establish decoded candidates.
 
 Catalog success remains unresolved. Cross-account admission/control permissions,
 real queue propagation, audible synchronization/drift, QR scanning, reconnect,

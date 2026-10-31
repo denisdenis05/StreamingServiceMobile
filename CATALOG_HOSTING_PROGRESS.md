@@ -1,5 +1,19 @@
 # Catalog diagnostics and prepared host publication — 2026-10-31
 
+## Current-session live result
+
+The user approved fresh read-only probe execution 12242. Native grant and actual
+generation-1 registration were observed. One execution of
+`node tools/validate-spotify-native-search.cjs` passed current playback read and
+metadata decoding, then returned search Backpressure. Safe native diagnostics
+reported origin https://api.spotify.com, phase httpResponse, actual status 429,
+failure backpressure; completion also reported backpressure. This attempt was
+rate-limited by the HTTP server, not rejected by local dispatch admission. The
+limit scope/duration and causes of older failures remain unknown. No automatic
+retry or playback/queue command followed. The probe remains running and must be
+preserved. A later explicit successful search is still needed to prove candidate
+decoding; this host probe does not verify Android playback or guest permissions.
+
 The native documented search path remains https://api.spotify.com/v1/search.
 No private endpoint, automatic search retry or speculative cause was substituted
 for the earlier live Backpressure failure. Native search diagnostics now emit only
