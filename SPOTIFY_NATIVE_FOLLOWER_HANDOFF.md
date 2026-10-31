@@ -1,3 +1,28 @@
+# Updated hosting-error APK — 2026-10-31
+
+Mobile source `9cef510` preserves safe native hosting failure categories. The
+updated APK is `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`:
+35,886,944 bytes, SHA-256
+`d3aae9cbb4cf6b9081c0e7ea8bb4d75facc6ea57973a44f4942b4551fff30b7d`.
+`PATH=/home/denis/.cargo/bin:$PATH ./android/gradlew -p android
+:app:assembleRelease --no-daemon --console=plain` passed in 23 seconds.
+APK v2 signature verification and 16 KB ZIP alignment passed using build-tools
+37.0.0. All four Spotify ELF LOAD segments use 0x4000 alignment. The fresh
+2,206,596-byte Hermes bundle includes hosting UI and both background hosting-
+recording/authentication task markers. Ignored verification logs are under
+build/spotify-jam/hosting-failure-*.
+
+Source checks passed: 487 Spotify Node, 105 Jest and full mobile TypeScript.
+Only JavaScript failure reporting changed; native source/permissions did not.
+This APK has not been installed or device-tested. The phone's earlier installation
+and Jam-creation evidence belongs to source e82ea20, retained separately as
+`build/spotify-jam/StreamingService-Spotify-Jam-e82ea20-arm64.apk`.
+The populated-queue attempt on that older APK displayed Network; no root cause
+or successful app-led playback was established. Continue without device access
+as requested. Live catalog access, guest permission/shared audio and physical
+background/reconnect/renewal acceptance remain pending. Do not restart or replace
+live native sessions to install this artifact without a deliberate transition.
+
 # Hosting failure categories and device-free continuation — 2026-10-31
 
 The user selected a library song and returned to Spotify Jam. A single new
