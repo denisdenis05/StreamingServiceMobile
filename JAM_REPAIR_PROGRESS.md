@@ -153,3 +153,13 @@ chapter. Final settings rerun passed 25 Node and 25 Jest cases; final full app
 TypeScript completed successfully. The server deployment path remains unknown.
 The source and APK checkpoint is ready; active Spotify device publication,
 audible playback and cross-account/background acceptance remain unverified.
+
+## Resumed implementation and live matching gate — 2026-11-01
+
+The user updated the deployed server and reopened the emulator. Further audit
+found and fixed real source defects; detailed chapter commits, tests and package
+identities are in JAM_REPAIR_RELEASE.md. Two APK updates installed successfully.
+Source 63751ed reached CatalogMatching/Backpressure. Source 2138cf7 distinguishes
+HTTP429 and local capacity; one controlled check reached CatalogMatching/RateLimited.
+No further searches were made. Active host publication and shared audio remain
+unverified. Retain the actual native session; do not reuse old desktop codes.

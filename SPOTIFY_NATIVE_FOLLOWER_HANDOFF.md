@@ -1,3 +1,13 @@
+# Latest checkpoint — 2026-11-01
+
+Read [JAM_REPAIR_RELEASE.md](JAM_REPAIR_RELEASE.md) first. It records the current
+2138cf7 APKs, new source fixes, successful emulator installations and the actual
+CatalogMatching/RateLimited result after the server update. Active hosting and
+shared audio remain unverified; historical postponed-emulator/deployment notes
+below are superseded by this checkpoint.
+
+---
+
 # Current Jam repair release — 2026-10-31
 
 Sources: Mobile `d2f7c98` (plus chapter `1843225`), SpotifyJam `4582186`,
