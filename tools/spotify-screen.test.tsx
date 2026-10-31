@@ -326,3 +326,21 @@ test(SharedStateScreenNames.unavailable, async () => {
     await act(async () => rendered.unmount());
   }
 });
+
+const GuestQueueScreenNames = Object.freeze({ admitted: 'An admitted guest with explicit native capability sees queue controls and still cannot end the Jam',
+  absent: 'A guest without explicit native capability cannot see queue controls',
+  unadmitted: 'Native capability without current-account participation cannot expose guest queue controls' });
+test(GuestQueueScreenNames.admitted, async () => {
+  const membership = connection(true, false).session!;
+  snapshot = { ...connection(true, false), canSubmitGuestCommands: true, session: { ...membership,
+    session: { ...membership.session!, hostDeviceIdentifier: Fixture.deviceIdentifier,
+      participants: [{ identifier: Fixture.spotifyAccount, displayName: Fixture.displayName }] } } };
+  await render(); expect(button(SpotifyJamCopy.addToQueue)).toBeDefined(); expect(button(SpotifyJamCopy.end)).toBeUndefined();
+  expect(button(SpotifyJamCopy.leave)).toBeDefined();
+});
+test(GuestQueueScreenNames.absent, async () => {
+  snapshot = connection(true, false); await render(); expect(button(SpotifyJamCopy.addToQueue)).toBeUndefined();
+});
+test(GuestQueueScreenNames.unadmitted, async () => {
+  snapshot = { ...connection(true, false), canSubmitGuestCommands: true }; await render(); expect(button(SpotifyJamCopy.addToQueue)).toBeUndefined();
+});

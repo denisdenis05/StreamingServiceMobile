@@ -17,6 +17,7 @@ export enum SpotifyAuthenticationAction { Login = 'login', Restore = 'restore', 
 
 export interface SpotifyMobileSnapshot {
   readonly canReconcileSharedState?: boolean;
+  readonly canSubmitGuestCommands?: boolean;
   readonly nativeConnection?: SpotifyConnectSnapshot;
   readonly authenticationAction?: SpotifyAuthenticationAction;
   readonly authenticationMethod?: SpotifyLoginMethod;
@@ -356,7 +357,8 @@ export class SpotifyMobileController {
       useNativeConnect: this.loginSession?.getNativeSessionCredential !== undefined,
     });
     this.stopSessionObservation = this.sessions.subscribe(() => this.observeSession(lifetime));
-    this.publish({ ...this.snapshot, canReconcileSharedState: this.sessions.capabilities.reconcileSharedState, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),
+    this.publish({ ...this.snapshot, canReconcileSharedState: this.sessions.capabilities.reconcileSharedState,
+      canSubmitGuestCommands: this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot && this.sessions.guestCommandsAvailable, connected: true, displayName: identity.displayName, session: this.sessions.getSnapshot(),
       ...(this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot && this.dependencies.nativeConnection
         ? { nativeConnection: this.dependencies.nativeConnection.getSnapshot() } : {}),
       operation: SpotifyMobileOperation.Connecting });
@@ -574,7 +576,8 @@ export class SpotifyMobileController {
     if (!this.current(lifetime) || this.sessions === null) return;
     const session = this.sessions.getSnapshot();
     if (session.status === JamConnectionStatus.Detached) { this.disconnect(); return; }
-    this.publish({ ...this.snapshot, session, failure: session.failure });
+    this.publish({ ...this.snapshot, session, failure: session.failure,
+      canSubmitGuestCommands: this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot && this.sessions.guestCommandsAvailable });
   }
 
   private finish(lifetime: AbortController): void {

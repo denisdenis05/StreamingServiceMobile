@@ -116,7 +116,7 @@ function fixture(overrides = {}) {
   let connectedSessions = null;
   let provider;
   const calls = [];
-  const state = { returnStatus: SpotifyAuthorizationReturnStatus.NotReceived, forgetFailure: null, restores: async () => null, resumes: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
+  const state = { guestCommandVerifier: null, returnStatus: SpotifyAuthorizationReturnStatus.NotReceived, forgetFailure: null, restores: async () => null, resumes: async () => null, forgottenAccounts: [], membershipRefreshes: Fixture.noCalls, inspect: async () => ({ accountIdentifier: Fixture.spotifyAccount, displayName: Fixture.displayName, serviceOrigin: Fixture.serviceOrigin }),
     devices: async () => [{ identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: false },
       { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }],
     create: async () => sessionResponse(), read: async () => null, join: async () => sessionResponse(false),
@@ -149,7 +149,7 @@ function fixture(overrides = {}) {
         join: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Joining, values }); return state.join(...values); },
         end: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Ending, values }); return state.end(...values); },
         leave: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Leaving, values }); return state.leave(...values); },
-      }, { addToQueue: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Queueing, values }); return state.queue(...values); } });
+      }, { addToQueue: async (...values) => { calls.push({ operation: SpotifyMobileOperation.Queueing, values }); return state.queue(...values); } }, null, null, state.guestCommandVerifier);
       return connectedSessions;
     },
     disconnect() { connectedSessions?.detachAccount(); connectedSessions = null; },
@@ -920,4 +920,36 @@ test(NativeLogoutFixture.names.provider, async () => { const shutdown = deferred
   const current = fixture({ shutdownNative: () => shutdown.promise }); current.state.restores = async () => login.provider;
   await current.controller.restore(); current.controller.disconnect(); assertion.equal(login.calls.logout, Fixture.noCalls);
   shutdown.resolve(); await drainNativeLogout(); assertion.equal(login.calls.logout, Fixture.singleCall); current.controller.dispose();
+});
+
+const GuestCommandProjectionNames = Object.freeze({ native: 'Native guest command verifier projects explicit availability and resets on disconnect',
+  browser: 'Browser connection cannot project native guest command capability', account: 'Account replacement clears native guest command capability',
+  replacement: 'Replacing native login with browser login clears guest command capability', absent: 'Native login without a guest verifier does not expose guest commands' });
+test(GuestCommandProjectionNames.native, async () => {
+  const current = fixture(); const login = librespotLogin();
+  current.state.guestCommandVerifier = { verify: async () => true }; current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, true);
+  await current.controller.refreshSession(); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, true);
+  current.controller.disconnect(); assertion.notEqual(current.controller.getSnapshot().canSubmitGuestCommands, true); current.controller.dispose();
+});
+test(GuestCommandProjectionNames.browser, async () => {
+  const current = fixture(); current.state.guestCommandVerifier = { verify: async () => true };
+  await current.controller.connect(Fixture.token); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, false); current.controller.dispose();
+});
+test(GuestCommandProjectionNames.account, async () => {
+  const current = fixture(); const login = librespotLogin();
+  current.state.guestCommandVerifier = { verify: async () => true }; current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true });
+  assertion.notEqual(current.controller.getSnapshot().canSubmitGuestCommands, true); current.controller.dispose();
+});
+test(GuestCommandProjectionNames.replacement, async () => {
+  const current = fixture(); const login = librespotLogin();
+  current.state.guestCommandVerifier = { verify: async () => true }; current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); current.state.login = () => browserLogin().provider;
+  await current.controller.login(loginConfiguration()); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, false); current.controller.dispose();
+});
+test(GuestCommandProjectionNames.absent, async () => {
+  const current = fixture(); const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
+  await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, false); current.controller.dispose();
 });

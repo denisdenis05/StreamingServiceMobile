@@ -14,6 +14,7 @@ import SpotifyHostedQueue from './SpotifyHostedQueue.render';
 import SpotifyJamMembership from './SpotifyJamMembership.render';
 import SpotifySharedPlayback from './SpotifySharedPlayback.render';
 import SpotifyHosting from './SpotifyHosting.render';
+import SpotifyJamQrInvitation from './SpotifyJamQr.render';
 import SpotifyPlaybackControls from './SpotifyPlaybackControls.render';
 import { spotifyRouteSongSelection } from '../../services/spotify/SpotifySongSelection';
 import { SpotifyConnectStatus } from '../../services/spotify/SpotifyConnectStore';
@@ -46,6 +47,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
   const session = snapshot.session?.session ?? null;
   const uncertain = snapshot.session?.status === JamConnectionStatus.Uncertain;
   const canMutate = snapshot.connected && !busy && snapshot.session?.status === JamConnectionStatus.Ready;
+  const canQueueForSession = session?.ownedByCurrentAccount === true || snapshot.canSubmitGuestCommands === true
+    && snapshot.session?.accountIdentifier !== null && session?.participants.some(participant => participant.identifier === snapshot.session?.accountIdentifier) === true;
   const librespotLogin = snapshot.authenticationMethod === SpotifyLoginMethod.Librespot;
   const nativeJoining = librespotLogin && snapshot.nativeConnection !== undefined;
   const canJoinNative = !nativeJoining || snapshot.nativeConnection?.status === SpotifyConnectStatus.Ready && mode === JamJoinMode.Control;
@@ -216,7 +219,8 @@ export default function SpotifyJam({ navigation, route }: SpotifyJamNavigation) 
             {session.participants.map(participant => <DefaultText key={participant.identifier}>{participant.displayName}</DefaultText>)}
             <DefaultButton title={SpotifyJamCopy.share} onPress={() => { void share(); }}
               disabled={busy || snapshot.session?.status !== JamConnectionStatus.Ready} />
-            {session.ownedByCurrentAccount && <View style={styles.section}>
+            <SpotifyJamQrInvitation disabled={!canMutate || !session.active} />
+            {canQueueForSession && <View style={styles.section}>
               <DefaultText style={styles.sectionTitle}>{SpotifyJamCopy.queueHeading}</DefaultText>
               <DefaultText style={styles.explanation}>{SpotifyJamCopy.queueNotice}</DefaultText>
               {!session.hostDeviceIdentifier && <DefaultText>{SpotifyJamCopy.queueNoHost}</DefaultText>}
