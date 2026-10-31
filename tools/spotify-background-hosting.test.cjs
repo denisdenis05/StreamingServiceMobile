@@ -10,10 +10,10 @@ function fixture() {
   const job = { requestIdentifier: Fixture.request, streamingServiceAccountIdentifier: Fixture.account, spotifyAccountIdentifier: Fixture.spotify,
     jamSessionIdentifier: Fixture.jam, hostDeviceIdentifier: Fixture.host, handle: Fixture.handle, generation: Fixture.generation,
     baseAddress: Fixture.address, recordingIdentifier: Fixture.recording, market: Fixture.market };
-  const state = { job, pending: true, account: Fixture.account, match: null, track: Fixture.track };
+  const state = { job, pending: true, account: Fixture.account, match: null, failure: null, track: Fixture.track };
   const calls = { completed: [], failures: [], matched: Fixture.emptyCount, timer: null, cancelled: false };
   const task = new SpotifyBackgroundHostingTask({ async claim() { return state.job; }, async isPending() { return state.pending; },
-    async complete(identifier, track) { calls.completed.push([identifier, track]); }, async fail(identifier) { calls.failures.push(identifier); },
+    async complete(identifier, track) { calls.completed.push([identifier, track]); }, async fail(identifier) { calls.failures.push(identifier); if (state.failure) await state.failure.promise; },
     async restoreAccount() {}, currentAccountIdentifier: () => state.account,
     async match() { calls.matched += Fixture.singleCount; if (state.match) await state.match.promise; return state.track; },
     scheduler: { schedule(_delay, action) { calls.timer = action; return () => { calls.cancelled = true; }; } } });
@@ -43,4 +43,26 @@ test('The task deadline retires work and ignores a later catalog response', asyn
 test('A malformed claim is refused without catalog or native search work', async () => {
   const current = fixture(); current.state.job = { ...current.state.job, handle: String(Fixture.handle) }; await current.task.execute(Fixture.request);
   assertion.equal(current.calls.matched, Fixture.emptyCount); assertion.equal(current.calls.completed.length, Fixture.emptyCount);
+});
+
+test('A native failure acknowledgement that never settles cannot hold a failed task beyond its deadline', async () => {
+  const current = fixture(); current.state.track = null; current.state.failure = deferred();
+  let completed = false;
+  const running = current.task.execute(Fixture.request).then(() => { completed = true; });
+  await flush(); assertion.deepEqual(current.calls.failures, [Fixture.request]);
+  assertion.equal(completed, false); current.calls.timer(); await flush();
+  assertion.equal(completed, true); assertion.equal(current.calls.cancelled, true);
+  current.state.failure.resolve(); await running;
+  assertion.equal(current.calls.completed.length, Fixture.emptyCount);
+});
+
+test('An expired match task settles even when native failure cleanup never acknowledges', async () => {
+  const current = fixture(); current.state.match = deferred(); current.state.failure = deferred();
+  let completed = false;
+  const running = current.task.execute(Fixture.request).then(() => { completed = true; });
+  await flush(); current.calls.timer(); await flush();
+  assertion.equal(completed, true); assertion.equal(current.calls.cancelled, true);
+  assertion.deepEqual(current.calls.failures, [Fixture.request]);
+  current.state.failure.resolve(); current.state.match.resolve(); await running; await flush();
+  assertion.equal(current.calls.completed.length, Fixture.emptyCount);
 });

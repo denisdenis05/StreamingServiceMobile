@@ -177,3 +177,19 @@ tools/spotify-hosting-queue.test.cjs` passed 115 tests. This chapter uses source
 checks only; no emulator, Spotify session, deployment or playback request ran.
 Actual activation/publication, audible playback and cross-account/background
 acceptance remain unverified.
+
+## Bounded headless hosting failure cleanup — 2026-10-31
+
+The hosting recording task now bounds its native failure acknowledgement with the
+same cancellation signal and 30-second deadline as claim, matching and completion.
+Previously a failed or expired match could remain pending forever if the native
+failure bridge never settled. The native failure request is still submitted once;
+late bridge settlement is consumed, and an expired match never completes a track.
+The native broker retains ownership of its own deadline and job retirement.
+
+Feature map: `tools/spotify-background-hosting.test.cjs` separately covers a
+nonsettling native failure acknowledgement after an ordinary matching failure and
+after a matching deadline. Both regressions failed before the change.
+`npx tsc --project tsconfig.spotify.json` passed;
+`node --test tools/spotify-background-hosting.test.cjs` passed all 8 cases.
+No device, emulator, live session or deployment operation was performed.

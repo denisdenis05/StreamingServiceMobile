@@ -43,7 +43,7 @@ export class SpotifyBackgroundHostingTask {
       if (!track || !SpotifyBackgroundHostingPolicy.trackPattern.test(track)) throw new IntegrationFailure(IntegrationFailureCode.NotFound);
       await this.wait(this.dependencies.complete(identifier, track), cancellation.signal);
     } catch {
-      if (claimed) try { await this.dependencies.fail(identifier); } catch { return; }
+      if (claimed) try { await this.wait(this.dependencies.fail(identifier), cancellation.signal); } catch { return; }
     } finally { cancel(); cancellation.abort(); }
   }
   private validate(identifier: string, job: SpotifyBackgroundHostingJob): void {
