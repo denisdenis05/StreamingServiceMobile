@@ -1,5 +1,5 @@
 use librespot_core::{http_client::HttpClientError, Error};
-use streaming_spotify_session::{connect_session::{private_http_failure, private_http_status_failure, verify_device_status}, model::Failure};
+use streaming_spotify_session::{connect_session::{private_http_failure, private_http_status_failure, timed_out_request_failure, verify_device_status}, model::Failure};
 use serde_json::json;
 
 const INVALID_STATUS: u16 = 400;
@@ -78,4 +78,11 @@ fn playable_registration_still_requires_its_exact_device_in_the_returned_cluster
 fn actual_http_rate_limiting_is_distinct_from_local_capacity_backpressure() {
     assert_ne!(private_http_status_failure(LIMITED_STATUS, false).code(), Failure::Backpressure.code());
     assert_eq!(private_http_status_failure(LIMITED_STATUS, false).code(), Failure::RateLimited.code());
+}
+
+#[test]
+fn a_recorded_rate_limit_cannot_be_hidden_by_a_later_error_body_timeout() {
+    for mutation in [false, true] { assert_eq!(timed_out_request_failure(mutation, true), Failure::RateLimited); }
+    assert_eq!(timed_out_request_failure(false, false), Failure::Deadline);
+    assert_eq!(timed_out_request_failure(true, false), Failure::UnknownOutcome);
 }

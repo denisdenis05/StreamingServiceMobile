@@ -1,4 +1,6 @@
 use crate::connect_search::diagnostics::{SearchDiagnostic, SearchDiagnosticStage};
+use crate::connect_search_traffic::{CatalogSearchTraffic, retry_after_seconds, quota_exceeded, MAXIMUM_RATE_LIMIT_BODY_BYTES, RATE_LIMIT_BODY_TIMEOUT_MILLISECONDS};
+use crate::connect_transport::native_monotonic_milliseconds;
 
 use std::{future::Future, time::{Duration, SystemTime, UNIX_EPOCH}};
 
@@ -80,6 +82,7 @@ pub struct NativeConnectSession {
     publication_state: ConnectPublicationState,
     pub failure_stage: ConnectFailureStage,
     verification: RegistrationVerification,
+    catalog_traffic: CatalogSearchTraffic,
 }
 
 pub trait ConnectSessionOperations: Send {
@@ -101,6 +104,10 @@ pub trait ConnectSessionOperations: Send {
 
 impl Drop for NativeConnectSession {
     fn drop(&mut self) { self.session.shutdown(); }
+}
+
+pub fn timed_out_request_failure(mutation: bool, observed_rate_limit: bool) -> Failure {
+    if observed_rate_limit { Failure::RateLimited } else if mutation { Failure::UnknownOutcome } else { Failure::Deadline }
 }
 
 pub fn private_http_status_failure(status: u16, mutation: bool) -> Failure {
@@ -148,7 +155,7 @@ impl NativeConnectSession {
         let session = Session::new(session_configuration, None);
         let mut owned = Self { session, token: None, origin: String::new(), registration: PutStateRequest::new(),
             connection_identifier: None, registered: false, registration_attempted: false, publication_state: ConnectPublicationState::default(), failure_stage: ConnectFailureStage::Restore,
-            verification: RegistrationVerification::Cluster };
+            verification: RegistrationVerification::Cluster, catalog_traffic: CatalogSearchTraffic::default() };
         tokio::time::timeout(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECONDS),
             owned.session.connect(stored.credentials, false)).await.map_err(|_| Failure::Deadline)?.map_err(sanitized_failure)?;
         if owned.session.username() != stored.account_identifier { return Err(Failure::Unauthorized); }
@@ -338,11 +345,24 @@ impl ConnectMetadataOperations for NativeConnectSession {
 impl ConnectSearchOperations for NativeConnectSession {
     async fn search(&mut self, input: ConnectSearchInput) -> Result<Vec<ConnectSearchTrack>, Failure> {
         let input = input.for_account_country(&self.session.country())?;
+        if let Some(cached) = self.catalog_traffic.cached(&input, native_monotonic_milliseconds()) {
+            SearchDiagnostic::new(SearchDiagnosticStage::Decode, None, None)
+                .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(native_monotonic_milliseconds())).emit();
+            return Ok(cached);
+        }
+        let now = native_monotonic_milliseconds();
+        self.catalog_traffic.require_allowed(now).map_err(|failure| {
+            SearchDiagnostic::new(SearchDiagnosticStage::DispatchAdmission, None, Some(failure))
+                .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(now)).emit();
+            failure
+        })?;
         let request = search_request(&input)?;
         let response = execute_authenticated_request(self, &request).await.map_err(|failure| {
+            let failure = if failure == Failure::Deadline && self.catalog_traffic.observed_rate_limit() { Failure::RateLimited } else { failure };
             SearchDiagnostic::new(SearchDiagnosticStage::RequestCompletion, None, Some(failure)).emit(); failure
         })?;
         let decoded = decode_search_response(&input, &response);
+        if let Ok(tracks) = &decoded { self.catalog_traffic.remember(input, tracks.clone(), native_monotonic_milliseconds()); }
         SearchDiagnostic::new(SearchDiagnosticStage::Decode, None, decoded.as_ref().err().copied()).emit();
         decoded
     }
@@ -357,6 +377,16 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
         let request_body = request.body.clone();
         let catalog_search = matches!(request.purpose, ConnectRequestPurpose::CatalogSearch);
         let address = if catalog_search { search_address(request)?.to_string() } else { self.origin.clone() + &request.path };
+        if catalog_search {
+            let now = native_monotonic_milliseconds();
+            if let Err(failure) = self.catalog_traffic.require_allowed(now) {
+                SearchDiagnostic::new(SearchDiagnosticStage::DispatchAdmission, None, Some(failure))
+                    .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(now)).emit();
+                return Err(failure);
+            }
+            let wait_milliseconds = self.catalog_traffic.minimum_wait_milliseconds(now);
+            tokio::time::sleep(Duration::from_millis(wait_milliseconds)).await;
+        }
         let mut request = Request::builder().method(request.method.clone()).uri(address)
             .header(AUTHORIZATION_HEADER, BEARER_PREFIX.to_owned() + access_token)
             .header(ACCEPT_HEADER, request.media_type).header(CONTENT_TYPE_HEADER, request.media_type);
@@ -365,20 +395,48 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
         }
         let request = request.body(request_body.into()).map_err(|_| Failure::InvalidInput)?;
         let dispatch = async {
-            let response = self.session.http_client().request_fut(request)
+            let admitted = self.session.http_client().request_fut(request)
                 .map_err(|failure| {
                     let status = match failure.error.downcast_ref() { Some(HttpClientError::StatusCode(status)) => Some(*status), _ => None };
                     let failure = private_http_failure(failure, mutation);
                     if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::DispatchAdmission, status, Some(failure)).emit(); }
                     failure
-                })?.await.map_err(|failure| {
+                })?;
+            if catalog_search { self.catalog_traffic.dispatched(native_monotonic_milliseconds()); }
+            let response = admitted.await.map_err(|failure| {
                     let failure = private_http_failure(failure.into(), mutation);
                     if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::Transport, None, Some(failure)).emit(); }
                     failure
                 })?;
             let status = response.status();
+            if catalog_search && status.as_u16() == RATE_LIMITED_STATUS {
+                let retry_seconds = retry_after_seconds(response.headers());
+                self.catalog_traffic.rate_limited(native_monotonic_milliseconds(), retry_seconds);
+                SearchDiagnostic::new(SearchDiagnosticStage::HttpResponse, Some(status), Some(Failure::RateLimited))
+                    .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(native_monotonic_milliseconds()))
+                    .rate_limit(retry_seconds, false).emit();
+                let mut body = response.into_body();
+                let quota = tokio::time::timeout(Duration::from_millis(RATE_LIMIT_BODY_TIMEOUT_MILLISECONDS), async {
+                    let mut received = Vec::new();
+                    while let Some(frame) = body.frame().await {
+                        let Ok(frame) = frame else { return false; };
+                        if let Ok(bytes) = frame.into_data() {
+                            if received.len().saturating_add(bytes.len()) > MAXIMUM_RATE_LIMIT_BODY_BYTES { return false; }
+                            received.extend_from_slice(&bytes);
+                        }
+                    }
+                    quota_exceeded(&received)
+                }).await.unwrap_or(false);
+                if quota {
+                    SearchDiagnostic::new(SearchDiagnosticStage::ResponseBody, Some(status), Some(Failure::RateLimited))
+                        .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(native_monotonic_milliseconds()))
+                        .rate_limit(retry_seconds, true).emit();
+                }
+                return Err(Failure::RateLimited);
+            }
             if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::HttpResponse, Some(status),
-                (!status.is_success()).then(|| private_http_status_failure(status.as_u16(), mutation))).emit(); }
+                (!status.is_success()).then(|| private_http_status_failure(status.as_u16(), mutation)))
+                .traffic(self.catalog_traffic.dispatch_count(), None).emit(); }
             if !status.is_success() { return Err(private_http_status_failure(status.as_u16(), mutation)); }
             let mut body = response.into_body();
             let mut received = Vec::new();
@@ -395,7 +453,10 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
             }
             Ok(received)
         };
-        tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), dispatch)
-            .await.map_err(|_| if mutation { Failure::UnknownOutcome } else { Failure::Deadline })?
+        match tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), dispatch).await {
+            Ok(result) => result,
+            Err(_) => Err(timed_out_request_failure(mutation, catalog_search
+                && self.catalog_traffic.observed_rate_limit())),
+        }
     }
 }

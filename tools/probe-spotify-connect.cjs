@@ -58,11 +58,18 @@ function projectEvent(value) {
     hasAcknowledgement: Boolean(cluster.acknowledgementIdentifier) };
 }
 
+const CatalogBooleanType = 'boolean';
+const CatalogTrafficFields = Object.freeze(['retryAfterSeconds', 'cooldownRemainingSeconds', 'requestCount']);
 function projectCatalogDiagnostic(value) {
   if (!value || value.origin !== Policy.catalogOrigin || !Policy.diagnosticStages.includes(value.stage)
     || value.status !== null && (!Number.isSafeInteger(value.status) || value.status < Policy.minimumHttpStatus || value.status > Policy.maximumHttpStatus)
     || value.failure !== null && !Policy.allowedFailures.includes(value.failure)) return null;
-  return { stage: Policy.catalogStage, origin: Policy.catalogOrigin, operation: value.stage, status: value.status, failure: value.failure };
+  const projected = { stage: Policy.catalogStage, origin: Policy.catalogOrigin, operation: value.stage, status: value.status, failure: value.failure };
+  for (const field of CatalogTrafficFields) {
+    if (Number.isSafeInteger(value[field]) && value[field] >= Policy.emptyCount) projected[field] = value[field];
+  }
+  if (typeof value.quotaExceeded === CatalogBooleanType) projected.quotaExceeded = value.quotaExceeded;
+  return projected;
 }
 
 function observeConnect(storedCredential, onSummary, childFactory = spawn, input = process.stdin) {

@@ -143,3 +143,11 @@ async fn a_provider_without_rejected_token_invalidation_does_not_replay_with_the
     assert_eq!(dispatch.access_token_calls, SINGLE_CALL); assert_eq!(dispatch.discarded_tokens, SINGLE_CALL);
     assert_eq!(dispatch.records.len(), SINGLE_CALL);
 }
+
+#[tokio::test]
+async fn catalog_rate_limit_never_renews_credentials_or_repeats_the_search() {
+    let mut dispatch = Dispatch::new(vec![Err(Failure::RateLimited)]);
+    assert_eq!(execute_authenticated_request(&mut dispatch, &request(ConnectRequestPurpose::CatalogSearch)).await, Err(Failure::RateLimited));
+    assert_eq!(dispatch.access_token_calls, SINGLE_CALL); assert_eq!(dispatch.discarded_tokens, NO_CALLS);
+    assert_eq!(dispatch.records.len(), SINGLE_CALL);
+}

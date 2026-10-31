@@ -159,3 +159,23 @@ test(RateLimitDiagnostic.name, () => {
   assertion.equal(projected.status, CatalogFixture.status);
   assertion.notEqual(projected.failure, CatalogFixture.failure);
 });
+
+const TrafficDiagnosticFixture = Object.freeze({ retryAfterSeconds: 120, cooldownRemainingSeconds: 119, requestCount: 1,
+  quotaExceeded: true, invalidCount: -1, invalidSeconds: Number.POSITIVE_INFINITY, unsafeCount: Number.MAX_SAFE_INTEGER + 1,
+  name: 'Catalog diagnostics preserve bounded server cooldown quota and request counters without private fields',
+  invalidName: 'Catalog diagnostics discard malformed pacing fields instead of exporting arbitrary values' });
+test(TrafficDiagnosticFixture.name, () => {
+  const projected = projectCatalogDiagnostic({ ...CatalogFixture, ...TrafficDiagnosticFixture });
+  assertion.equal(projected.retryAfterSeconds, TrafficDiagnosticFixture.retryAfterSeconds);
+  assertion.equal(projected.cooldownRemainingSeconds, TrafficDiagnosticFixture.cooldownRemainingSeconds);
+  assertion.equal(projected.requestCount, TrafficDiagnosticFixture.requestCount);
+  assertion.equal(projected.quotaExceeded, true);
+  assertion.equal(JSON.stringify(projected).includes(TrafficDiagnosticFixture.name), false);
+});
+test(TrafficDiagnosticFixture.invalidName, () => {
+  const projected = projectCatalogDiagnostic({ ...CatalogFixture, retryAfterSeconds: TrafficDiagnosticFixture.invalidSeconds,
+    cooldownRemainingSeconds: TrafficDiagnosticFixture.invalidCount, requestCount: TrafficDiagnosticFixture.unsafeCount,
+    quotaExceeded: CatalogFixture.privateValue });
+  assertion.equal(projected.retryAfterSeconds, undefined); assertion.equal(projected.cooldownRemainingSeconds, undefined);
+  assertion.equal(projected.requestCount, undefined); assertion.equal(projected.quotaExceeded, undefined);
+});
