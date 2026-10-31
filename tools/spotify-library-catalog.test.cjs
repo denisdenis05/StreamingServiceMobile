@@ -5,7 +5,7 @@ require(UrlFixture);
 const { SpotifyLibraryCatalogQuery, SpotifyLibraryCatalogPolicy } = require('../.build/spotify/SpotifyLibraryCatalogQuery');
 const { IntegrationFailure, IntegrationFailureCode } = require('streaming-service-spotify-jam');
 const Fixture = Object.freeze({ address: 'https://synthetic.example/', identifier: 'real-observed-recording', title: 'Observed title', author: 'Observed artist',
-  privateText: 'private-server-message', emptyCount: 0, singleCount: 1, durationMilliseconds: 123000 });
+  privateText: 'private-server-message', emptyCount: 0, singleCount: 1, durationMilliseconds: 123000, alternateDurationMilliseconds: 456000 });
 function fixture() {
   const song = { identifier: Fixture.identifier, title: Fixture.title, author: Fixture.author };
   const state = { current: true, primarySong: null, primaryFailure: null, response: { tracks: [{ id: song.identifier, title: song.title, artistName: song.author }] },
@@ -14,7 +14,7 @@ function fixture() {
   const cancellation = new AbortController();
   const query = new SpotifyLibraryCatalogQuery(Fixture.address, {
     primary: { async lookup() { calls.lookups += Fixture.singleCount; if (state.primaryFailure) throw state.primaryFailure; return state.primarySong; },
-      async search() { calls.searches += Fixture.singleCount; if (state.primaryFailure) throw state.primaryFailure; return [song]; } },
+      async search() { calls.searches += Fixture.singleCount; if (state.primaryFailure) throw state.primaryFailure; return [state.primarySong ?? song]; } },
     async read(address, signal) { calls.reads.push({ address, signal }); if (state.pending) await state.pending; if (state.readFailure) throw state.readFailure; return state.response; },
     observedRecordings: () => state.observed, isCurrent: () => state.current,
   });
@@ -104,4 +104,60 @@ test('Exact observed lookup can find a newly selected song beyond the search-can
   }));
   current.state.observed.push(current.song);
   assertion.deepEqual(await current.query.lookup(Fixture.identifier, current.cancellation.signal), current.song);
+});
+
+test('Legacy search retains actual observed duration so conservative reverse matching can select the known recording', async () => {
+  const { CandidateRanker, MatchStatus } = require('streaming-service-spotify-jam');
+  const current = fixture(); unavailable(current);
+  current.state.observed = [{ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }];
+  const candidates = await current.query.search(current.search, current.cancellation.signal);
+  const ranked = new CandidateRanker().rank({ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }, candidates);
+  assertion.equal(ranked.status, MatchStatus.Matched);
+  assertion.equal(ranked.selected.identifier, Fixture.identifier);
+  assertion.equal(ranked.selected.durationMilliseconds, Fixture.durationMilliseconds);
+});
+test('Legacy unknown future recordings remain ambiguous without observed duration', async () => {
+  const { CandidateRanker, MatchStatus } = require('streaming-service-spotify-jam');
+  const current = fixture(); unavailable(current);
+  const candidates = await current.query.search(current.search, current.cancellation.signal);
+  const ranked = new CandidateRanker().rank({ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }, candidates);
+  assertion.equal(ranked.status, MatchStatus.Ambiguous);
+  assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, undefined);
+});
+test('Observed duration cannot cross recording title artist or identifier boundaries', async () => {
+  for (const identity of [{ title: Fixture.privateText }, { author: Fixture.privateText }, { identifier: Fixture.privateText }]) {
+    const current = fixture(); unavailable(current);
+    current.state.observed = [{ ...current.song, ...identity, durationMilliseconds: Fixture.durationMilliseconds }];
+    const candidates = await current.query.search(current.search, current.cancellation.signal);
+    assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, undefined);
+  }
+});
+test('A present primary recording duration is not replaced with an observed value', async () => {
+  const current = fixture();
+  current.state.primarySong = { ...current.song, durationMilliseconds: Fixture.alternateDurationMilliseconds };
+  current.state.observed = [{ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }];
+  const candidates = await current.query.search(current.search, current.cancellation.signal);
+  assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, Fixture.alternateDurationMilliseconds);
+});
+test('Verified cached duration can enrich a matching legacy candidate after leaving the observed queue', async () => {
+  const current = fixture();
+  current.state.observed = [{ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }];
+  await current.query.lookup(Fixture.identifier, current.cancellation.signal);
+  current.state.observed = []; unavailable(current);
+  const candidates = await current.query.search(current.search, current.cancellation.signal);
+  assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, Fixture.durationMilliseconds);
+});
+
+test('Missing primary duration uses the exact known recording without dropping credit provenance', async () => {
+  const { ArtistCreditSource, CandidateRanker, MatchStatus } = require('streaming-service-spotify-jam');
+  const current = fixture();
+  current.state.primarySong = { ...current.song, artistCreditSource: ArtistCreditSource.Release };
+  current.state.observed = [{ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }];
+  const lookedUp = await current.query.lookup(Fixture.identifier, current.cancellation.signal);
+  const candidates = await current.query.search(current.search, current.cancellation.signal);
+  assertion.equal(lookedUp.durationMilliseconds, Fixture.durationMilliseconds);
+  assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, Fixture.durationMilliseconds);
+  assertion.equal(lookedUp.artistCreditSource, ArtistCreditSource.Release);
+  const ranked = new CandidateRanker().rank({ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }, candidates);
+  assertion.equal(ranked.status, MatchStatus.Ambiguous);
 });

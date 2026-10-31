@@ -24,12 +24,11 @@ export class SpotifyLibraryCatalogQuery implements RecordingQuery {
       this.requireCurrent(cancellation);
       if (primary !== null) {
         if (primary.identifier !== identifier) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-        return this.remember(primary);
+        return this.remember(this.withKnownDuration(primary));
       }
     }
     this.requireCurrent(cancellation);
-    const observed = this.dependencies.observedRecordings().slice(SpotifyLibraryCatalogPolicy.firstPosition, SpotifyLibraryCatalogPolicy.maximumObservedRecordings)
-      .find(recording => recording.identifier === identifier);
+    const observed = this.observed(identifier);
     if (observed) return this.remember(observed);
     return this.cached.get(identifier) ?? null;
   }
@@ -43,7 +42,7 @@ export class SpotifyLibraryCatalogQuery implements RecordingQuery {
       try {
         const primary = await this.dependencies.primary.search(captured, cancellation);
         this.requireCurrent(cancellation);
-        return Object.freeze(primary.slice(SpotifyLibraryCatalogPolicy.firstPosition, captured.limit).map(recording => this.remember(recording)));
+        return Object.freeze(primary.slice(SpotifyLibraryCatalogPolicy.firstPosition, captured.limit).map(recording => this.remember(this.withKnownDuration(recording))));
       } catch (failure) {
         this.requireCurrent(cancellation);
         if (!(failure instanceof IntegrationFailure) || failure.code !== IntegrationFailureCode.NotFound) throw failure;
@@ -69,7 +68,18 @@ export class SpotifyLibraryCatalogQuery implements RecordingQuery {
   private decode(value: unknown): CatalogSong {
     if (!value || typeof value !== SpotifyLibraryCatalogPolicy.objectType) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
     const recording = value as { readonly id: string; readonly title: string; readonly artistName: string };
-    return this.validated({ identifier: recording.id, title: recording.title, author: recording.artistName });
+    return this.withKnownDuration({ identifier: recording.id, title: recording.title, author: recording.artistName });
+  }
+  private withKnownDuration(recording: CatalogSong): CatalogSong {
+    const decoded = this.validated(recording);
+    if (decoded.durationMilliseconds !== undefined) return decoded;
+    const known = this.observed(decoded.identifier) ?? this.cached.get(decoded.identifier);
+    if (!known || known.title !== decoded.title || known.author !== decoded.author || known.durationMilliseconds === undefined) return decoded;
+    return this.validated({ ...decoded, durationMilliseconds: known.durationMilliseconds });
+  }
+  private observed(identifier: string): CatalogSong | undefined {
+    return this.dependencies.observedRecordings().slice(SpotifyLibraryCatalogPolicy.firstPosition, SpotifyLibraryCatalogPolicy.maximumObservedRecordings)
+      .find(recording => recording.identifier === identifier);
   }
   private validated(recording: CatalogSong): CatalogSong {
     if (![recording.identifier, recording.title, recording.author].every(value => typeof value === SpotifyLibraryCatalogPolicy.textType && value.trim())
