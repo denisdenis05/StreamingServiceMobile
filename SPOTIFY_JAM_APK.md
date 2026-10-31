@@ -1,3 +1,34 @@
+# Physical Android installation checkpoint — 2026-10-31
+
+An authorized Pixel 10 Pro is now attached over USB: ARM64, Android API 37.
+The existing APK checksum matched
+`7bfcc1ea616f7c0275a811fd1204d30ee95e67501533c1583b6863057730afa0`.
+`adb install -r build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`
+succeeded without clearing app data. `adb shell am start -W -n
+com.streamingservice/.MainActivity` reported a successful cold launch in 452 ms.
+A later process/activity check confirmed the app running and resumed. This is
+installation/startup evidence only, not proof of React UI or native playback.
+
+After the user unlocked the phone, the actual React UI rendered Home, Profile
+and Spotify Jam. The Jam screen reported this device connected to Spotify using
+its restored app-side session; this does not prove audio or a specific native
+generation. Refresh showed no loaded Jam. One explicit Create Jam action
+succeeded and the screen reported ownership, with no active Spotify host device.
+The created Jam remains active; it was not automatically ended.
+
+Entered hosting market RO and invoked Host current app queue once. It returned
+Unsupported, displayed as That operation is not available for this connection.
+This category covers missing context and unsupported/empty local queue; the
+precise precondition is not established by the UI evidence. App hosting and
+playback did not pass. The user was asked to select an app-library song and return
+to Spotify Jam before another check. No song/account value is required in chat.
+
+Only fixed source UI labels and status/bounds were exported; temporary hierarchy
+files were removed from the device. No broad logcat, raw account/song data or
+credentials were captured. No Spotify process was stopped and no explicit audio
+or queue mutation was sent. Cross-account guest/audio checks still need a second
+account. Source tests and the packaged APK are unchanged.
+
 # Integrated app hosting and background matching build — 2026-10-31
 
 Current APK: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`.
