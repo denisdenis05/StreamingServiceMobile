@@ -20,6 +20,7 @@ const NETWORK_CODE: &str = "network";
 const DEADLINE_CODE: &str = "deadline";
 const UNSUPPORTED_CODE: &str = "unsupported";
 const BACKPRESSURE_CODE: &str = "backpressure";
+const RATE_LIMITED_CODE: &str = "rate-limited";
 const NATIVE_SESSION_REJECTED_CODE: &str = "native-session-rejected";
 const NATIVE_TOKEN_REJECTED_CODE: &str = "native-token-rejected";
 const FORBIDDEN_CODE: &str = "forbidden";
@@ -37,6 +38,7 @@ pub enum Failure {
     Deadline,
     Unsupported,
     Backpressure,
+    RateLimited,
     NativeSessionRejected,
     NativeTokenRejected,
     Forbidden,
@@ -56,6 +58,7 @@ impl Failure {
             Self::Deadline => DEADLINE_CODE,
             Self::Unsupported => UNSUPPORTED_CODE,
             Self::Backpressure => BACKPRESSURE_CODE,
+            Self::RateLimited => RATE_LIMITED_CODE,
             Self::NativeSessionRejected => NATIVE_SESSION_REJECTED_CODE,
             Self::NativeTokenRejected => NATIVE_TOKEN_REJECTED_CODE,
             Self::Forbidden => FORBIDDEN_CODE,

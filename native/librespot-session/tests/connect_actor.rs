@@ -1061,3 +1061,12 @@ async fn http_catalog_backpressure_is_returned_without_repeating_the_search() {
     assert!(matches!(searching.await.unwrap(), Err(Failure::Backpressure)));
     assert_eq!(harness.calls.lock().unwrap().search_requests.len(), ONE_CALL); harness.stop().await;
 }
+
+#[tokio::test]
+async fn http_catalog_rate_limiting_is_preserved_without_repeating_the_search() {
+    let mut harness = Harness::start(None); harness.register().await;
+    harness.calls.lock().unwrap().search_failure = Some(Failure::RateLimited);
+    let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
+    assert!(matches!(searching.await.unwrap(), Err(Failure::RateLimited)));
+    assert_eq!(harness.calls.lock().unwrap().search_requests.len(), ONE_CALL); harness.stop().await;
+}

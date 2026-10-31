@@ -47,3 +47,29 @@ fields to recording evidence or fetch arbitrary album/full-catalog routes. A col
 restored song without actual observed metadata remains unsupported by the legacy
 fallback until actual raw selection or the deployed primary endpoint supplies it.
 Server user-owned appsettings and .idea changes were inspected and preserved.
+
+## Live server update and native failure distinction — 2026-11-01
+
+The user deployed the latest server and reopened WayDroid. A read-only capability
+check now returns 401 for the recording-catalog search route, matching the existing
+protected route, instead of its earlier 404. The new emulator APK installed
+successfully with application data retained. Saved Spotify restoration and actual
+player/Jam UI were observed. One real local Search result was selected without
+exporting song/account data. Start sharing passed queue capture and failed at
+CatalogMatching with Backpressure. It never reached native activation.
+
+The old native code maps both actual HTTP 429 and local bounded capacity to
+Backpressure. Therefore this Android result does not establish an HTTP status;
+the earlier desktop 429 is separate evidence. No automatic or repeated live
+search was performed. Source now distinguishes actual Connect HTTP 429 as
+RateLimited, while bounded local capacity remains Backpressure. Kotlin admits
+that known safe code and JavaScript already supports the separate category.
+Probe projection preserves only the allowlisted category/status; no response
+body, query, token, account or song data is exported.
+
+Dedicated tests: native `connect_http` distinguishes status 429 from local
+backpressure; `connect_actor` preserves RateLimited and submits the search only
+once; `tools/spotify-connect-probe.test.cjs` preserves only the validated safe
+diagnostic. Rust: 238 tests passed. Probe suites: 33 passed. Full Android app and
+Player JVM command passed after the enum change. No new pairing, Spotify process
+termination, production modification or uncertain mutation replay occurred.

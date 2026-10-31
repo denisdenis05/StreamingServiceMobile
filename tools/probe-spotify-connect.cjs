@@ -19,7 +19,7 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
   lineEvent: 'line', closeEvent: 'close', errorEvent: 'error', dataEvent: 'data', endEvent: 'end', failureField: 'failure',
   networkFailure: 'network', invalidResponse: 'invalid-response', canceled: 'canceled',
   allowedFailures: ['network', 'invalid-response', 'invalid-input', 'unauthorized', 'forbidden', 'not-found',
-    'deadline', 'canceled', 'backpressure', 'unknown-outcome', 'unsupported', 'superseded'],
+    'deadline', 'canceled', 'backpressure', 'rate-limited', 'unknown-outcome', 'unsupported', 'superseded'],
   failureCodes: Object.values(IntegrationFailureCode),
   phases: ['authorization', 'nativeGrant', 'observation'], authorizationPhase: 'authorization', grantPhase: 'nativeGrant', observationPhase: 'observation',
   stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'pipe',

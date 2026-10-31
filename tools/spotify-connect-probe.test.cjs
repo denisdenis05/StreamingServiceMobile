@@ -151,3 +151,11 @@ test('Native catalog diagnostic framing ignores raw errors and forwards bounded 
   assertion.equal(JSON.stringify(summaries).includes(Fixture.privateValue), false);
   fixture.child.emit(Fixture.closeEvent, Fixture.zero); await observing;
 });
+
+const RateLimitDiagnostic = Object.freeze({ failure: 'rate-limited', name: 'Catalog diagnostics preserve actual HTTP rate limits independently from local backpressure' });
+test(RateLimitDiagnostic.name, () => {
+  const projected = projectCatalogDiagnostic({ ...CatalogFixture, failure: RateLimitDiagnostic.failure });
+  assertion.equal(projected.failure, RateLimitDiagnostic.failure);
+  assertion.equal(projected.status, CatalogFixture.status);
+  assertion.notEqual(projected.failure, CatalogFixture.failure);
+});

@@ -109,7 +109,7 @@ pub fn private_http_status_failure(status: u16, mutation: bool) -> Failure {
             UNAUTHORIZED_STATUS => Failure::Unauthorized,
             FORBIDDEN_STATUS => Failure::Forbidden,
             NOT_FOUND_STATUS => Failure::NotFound,
-            RATE_LIMITED_STATUS => Failure::Backpressure,
+            RATE_LIMITED_STATUS => Failure::RateLimited,
             value if value >= MINIMUM_SERVER_FAILURE_STATUS && mutation => Failure::UnknownOutcome,
             _ => Failure::Network,
         }

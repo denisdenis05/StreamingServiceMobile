@@ -20,7 +20,7 @@ const PADDING_BYTE: u8 = 0;
 #[test]
 fn rejected_requests_retain_actionable_failure_categories_without_exposing_diagnostics() {
     for (status, expected) in [(INVALID_STATUS, Failure::InvalidInput), (UNAUTHORIZED_STATUS, Failure::Unauthorized),
-        (FORBIDDEN_STATUS, Failure::Forbidden), (MISSING_STATUS, Failure::NotFound), (LIMITED_STATUS, Failure::Backpressure)] {
+        (FORBIDDEN_STATUS, Failure::Forbidden), (MISSING_STATUS, Failure::NotFound), (LIMITED_STATUS, Failure::RateLimited)] {
         for mutation in [false, true] {
             assert_eq!(private_http_status_failure(status, mutation).code(), expected.code());
             let failure = HttpClientError::StatusCode(http::StatusCode::from_u16(status).unwrap()).into();
@@ -72,4 +72,10 @@ fn successful_hidden_observer_registration_does_not_require_an_unrelated_jam_sta
 fn playable_registration_still_requires_its_exact_device_in_the_returned_cluster() {
     let cluster = streaming_spotify_session::connect_wire::normalize_cluster(librespot_protocol::connect::Cluster::new()).unwrap();
     assert!(matches!(streaming_spotify_session::connect_session::verify_registered_device(&cluster, DEVICE_IDENTIFIER, true), Err(Failure::InvalidResponse)));
+}
+
+#[test]
+fn actual_http_rate_limiting_is_distinct_from_local_capacity_backpressure() {
+    assert_ne!(private_http_status_failure(LIMITED_STATUS, false).code(), Failure::Backpressure.code());
+    assert_eq!(private_http_status_failure(LIMITED_STATUS, false).code(), Failure::RateLimited.code());
 }
