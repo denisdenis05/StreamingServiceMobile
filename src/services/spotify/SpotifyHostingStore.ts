@@ -31,6 +31,13 @@ export interface SpotifyHostingDependencies {
 }
 const Policy = Object.freeze({ market: /^[A-Z]{2}$/, track: /^[A-Za-z0-9]{22}$/, maximumSnapshotCharacters: 131072,
   stringType: 'string', initialObservation: 0, observationIncrement: 1 } as const);
+const FailureCodes = new Set<unknown>(Object.values(IntegrationFailureCode));
+function hostingFailureCode(failure: unknown): IntegrationFailureCode {
+  try {
+    const code = (failure as { readonly code?: unknown } | null)?.code;
+    return FailureCodes.has(code) ? code as IntegrationFailureCode : IntegrationFailureCode.Network;
+  } catch { return IntegrationFailureCode.Network; }
+}
 const Empty: SpotifyHostingSnapshot = Object.freeze({ status: SpotifyHostingStatus.Stopped, failure: null });
 
 export class SpotifyHostingStore {
@@ -87,7 +94,7 @@ export class SpotifyHostingStore {
       this.observe(response);
     } catch (failure) {
       if (this.intent !== intent || intent.signal.aborted || this.disposed) return;
-      this.publish(SpotifyHostingStatus.Failed, failure instanceof IntegrationFailure ? failure.code : IntegrationFailureCode.Network);
+      this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure));
     }
   }
   async stop(): Promise<void> {
@@ -98,7 +105,7 @@ export class SpotifyHostingStore {
       await this.dependencies.native?.stopHosting();
       if (this.intent === intent) { this.context = null; this.publish(SpotifyHostingStatus.Stopped); }
     } catch (failure) {
-      if (this.intent === intent) this.publish(SpotifyHostingStatus.Failed, failure instanceof IntegrationFailure ? failure.code : IntegrationFailureCode.Network);
+      if (this.intent === intent) this.publish(SpotifyHostingStatus.Failed, hostingFailureCode(failure));
       throw failure;
     }
   }
@@ -136,7 +143,7 @@ export class SpotifyHostingStore {
         this.context = context;
       } else if (value.status !== SpotifyHostingStatus.Stopped) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
       if (this.snapshot.status === SpotifyHostingStatus.Preparing && value.status === SpotifyHostingStatus.Stopped) return;
-      this.publish(value.status, value.failure === null ? null : IntegrationFailureCode.Network);
+      this.publish(value.status, value.failure === null ? null : hostingFailureCode({ code: value.failure }));
     } catch { this.publish(SpotifyHostingStatus.Failed, IntegrationFailureCode.InvalidResponse); }
   }
   private publish(status: SpotifyHostingStatus, failure: IntegrationFailureCode | null = null): void {

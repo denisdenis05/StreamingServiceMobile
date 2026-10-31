@@ -133,3 +133,13 @@ matching; a later Play remains explicit. The feature tests listed in the latest
 progress chapter cover these behaviors. Earlier sections describe historical
 composition gaps; this section supersedes those source statuses. Live app hosting,
 second-account admission and measured audio/background behavior remain unverified.
+
+## Safe hosting failure categories
+
+The JavaScript store preserves known integration failure codes from React Native
+Promise rejections and scoped native snapshots. A JavaScript class identity is
+not required for a bridge error. Only the enum category enters the public store;
+raw errors/messages and unknown codes are excluded. Dedicated tests in
+`tools/spotify-hosting.test.cjs` cover all known categories for both paths,
+cleanup/catalog and stop errors, unknown values and throwing property access.
+These source tests do not identify a previous device Network result's cause.

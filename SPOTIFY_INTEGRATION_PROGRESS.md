@@ -1,3 +1,29 @@
+# Hosting failure categories and device-free continuation — 2026-10-31
+
+The user selected a library song and returned to Spotify Jam. A single new
+Host current app queue action with market RO displayed the generic Network
+message. The actual native/catalog cause is not established by that message.
+No successful app-led audio or background result is claimed. The user then
+requested continuation without the device; further device actions are deferred.
+
+Source review found that SpotifyHostingStore discarded React Native rejection
+codes unless the error was a library IntegrationFailure instance. It also replaced
+every non-null native snapshot failure with Network. The store now retains only
+known IntegrationFailureCode values from both paths, including start preparation,
+explicit stop and scoped observations. Unknown values and throwing code getters
+still become Network, without copying raw errors, messages or private fields.
+No playback/permission guard or retry behavior changed.
+
+Dedicated feature mapping: tools/spotify-hosting.test.cjs covers every known
+native rejection and snapshot code, cleanup/catalog failure preservation, explicit
+stop rejection, unknown/throwing error privacy and unknown snapshot privacy.
+Before the fix, 32 of 44 cases failed; after it, all 44 passed.
+`npm run test:spotify` passed 487 Node cases and 105 Jest cases across 14 suites.
+`npx tsc --noEmit` passed. Source tests do not establish the phone failure's cause
+or fix live catalog access. Host logs are ignored under build/spotify-jam/hosting-
+failure-*.log. Repackage after this source commit; do not install or disturb live
+native sessions while continuing without the device.
+
 # Physical Android installation checkpoint — 2026-10-31
 
 An authorized Pixel 10 Pro is now attached over USB: ARM64, Android API 37.
