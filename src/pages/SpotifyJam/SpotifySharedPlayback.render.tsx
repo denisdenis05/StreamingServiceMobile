@@ -10,7 +10,7 @@ import { spotifyJamStyles as styles } from './SpotifyJam.style';
 
 export const SharedPlaybackCopy = Object.freeze({ title: 'Listen alongside Spotify',
   explanation: 'Plays matching songs from your library while Spotify supplies playback position. An active Jam host supplies playback. Device sign-in also supports admitted guests after native membership verification.',
-  replacement: 'Starting replaces your local queue. The host controls below send playback commands to Spotify. Pausing locally stops following. Spotify browser sign-in supports foreground listening only. Guest playback requires device sign-in and current Jam admission.',
+  replacement: 'Starting replaces your local queue. Player controls send permitted playback commands to Spotify while following continues. Use Stop following Spotify to return to local playback. Spotify browser sign-in supports foreground listening only. Guest playback requires device sign-in and current Jam admission.',
   market: 'Two-letter country code', emptyText: '', marketCharacters: 2, capitalization: 'characters',
   start: 'Replace queue and follow Spotify', stop: 'Stop following Spotify',
   stopping: 'Stopping local shared playback…',

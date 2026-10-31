@@ -2,6 +2,7 @@ import React, { useState, useSyncExternalStore } from 'react';
 import {
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,7 +12,10 @@ import { colors, fonts, typography } from '../../constants/styling';
 import { playerJam } from '../../services/PlayerJamRuntime';
 import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
 import { SpotifyUpcomingQueueCopy } from '../../services/spotify/SpotifyUpcomingQueueCopy';
-import { SpotifyHostingFailureMessages, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
+import {
+  SpotifyHostingFailureMessages,
+  spotifyHostingQueueIssueMessage,
+} from '../../services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
 import { SettingsIcon, SettingsSymbol } from '../Settings/Settings.icons';
@@ -64,6 +68,9 @@ const Presentation = Object.freeze({
   animation: 'fade' as const,
   pagePercent: '92%' as const,
   maximumWidth: 460,
+  maximumHeight: '90%' as const,
+  keyboardTaps: 'handled' as const,
+  keyboardDismissal: 'on-drag' as const,
 });
 const StatusCopy = Object.freeze({
   [SpotifyPlayerJamMode.Disconnected]: PlayerJamCopy.connect,
@@ -85,12 +92,16 @@ export default function SpotifyPlayerJam({
     playerJam.getSnapshot,
   );
   const [visible, setVisible] = useState(false);
-  const [invitation, setInvitation] = useState<string>(PlayerJamCopy.emptyInvitation);
+  const [invitation, setInvitation] = useState<string>(
+    PlayerJamCopy.emptyInvitation,
+  );
   const shared =
     snapshot.mode === SpotifyPlayerJamMode.Hosting ||
     snapshot.mode === SpotifyPlayerJamMode.Following ||
     snapshot.mode === SpotifyPlayerJamMode.Resolving;
-  const queueIssueMessage = spotifyHostingQueueIssueMessage(snapshot.queueIssue);
+  const queueIssueMessage = spotifyHostingQueueIssueMessage(
+    snapshot.queueIssue,
+  );
   const validMarket = snapshot.market.length === PlayerJamCopy.marketLength;
   const button = (title: string, onPress: () => void, disabled = false) => (
     <Pressable
@@ -153,103 +164,141 @@ export default function SpotifyPlayerJam({
                 <SettingsIcon symbol={SettingsSymbol.Back} />
               </Pressable>
             </View>
-            <Text style={styles.title}>
-              {snapshot.pending
-                ? PlayerJamCopy.updating
-                : snapshot.failure !== null
-                ? PlayerJamCopy.failed
-                : StatusCopy[snapshot.mode]}
-            </Text>
-            {snapshot.mode === SpotifyPlayerJamMode.Hosting && (
-              <Text style={styles.subtitle}>{PlayerJamCopy.hostHelp}</Text>
-            )}
-            {snapshot.mode === SpotifyPlayerJamMode.Following && (
-              <>
-                <Text style={styles.subtitle}>{PlayerJamCopy.followHelp}</Text>
-                <Text style={styles.subtitle}>
-                  {snapshot.owned
-                    ? PlayerJamCopy.ownerSelection
-                    : PlayerJamCopy.guestSelection}
-                </Text>
-              </>
-            )}
-            {(snapshot.connected || snapshot.canCreate || snapshot.canJoin) && (
-              <TextInput
-                accessibilityLabel={PlayerJamCopy.market}
-                placeholder={PlayerJamCopy.market}
-                autoCapitalize={Presentation.characters}
-                autoCorrect={false}
-                maxLength={PlayerJamCopy.marketLength}
-                value={snapshot.market}
-                editable={!snapshot.pending}
-                onChangeText={value => playerJam.setMarket(value)}
-                style={styles.input}
-              />
-            )}
-            {(snapshot.canHost || snapshot.canCreate) &&
-              button(
-                PlayerJamCopy.host,
-                () => {
-                  void playerJam.startSharing();
-                },
-                snapshot.pending ||
-                  !validMarket ||
-                  snapshot.mode === SpotifyPlayerJamMode.Hosting,
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps={Presentation.keyboardTaps}
+              keyboardDismissMode={Presentation.keyboardDismissal}
+            >
+              <Text style={styles.title}>
+                {snapshot.pending
+                  ? PlayerJamCopy.updating
+                  : snapshot.failure !== null
+                  ? PlayerJamCopy.failed
+                  : StatusCopy[snapshot.mode]}
+              </Text>
+              {snapshot.mode === SpotifyPlayerJamMode.Hosting && (
+                <Text style={styles.subtitle}>{PlayerJamCopy.hostHelp}</Text>
               )}
-            {snapshot.canJoin && !shared && (
-              <>
+              {snapshot.mode === SpotifyPlayerJamMode.Following && (
+                <>
+                  <Text style={styles.subtitle}>
+                    {PlayerJamCopy.followHelp}
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    {snapshot.owned
+                      ? PlayerJamCopy.ownerSelection
+                      : PlayerJamCopy.guestSelection}
+                  </Text>
+                </>
+              )}
+              {(snapshot.connected ||
+                snapshot.canCreate ||
+                snapshot.canJoin) && (
                 <TextInput
-                  accessibilityLabel={PlayerJamCopy.invitation}
-                  placeholder={PlayerJamCopy.invitation}
-                  value={invitation}
-                  editable={!snapshot.pending}
+                  accessibilityLabel={PlayerJamCopy.market}
+                  placeholder={PlayerJamCopy.market}
+                  autoCapitalize={Presentation.characters}
                   autoCorrect={false}
-                  onChangeText={setInvitation}
+                  maxLength={PlayerJamCopy.marketLength}
+                  value={snapshot.market}
+                  editable={!snapshot.pending}
+                  onChangeText={value => playerJam.setMarket(value)}
                   style={styles.input}
                 />
-                {button(PlayerJamCopy.join, () => {
-                  void playerJam.joinAndListen(invitation);
-                }, snapshot.pending || !validMarket || !invitation.trim())}
-              </>
-            )}
-            {snapshot.canFollow &&
-              button(
-                PlayerJamCopy.follow,
-                () => {
-                  void playerJam.startFollowing();
-                },
-                snapshot.pending ||
-                  !validMarket ||
-                  snapshot.mode === SpotifyPlayerJamMode.Following,
               )}
-            {(shared ||
-              snapshot.mode === SpotifyPlayerJamMode.Preparing ||
-              snapshot.mode === SpotifyPlayerJamMode.Stopping ||
-              snapshot.mode === SpotifyPlayerJamMode.Failed) &&
-              button(
-                PlayerJamCopy.stop,
-                () => {
-                  void playerJam.stop();
-                },
-                snapshot.mode === SpotifyPlayerJamMode.Stopping,
+              {(snapshot.canHost || snapshot.canCreate) &&
+                button(
+                  PlayerJamCopy.host,
+                  () => {
+                    void playerJam.startSharing();
+                  },
+                  snapshot.pending ||
+                    !validMarket ||
+                    snapshot.mode === SpotifyPlayerJamMode.Hosting,
+                )}
+              {snapshot.canJoin && !shared && (
+                <>
+                  <TextInput
+                    accessibilityLabel={PlayerJamCopy.invitation}
+                    placeholder={PlayerJamCopy.invitation}
+                    value={invitation}
+                    editable={!snapshot.pending}
+                    autoCorrect={false}
+                    onChangeText={setInvitation}
+                    style={styles.input}
+                  />
+                  {button(
+                    PlayerJamCopy.join,
+                    () => {
+                      void playerJam.joinAndListen(invitation);
+                    },
+                    snapshot.pending || !validMarket || !invitation.trim(),
+                  )}
+                </>
               )}
-            {shared && (
-              <Text style={styles.subtitle}>
-                {PlayerJamCopy.unsupportedOptions}
-              </Text>
-            )}
-            {snapshot.upcomingQueuePending && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.pending}</Text>}
-            {(snapshot.unavailableUpcomingCount ?? SpotifyUpcomingQueueCopy.emptyCount) > SpotifyUpcomingQueueCopy.emptyCount && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.unavailable}</Text>}
-            {snapshot.upcomingQueueFailure && !snapshot.upcomingQueuePending && <Text style={styles.subtitle}>{SpotifyUpcomingQueueCopy.failure}</Text>}
-            {queueIssueMessage && <Text accessibilityRole="alert" style={styles.subtitle}>{queueIssueMessage}</Text>}
-            {!queueIssueMessage && snapshot.failureStage && <Text style={styles.subtitle}>{SpotifyHostingFailureMessages[snapshot.failureStage]}</Text>}
-            {!queueIssueMessage && snapshot.failure !== null && (
-              <Text accessibilityRole="alert" style={styles.subtitle}>
-                {SpotifyFailureMessages[snapshot.failure]}
-              </Text>
-            )}
-            <Text style={styles.subtitle}>{PlayerJamCopy.stoppedHelp}</Text>
-            {button(PlayerJamCopy.details, details)}
+              {snapshot.canFollow &&
+                button(
+                  PlayerJamCopy.follow,
+                  () => {
+                    void playerJam.startFollowing();
+                  },
+                  snapshot.pending ||
+                    !validMarket ||
+                    snapshot.mode === SpotifyPlayerJamMode.Following,
+                )}
+              {(shared ||
+                snapshot.mode === SpotifyPlayerJamMode.Preparing ||
+                snapshot.mode === SpotifyPlayerJamMode.Stopping ||
+                snapshot.mode === SpotifyPlayerJamMode.Failed) &&
+                button(
+                  PlayerJamCopy.stop,
+                  () => {
+                    void playerJam.stop();
+                  },
+                  snapshot.mode === SpotifyPlayerJamMode.Stopping,
+                )}
+              {shared && (
+                <Text style={styles.subtitle}>
+                  {PlayerJamCopy.unsupportedOptions}
+                </Text>
+              )}
+              {snapshot.upcomingQueuePending && (
+                <Text style={styles.subtitle}>
+                  {SpotifyUpcomingQueueCopy.pending}
+                </Text>
+              )}
+              {(snapshot.unavailableUpcomingCount ??
+                SpotifyUpcomingQueueCopy.emptyCount) >
+                SpotifyUpcomingQueueCopy.emptyCount && (
+                <Text style={styles.subtitle}>
+                  {SpotifyUpcomingQueueCopy.unavailable}
+                </Text>
+              )}
+              {snapshot.upcomingQueueFailure &&
+                !snapshot.upcomingQueuePending && (
+                  <Text style={styles.subtitle}>
+                    {SpotifyUpcomingQueueCopy.failure}
+                  </Text>
+                )}
+              {queueIssueMessage && (
+                <Text accessibilityRole="alert" style={styles.subtitle}>
+                  {queueIssueMessage}
+                </Text>
+              )}
+              {!queueIssueMessage && snapshot.failureStage && (
+                <Text style={styles.subtitle}>
+                  {SpotifyHostingFailureMessages[snapshot.failureStage]}
+                </Text>
+              )}
+              {!queueIssueMessage && snapshot.failure !== null && (
+                <Text accessibilityRole="alert" style={styles.subtitle}>
+                  {SpotifyFailureMessages[snapshot.failure]}
+                </Text>
+              )}
+              <Text style={styles.subtitle}>{PlayerJamCopy.stoppedHelp}</Text>
+              {button(PlayerJamCopy.details, details)}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -288,11 +337,14 @@ const styles = StyleSheet.create({
   sheet: {
     width: Presentation.pagePercent,
     maxWidth: Presentation.maximumWidth,
+    maxHeight: Presentation.maximumHeight,
     borderRadius: Presentation.radius,
     backgroundColor: colors.background,
     padding: Presentation.page,
     gap: Presentation.spacing,
   },
+  scroll: { flexShrink: Presentation.full },
+  scrollContent: { gap: Presentation.spacing },
   heading: {
     flexDirection: 'row',
     alignItems: 'center',

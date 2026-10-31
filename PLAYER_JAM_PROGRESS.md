@@ -54,3 +54,24 @@ has a current-session diagnosis: approved probe 12242 registered; playback read
 and metadata decoding passed, then the single search received actual HTTP 429
 from Spotify. No retry followed. Successful candidate search remains unverified;
 the registered read-only probe is preserved.
+
+## Bounded player controls and accurate following instructions
+
+The player Jam sheet now has a bounded height and scrollable action content.
+The close action stays outside the scroll area. Keyboard taps reach enabled
+controls and dragging dismisses the keyboard, allowing invitation and country
+input without placing the remaining actions outside the sheet's layout bound.
+The dedicated layout test checks these component contracts; it does not establish
+actual keyboard or small-screen behavior without a device.
+
+Following instructions now describe permitted remote player controls and the
+explicit Stop following action. The former statement that pausing locally stops
+following contradicted the current player command routing.
+
+Feature mapping: `tools/spotify-player-jam-screen.test.tsx` covers bounded scroll
+content, keyboard interaction properties, Stop/details reachability within the
+scroll tree and the fixed close action. `tools/spotify-shared-screen.test.tsx`
+covers the rendered remote-controls and explicit-stop explanation.
+
+Ran focused Jest for both files: 22 passed. `npx tsc --noEmit` passed. Emulator
+and physical-device checks remain postponed; no playback claim follows.

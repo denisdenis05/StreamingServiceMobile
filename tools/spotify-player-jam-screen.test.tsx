@@ -2,7 +2,7 @@ import { SpotifyHostingQueueIssue } from '../src/services/spotify/SpotifyHosting
 import { SpotifyHostingQueueIssueMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
-import { Modal, Pressable, Text, TextInput } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { SpotifyPlayerJamMode } from '../src/services/spotify/SpotifyPlayerJamController';
 import type { SpotifyPlayerJamSnapshot } from '../src/services/spotify/SpotifyPlayerJamController';
 import { SpotifyUpcomingQueueCopy } from '../src/services/spotify/SpotifyUpcomingQueueCopy';
@@ -81,4 +81,17 @@ test('Player sheet reports a partial future queue without an active playback fai
 test.each(Object.values(SpotifyHostingQueueIssue))('Player queue issue %s gives a specific correction', async queueIssue => {
   snapshot = { ...snapshot, mode: SpotifyPlayerJamMode.Failed, failure: IntegrationFailureCode.Unsupported, queueIssue };
   await mount(); expect(JSON.stringify(rendered.toJSON())).toContain(SpotifyHostingQueueIssueMessages[queueIssue]);
+});
+
+const SheetLayout = Object.freeze({ maximumHeight: '90%', keyboardTaps: 'handled', keyboardDismissal: 'on-drag' });
+test('Player Jam controls scroll inside a bounded sheet while the close action stays outside scrolling content', async () => {
+  snapshot = { ...snapshot, mode: SpotifyPlayerJamMode.Following, upcomingQueuePending: true };
+  await mount();
+  const scroll = rendered.root.findByType(ScrollView);
+  expect(scroll.props.keyboardShouldPersistTaps).toBe(SheetLayout.keyboardTaps);
+  expect(scroll.props.keyboardDismissMode).toBe(SheetLayout.keyboardDismissal);
+  expect(scroll.findAllByType(Pressable)).toContain(press(PlayerJamCopy.stop));
+  expect(scroll.findAllByType(Pressable)).toContain(press(PlayerJamCopy.details));
+  expect(scroll.findAllByType(Pressable)).not.toContain(press(PlayerJamCopy.close));
+  expect(StyleSheet.flatten(scroll.parent!.props.style).maxHeight).toBe(SheetLayout.maximumHeight);
 });
