@@ -41,3 +41,7 @@ These are injected source checks. No live Spotify request, pairing, device comma
 or catalog query was made in this chapter. Actual native hosting visibility still
 requires successful host activation and a fresh emulator cluster read. Guest
 permissions and shared audio still require a second account for acceptance.
+
+Integrated source gate: `npm run test:spotify` passes 691 Node cases and 193
+Jest cases after naming the native-discovery test descriptions.
+`npm run test:spotify-probes` passes 36 cases; `npx tsc --noEmit` passes.

@@ -954,7 +954,19 @@ test(GuestCommandProjectionNames.absent, async () => {
   await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, false); current.controller.dispose();
 });
 
-test('Librespot device refresh uses account-bound native discovery without any public device call', async () => {
+const NativeDiscoveryNames = Object.freeze({
+  nativeDiscovery: 'Librespot device refresh uses account-bound native discovery without any public device call',
+  nativeFailure: 'Librespot native device failure remains visible and never falls back to the public Web API',
+  missingPort: 'Librespot without a native discovery port reports unsupported instead of using public devices',
+  oauthDiscovery: 'OAuth device refresh preserves the developer gateway and never calls native discovery',
+  retiredAccount: 'Account retirement discards a late native device result and aborts its application lifetime',
+  readyRefresh: 'Native registration becoming ready refreshes its device list once without public requests or polling',
+  activeSelection: 'Native device refresh follows actual active playback instead of retaining a stale automatic selection',
+  deferredRefresh: 'Native ready discovery waits for an in-flight Jam command and reads only once when idle',
+  retiredDeferredRefresh: 'Account retirement cancels a deferred ready device refresh before the old command finishes',
+});
+
+test(NativeDiscoveryNames.nativeDiscovery, async () => {
   const calls = [];
   const current = fixture({ nativeDevices: async (accountIdentifier, cancellation) => {
     calls.push({ accountIdentifier, cancellation });
@@ -968,7 +980,7 @@ test('Librespot device refresh uses account-bound native discovery without any p
   assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
   assertion.equal(current.controller.getSnapshot().deviceFailure, null); current.controller.dispose();
 });
-test('Librespot native device failure remains visible and never falls back to the public Web API', async () => {
+test(NativeDiscoveryNames.nativeFailure, async () => {
   const current = fixture({ nativeDevices: async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.RateLimited); } });
   current.state.devices = async () => assertion.fail(); current.state.librespotLogin = () => librespotLogin().provider;
   await current.controller.loginWithLibrespot(librespotInput());
@@ -976,19 +988,19 @@ test('Librespot native device failure remains visible and never falls back to th
   assertion.equal(current.controller.getSnapshot().deviceFailure, library.IntegrationFailureCode.RateLimited);
   assertion.deepEqual(current.controller.getSnapshot().devices, []); current.controller.dispose();
 });
-test('Librespot without a native discovery port reports unsupported instead of using public devices', async () => {
+test(NativeDiscoveryNames.missingPort, async () => {
   const current = fixture(); current.state.devices = async () => assertion.fail(); current.state.librespotLogin = () => librespotLogin().provider;
   await current.controller.loginWithLibrespot(librespotInput());
   assertion.equal(current.controller.getSnapshot().deviceFailure, library.IntegrationFailureCode.Unsupported); current.controller.dispose();
 });
-test('OAuth device refresh preserves the developer gateway and never calls native discovery', async () => {
+test(NativeDiscoveryNames.oauthDiscovery, async () => {
   const current = fixture({ nativeDevices: async () => assertion.fail() });
   current.state.login = () => browserLogin().provider;
   await current.controller.login({ clientIdentifier: Fixture.deviceIdentifier, redirectAddress: SpotifyMobilePolicy.authorizationRedirectAddress });
   assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
   assertion.equal(current.controller.getSnapshot().deviceFailure, null); current.controller.dispose();
 });
-test('Account retirement discards a late native device result and aborts its application lifetime', async () => {
+test(NativeDiscoveryNames.retiredAccount, async () => {
   const delayed = deferred(); const discoveryStarted = deferred(); let cancellation;
   const current = fixture({ nativeDevices: async (accountIdentifier, signal) => { cancellation = signal; discoveryStarted.resolve(); return delayed.promise; } });
   current.state.librespotLogin = () => librespotLogin().provider;
@@ -998,7 +1010,7 @@ test('Account retirement discards a late native device result and aborts its app
   assertion.equal(cancellation.aborted, true); assertion.equal(current.controller.getSnapshot().connected, false);
   assertion.deepEqual(current.controller.getSnapshot().devices, []); current.controller.dispose();
 });
-test('Native registration becoming ready refreshes its device list once without public requests or polling', async () => {
+test(NativeDiscoveryNames.readyRefresh, async () => {
   const observers = new Set(); let reads = Fixture.noCalls;
   let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
   const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
@@ -1017,7 +1029,7 @@ test('Native registration becoming ready refreshes its device list once without 
   for (const observer of observers) observer(); await Promise.resolve();
   assertion.equal(reads, Fixture.connectionAndRefreshCount); current.controller.dispose();
 });
-test('Native device refresh follows actual active playback instead of retaining a stale automatic selection', async () => {
+test(NativeDiscoveryNames.activeSelection, async () => {
   let activeIdentifier = Fixture.deviceIdentifier;
   const current = fixture({ nativeDevices: async () => [
     { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: activeIdentifier === Fixture.deviceIdentifier },
@@ -1028,7 +1040,7 @@ test('Native device refresh follows actual active playback instead of retaining 
   activeIdentifier = Fixture.otherDeviceIdentifier; await current.controller.reloadDevices();
   assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.otherDeviceIdentifier); current.controller.dispose();
 });
-test('Native ready discovery waits for an in-flight Jam command and reads only once when idle', async () => {
+test(NativeDiscoveryNames.deferredRefresh, async () => {
   const observers = new Set(); let reads = Fixture.noCalls;
   let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
   const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
@@ -1041,7 +1053,7 @@ test('Native ready discovery waits for an in-flight Jam command and reads only o
   creating.resolve(sessionResponse()); await pending; await waitForSavedLoginIdle(current.controller);
   assertion.equal(reads, Fixture.connectionAndRefreshCount); current.controller.dispose();
 });
-test('Account retirement cancels a deferred ready device refresh before the old command finishes', async () => {
+test(NativeDiscoveryNames.retiredDeferredRefresh, async () => {
   const observers = new Set(); let reads = Fixture.noCalls;
   let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
   const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
