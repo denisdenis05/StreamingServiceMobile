@@ -8,8 +8,10 @@ import { reactNativePlaybackTransport } from './ReactNativePlaybackTransport';
 import { PlaybackRuntime } from './player/PlaybackRuntime';
 import { playbackQueueChanges } from './player/PlaybackQueueChangeLifecycle';
 import { PlaybackCatalogMapping } from './player/PlaybackCatalogMapping';
+import { createPlaybackListeningPayload } from './player/PlaybackListeningPayload';
 import { PlaybackReportingQueue, PlaybackTracker } from './PlaybackTracker';
 import { authenticationSession } from './AuthenticationService';
+import { notifyListeningHistoryChanged } from './ListeningHistoryChanges';
 import { createApplicationNetworkClient } from './ApplicationNetworkClient';
 import { findCachedTrackAddress, clearAccountAudioCache, retireLegacyAudioCache } from './cache/AudioCacheService';
 import { PLACEHOLDER_ALBUM_COVER, TEMPORARY_API_URL } from '../constants/placeholders';
@@ -18,7 +20,7 @@ export const AudioRuntimePolicy = Object.freeze({
   identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1, separator: '-',
   minimumCacheBytes: 0, filePrefix: 'file://', millisecondsPerSecond: 1000, unknownDurationMilliseconds: 0,
   startRoute: '/lastfm/start-playback', suggestionRoute: 'Metadata/get-suggested-recordings?count=20',
-  unknownAlbum: 'Unknown Album', failureMessage: 'Audio playback operation failed.',
+  failureMessage: 'Audio playback operation failed.',
   legacyCleanupDelayMilliseconds: 1500,
   playbackFailureMessage: 'Audio playback failed. Tap Play to try again.', toastType: 'message',
 });
@@ -51,12 +53,14 @@ export const audioRuntime = new PlaybackRuntime({
     const client = createApplicationNetworkClient({ accountIdentifier: account.accountIdentifier, token: account.token });
     const durationSeconds = Math.floor((snapshot.durationMilliseconds ?? entry?.durationHintMilliseconds
       ?? AudioRuntimePolicy.unknownDurationMilliseconds) / AudioRuntimePolicy.millisecondsPerSecond);
+    const payload = createPlaybackListeningPayload({ ...view, recordingIdentifier: view.recordingIdentifier }, durationSeconds);
     return new PlaybackTracker(async () => {
-      const response = await client.post<{ success?: boolean; sessionId?: string }>(AudioRuntimePolicy.startRoute, {
-        trackId: view.recordingIdentifier, artist: view.artist, track: view.title, album: view.album ?? AudioRuntimePolicy.unknownAlbum,
-        durationSeconds, isLocalCached: view.isLocalCached, playlistId: view.playlistIdentifier,
-      });
-      return response.data.success ? response.data.sessionId ?? null : null;
+      const response = await client.post<{ success?: boolean; sessionId?: string }>(AudioRuntimePolicy.startRoute, payload);
+      const sessionIdentifier = response.data.success ? response.data.sessionId ?? null : null;
+      if (sessionIdentifier !== null && authenticationSession.getSnapshot().accountIdentifier === account.accountIdentifier) {
+        try { notifyListeningHistoryChanged(); } catch {}
+      }
+      return sessionIdentifier;
     }, client, reports);
   } }),
   async fetchSuggestions() {

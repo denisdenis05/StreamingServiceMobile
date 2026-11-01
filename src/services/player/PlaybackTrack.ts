@@ -7,6 +7,7 @@ export interface PlaybackTrack {
   readonly artist?: string;
   readonly album?: string;
   readonly albumIdentifier?: string;
+  readonly sourceAlbumIdentifier?: string;
   readonly artworkAddress?: string;
   readonly smallArtworkAddress?: string;
   readonly thumbnailArtworkAddress?: string;
@@ -24,6 +25,7 @@ export interface PlaybackTrackView {
   readonly artist: string;
   readonly album?: string;
   readonly albumIdentifier?: string;
+  readonly sourceAlbumIdentifier?: string;
   readonly artworkAddress?: string;
   readonly smallArtworkAddress?: string;
   readonly thumbnailArtworkAddress?: string;

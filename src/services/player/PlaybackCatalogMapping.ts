@@ -23,7 +23,7 @@ export class PlaybackCatalogMapping {
       ...(recording.smallCover === undefined ? {} : { smallArtworkAddress: recording.smallCover }),
       ...(recording.verySmallCover === undefined ? {} : { thumbnailArtworkAddress: recording.verySmallCover }),
       ...(recording.releaseId === undefined && albumIdentifier === undefined ? {} : { albumIdentifier: recording.releaseId ?? albumIdentifier! }),
-      ...(playlistIdentifier === undefined ? {} : { playlistIdentifier }),
+      ...(playlistIdentifier === undefined ? (albumIdentifier === undefined ? {} : { sourceAlbumIdentifier: albumIdentifier }) : { playlistIdentifier }),
       ...(recording.isLiked === undefined ? {} : { isLiked: recording.isLiked }),
     };
   }

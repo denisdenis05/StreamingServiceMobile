@@ -5,12 +5,14 @@ const { resolve } = require('node:path');
 const { runInNewContext } = require('node:vm');
 const typescript = require('typescript');
 const { NativePlaybackReporting } = require('../.build/audio-migration/NativePlaybackReporting');
+const { createPlaybackListeningPayload } = require('../.build/audio-migration/PlaybackListeningPayload');
 const { PlaybackState, PlaybackIntent, PlayerEventType, EntryChangeReason } = require('streaming-service-player');
 
 const IntegrationFixture = Object.freeze({
   trackerPath: '../src/services/PlaybackTracker.ts', sourceEncoding: 'utf8', engine: 'integration-engine', account: 'integration-account',
   otherAccount: 'other-integration-account', firstEntry: 'first-entry', secondEntry: 'second-entry',
   firstSession: 'first-reporting-session', secondSession: 'second-reporting-session', initialSequence: 1,
+  albumIdentifier: 'album-source', playlistIdentifier: 'playlist-source', title: 'Fixture title', artist: 'Fixture artist', durationSeconds: 180,
   changeSequence: 2, playingSequence: 3, seekSequence: 4, initialRevision: 1, initialTimeMilliseconds: 0,
   intervalIncrement: 1, originalPositionMilliseconds: 40000, destinationPositionMilliseconds: 2000,
   originalPositionSeconds: 40, destinationPositionSeconds: 2, millisecondsPerSecond: 1000,
@@ -75,8 +77,13 @@ function scenario() {
       if (endpoint === IntegrationFixture.startEndpoint && entryIdentifier === IntegrationFixture.firstEntry) return startResponse.promise;
       return { data: { sessionId: IntegrationFixture.secondSession } };
     } };
+    const payload = createPlaybackListeningPayload({ entryIdentifier, recordingIdentifier: entryIdentifier,
+      title: IntegrationFixture.title, artist: IntegrationFixture.artist, isLocalCached: false,
+      ...(entryIdentifier === IntegrationFixture.firstEntry ? { sourceAlbumIdentifier: IntegrationFixture.albumIdentifier }
+        : { playlistIdentifier: IntegrationFixture.playlistIdentifier }),
+    }, IntegrationFixture.durationSeconds);
     return new tracker.PlaybackTracker(async () => {
-      const response = await client.post(IntegrationFixture.startEndpoint, { trackId: entryIdentifier });
+      const response = await client.post(IntegrationFixture.startEndpoint, payload);
       return response.data.sessionId;
     }, client, reportingQueue);
   } }, failure => tracker.failures.push(failure));
@@ -118,6 +125,11 @@ test(TestNames.identity, async () => {
   assertion.equal(seeked.body.toSeconds, IntegrationFixture.destinationPositionSeconds);
   const startEntries = environment.requests.filter(request => request.endpoint === IntegrationFixture.startEndpoint).map(request => request.body.trackId);
   assertion.deepEqual(startEntries, [IntegrationFixture.firstEntry, IntegrationFixture.secondEntry]);
+  const startRequests = environment.requests.filter(request => request.endpoint === IntegrationFixture.startEndpoint);
+  assertion.equal(startRequests[IntegrationFixture.firstIndex].body.sourceAlbumId, IntegrationFixture.albumIdentifier);
+  assertion.equal(startRequests[IntegrationFixture.firstIndex].body.playlistId, null);
+  assertion.equal(startRequests[IntegrationFixture.secondIndex].body.sourceAlbumId, null);
+  assertion.equal(startRequests[IntegrationFixture.secondIndex].body.playlistId, IntegrationFixture.playlistIdentifier);
   environment.reporting.clear(); await settle();
 });
 test(TestNames.failure, async () => {

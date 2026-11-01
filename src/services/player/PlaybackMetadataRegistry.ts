@@ -70,6 +70,8 @@ export class PlaybackMetadataRegistry implements PlaybackTrackViewSource {
         recordingIdentifier: known?.recordingIdentifier ?? entry.recordingIdentifier!,
       }),
       ...(known?.albumIdentifier === undefined ? {} : { albumIdentifier: known.albumIdentifier }),
+      ...(known?.sourceAlbumIdentifier === undefined || entry.playlistIdentifier !== undefined || known.playlistIdentifier !== undefined
+        ? {} : { sourceAlbumIdentifier: known.sourceAlbumIdentifier }),
       ...(!artworkMatches || known?.smallArtworkAddress === undefined ? {} : { smallArtworkAddress: known.smallArtworkAddress }),
       ...(!artworkMatches || known?.thumbnailArtworkAddress === undefined ? {} : { thumbnailArtworkAddress: known.thumbnailArtworkAddress }),
       ...(known?.isLiked === undefined ? {} : { isLiked: known.isLiked }),
