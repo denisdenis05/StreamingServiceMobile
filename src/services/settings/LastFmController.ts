@@ -4,7 +4,16 @@ export const LastFmPolicy = Object.freeze({
   connect: 'lastfm/connect',
   disconnect: 'lastfm/disconnect',
   failure: 'Last.fm could not complete this request. Please try again.',
-  unavailable: 'Last.fm authorization could not be opened.',
+  unavailable:
+    'The Last.fm approval page could not be opened. Try Connect Last.fm again.',
+  statusFailure:
+    'Could not check Last.fm. Check your connection and refresh status.',
+  authorizationFailure:
+    'Last.fm approval was not completed. Try Connect Last.fm again.',
+  connectionFailure:
+    'Could not confirm your Last.fm connection. Refresh status before trying to connect again.',
+  disconnectFailure:
+    'Could not disconnect Last.fm. Check your connection and try again.',
   maximumUsernameCharacters: 256,
   maximumDateCharacters: 128,
   booleanType: 'boolean',
@@ -43,8 +52,10 @@ export function decodeLastFmStatus(value: unknown): LastFmStatus {
 export enum LastFmOperation {
   Idle = 'idle',
   Loading = 'loading',
+  Opening = 'opening',
   Authorizing = 'authorizing',
   Connecting = 'connecting',
+  Disconnecting = 'disconnecting',
 }
 export interface LastFmStatus {
   readonly connected: boolean;
@@ -54,6 +65,7 @@ export interface LastFmStatus {
 export interface LastFmSnapshot extends LastFmStatus {
   readonly operation: LastFmOperation;
   readonly failure: string | null;
+  readonly authorizationPending: boolean;
 }
 export interface LastFmGateway {
   status(signal: AbortSignal): Promise<LastFmStatus>;
@@ -74,6 +86,7 @@ export class LastFmController {
     ...disconnected,
     operation: LastFmOperation.Idle,
     failure: null,
+    authorizationPending: false,
   };
   private readonly listeners = new Set<() => void>();
   private accountIdentifier: string | null = null;
@@ -96,6 +109,7 @@ export class LastFmController {
     this.cancel();
     this.accountIdentifier = accountIdentifier;
     this.publish({
+      ...this.snapshot,
       ...disconnected,
       operation: LastFmOperation.Idle,
       failure: null,
@@ -116,17 +130,25 @@ export class LastFmController {
   authorizationFailed = (): void => {
     if (this.authorizationGeneration !== this.generation) return;
     this.cancel();
-    this.publish({ ...this.snapshot, failure: LastFmPolicy.failure });
+    this.publish({
+      ...this.snapshot,
+      failure: LastFmPolicy.authorizationFailure,
+    });
   };
   refresh = async (): Promise<void> => {
     if (
       this.accountIdentifier === null ||
-      this.snapshot.operation === LastFmOperation.Connecting
+      this.snapshot.operation === LastFmOperation.Connecting ||
+      this.snapshot.operation === LastFmOperation.Opening ||
+      this.snapshot.operation === LastFmOperation.Disconnecting
     )
       return;
     await this.perform(LastFmOperation.Loading, async signal => {
       const status = decodeLastFmStatus(await this.gateway.status(signal));
+      if (signal.aborted) return this.snapshot;
+      if (status.connected) this.authorizationGeneration = null;
       return {
+        ...this.snapshot,
         ...status,
         operation:
           this.authorizationGeneration === this.generation && !status.connected
@@ -139,11 +161,12 @@ export class LastFmController {
   authorize = async (): Promise<void> => {
     if (
       this.accountIdentifier === null ||
-      this.snapshot.operation !== LastFmOperation.Idle
+      this.snapshot.operation !== LastFmOperation.Idle ||
+      this.snapshot.connected
     )
       return;
     this.authorizationGeneration = this.generation;
-    await this.perform(LastFmOperation.Loading, async signal => {
+    await this.perform(LastFmOperation.Opening, async signal => {
       const address = await this.gateway.authorization(signal);
       if (signal.aborted) return this.snapshot;
       const opened = await this.browser.open(address);
@@ -167,19 +190,27 @@ export class LastFmController {
       await this.gateway.connect(token, signal);
       if (signal.aborted) return this.snapshot;
       const status = decodeLastFmStatus(await this.gateway.status(signal));
-      return { ...status, operation: LastFmOperation.Idle, failure: null };
+      if (!status.connected) throw new Error(LastFmPolicy.connectionFailure);
+      return {
+        ...this.snapshot,
+        ...status,
+        operation: LastFmOperation.Idle,
+        failure: null,
+      };
     });
   };
   disconnect = async (): Promise<void> => {
     if (
       this.accountIdentifier === null ||
-      this.snapshot.operation !== LastFmOperation.Idle
+      this.snapshot.operation !== LastFmOperation.Idle ||
+      !this.snapshot.connected
     )
       return;
     this.authorizationGeneration = null;
-    await this.perform(LastFmOperation.Loading, async signal => {
+    await this.perform(LastFmOperation.Disconnecting, async signal => {
       await this.gateway.disconnect(signal);
       return {
+        ...this.snapshot,
         ...disconnected,
         operation: LastFmOperation.Idle,
         failure: null,
@@ -201,17 +232,36 @@ export class LastFmController {
         this.publish(snapshot);
     } catch {
       if (generation === this.generation && !request.signal.aborted) {
-        this.authorizationGeneration = null;
+        if (operation !== LastFmOperation.Loading)
+          this.authorizationGeneration = null;
         this.publish({
           ...this.snapshot,
-          operation: LastFmOperation.Idle,
-          failure: LastFmPolicy.failure,
+          operation:
+            this.authorizationGeneration === this.generation
+              ? LastFmOperation.Authorizing
+              : LastFmOperation.Idle,
+          failure: this.failureFor(operation),
         });
       }
     }
   }
+  private failureFor(operation: LastFmOperation): string {
+    switch (operation) {
+      case LastFmOperation.Opening:
+        return LastFmPolicy.unavailable;
+      case LastFmOperation.Connecting:
+        return LastFmPolicy.connectionFailure;
+      case LastFmOperation.Disconnecting:
+        return LastFmPolicy.disconnectFailure;
+      default:
+        return LastFmPolicy.statusFailure;
+    }
+  }
   private publish(snapshot: LastFmSnapshot): void {
-    this.snapshot = Object.freeze(snapshot);
+    this.snapshot = Object.freeze({
+      ...snapshot,
+      authorizationPending: this.authorizationGeneration === this.generation,
+    });
     this.listeners.forEach(listener => {
       try {
         listener();
