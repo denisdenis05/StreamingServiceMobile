@@ -1,3 +1,5 @@
+import { PlaybackQueueContextPersistence } from './PlaybackQueueContextPersistence';
+import type { PlaybackQueueContextStorage } from './PlaybackQueueContextPersistence';
 import type { PlaybackNativeSessionOwnership } from './PlaybackNativeSessionOwnership';
 import {
   PlayerStateStore,
@@ -51,6 +53,7 @@ export interface PlaybackRuntimeConfiguration {
   readonly native: StreamingPlayer;
   readonly queueChanges?: PlaybackQueueChangeLifecycle;
   readonly sessionOwnership?: PlaybackNativeSessionOwnership;
+  readonly queueContextStorage?: PlaybackQueueContextStorage;
   readonly reportPlaybackFailure?: (failure: PlayerError) => void;
   readonly mediaServerAddress: string;
   readonly cache: PlaybackCacheReader;
@@ -82,6 +85,8 @@ export class PlaybackRuntime {
   private selectionFence = {};
   private reportedFailure: string | null = null;
   private accountIdentifier: string | null = null;
+  private readonly queueContext: PlaybackQueueContextPersistence | null;
+  private readonly stopQueueContext: () => void;
 
   constructor(configuration: PlaybackRuntimeConfiguration) {
     this.native = configuration.native;
@@ -123,6 +128,15 @@ export class PlaybackRuntime {
       ),
       this.reportFailure,
     );
+    const contextProjection = new NativeQueueProjection(this.native, metadata);
+    this.queueContext = configuration.queueContextStorage === undefined ? null : new PlaybackQueueContextPersistence({
+      serverAddress: configuration.mediaServerAddress,
+      storage: configuration.queueContextStorage,
+      metadata,
+      getSnapshot: () => this.dispatcher.getSnapshot(),
+      readQueue: snapshot => { contextProjection.clear(); return contextProjection.read(snapshot); },
+      reportFailure: this.reportFailure,
+    });
     this.authentication = new PlaybackAuthenticationCoordinator(
       configuration.mediaServerAddress,
       this.native,
@@ -130,7 +144,12 @@ export class PlaybackRuntime {
       this.queue,
       this.views,
       configuration.sessionOwnership,
+      async (accountIdentifier, isCurrent) => {
+        const snapshot = await this.dispatcher.getSnapshot();
+        if (isCurrent()) await this.queueContext?.restore(accountIdentifier, snapshot, isCurrent);
+      },
     );
+    this.stopQueueContext = this.views.subscribe(() => this.persistQueueContext());
   }
 
   async initialize(): Promise<void> {
@@ -149,11 +168,13 @@ export class PlaybackRuntime {
   ): Promise<void> {
     if (!state.restored) return;
     if (state.accountIdentifier !== this.accountIdentifier) {
+      this.queueContext?.invalidate();
       this.invalidateSelection();
       this.continuationQueueIdentifier = null;
     }
     this.accountIdentifier = state.accountIdentifier;
     await Promise.all([this.initialize(), this.authentication.update(state)]);
+    this.persistQueueContext();
   }
 
   playTracks(
@@ -306,6 +327,8 @@ export class PlaybackRuntime {
   }
 
   dispose(): void {
+    this.queueContext?.invalidate();
+    this.stopQueueContext();
     this.authentication.dispose();
     this.invalidateSelection();
     this.queue.invalidateSession();
@@ -314,6 +337,13 @@ export class PlaybackRuntime {
     this.stopState?.();
     this.stopState = null;
     this.views.dispose();
+  }
+
+  private persistQueueContext(): void {
+    if (!this.authentication.isReady() || this.accountIdentifier === null) return;
+    const snapshot = this.state.getSnapshot();
+    const view = this.views.getSnapshot();
+    if (snapshot !== null && !view.isQueueLoading) this.queueContext?.capture(this.accountIdentifier, snapshot, view.queue);
   }
 
   private async changeQueue(

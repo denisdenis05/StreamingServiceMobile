@@ -41,6 +41,7 @@ export class PlaybackAuthenticationCoordinator {
     private readonly queue: Pick<NativeQueueController, 'invalidateSession'>,
     private readonly views: Pick<NativePlaybackViewStore, 'suspend' | 'connect' | 'refresh' | 'resume'>,
     private readonly ownership?: PlaybackNativeSessionOwnership,
+    private readonly restoreQueueContext?: (accountIdentifier: string, isCurrent: () => boolean) => Promise<void>,
   ) { this.views.suspend(); }
 
   update(state: PlaybackAuthenticationState): Promise<void> {
@@ -99,6 +100,10 @@ export class PlaybackAuthenticationCoordinator {
           engineEpoch: snapshot.cursor.engineEpoch, authenticationEpoch: snapshot.cursor.authenticationEpoch }); } catch {}
       }
       if (generation !== this.generation) return;
+      if (attached && this.restoreQueueContext !== undefined) {
+        await this.restoreQueueContext(captured.accountIdentifier, () => generation === this.generation && !this.disposed);
+        if (generation !== this.generation) return;
+      }
       this.views.connect();
       await this.views.refresh();
       if (generation === this.generation) this.views.resume();

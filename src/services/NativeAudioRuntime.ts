@@ -2,6 +2,7 @@ import { retireLegacyImageCache } from './cache/ImageDownloadService';
 import Toast from 'react-native-toast-message';
 import { PlaybackApplicationLifecycle, PlaybackApplicationPolicy } from './player/PlaybackApplicationLifecycle';
 import { playbackNativeSessionStorage } from './PlaybackNativeSessionStorage';
+import { playbackQueueContextStorage } from './PlaybackQueueContextStorage';
 import axios from 'axios';
 import { NativeStreamingPlayer, PlayerProgressStore } from 'streaming-service-player';
 import { reactNativePlaybackTransport } from './ReactNativePlaybackTransport';
@@ -38,6 +39,7 @@ export const sharedPlaybackNative = native;
 const reports = new PlaybackReportingQueue();
 export const audioRuntime = new PlaybackRuntime({
   native, queueChanges: playbackQueueChanges, mediaServerAddress: TEMPORARY_API_URL, identifiers, sessionOwnership: playbackNativeSessionStorage,
+  queueContextStorage: playbackQueueContextStorage,
   reportPlaybackFailure() { Toast.show({ type: AudioRuntimePolicy.toastType, text1: AudioRuntimePolicy.playbackFailureMessage }); },
   cache: { async findReadableCachedAddress(address) {
     const accountIdentifier = authenticationSession.getSnapshot().accountIdentifier;
