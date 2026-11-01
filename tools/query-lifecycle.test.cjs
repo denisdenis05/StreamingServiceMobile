@@ -89,11 +89,12 @@ test('clearing a search invalidates its operation even when its text is later re
   assertion.equal(first.signal.aborted, true); assertion.equal(first.isCurrent(), false); assertion.equal(second.isCurrent(), false);
   assertion.equal(repeated.isCurrent(), true); scope.cancel(); assertion.equal(repeated.signal.aborted, true); assertion.equal(repeated.isCurrent(), false);
 });
+const LibraryChangeHarnessPaths = Object.freeze({ module: './LibraryChanges', source: 'LibraryChanges.ts' });
 function hookEnvironment() {
   let accountIdentifier = 'first'; const listeners = new Set();
   const session = { getSnapshot: () => ({ accountIdentifier }), subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
   const hooks = load('DataProvider.tsx', { react: React, './AuthenticationService': { authenticationSession: session },
-    './data/AccountQueryStore': { AccountQueryStore } });
+    './data/AccountQueryStore': { AccountQueryStore }, [LibraryChangeHarnessPaths.module]: load(LibraryChangeHarnessPaths.source) });
   return { hooks, account(value) { accountIdentifier = value; for (const listener of listeners) listener(); } };
 }
 test('useData resets on key and account changes without exposing the previous response', async () => {

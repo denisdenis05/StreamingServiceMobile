@@ -1,7 +1,4 @@
 import CollectionViewer from '../../components/CollectionViewer';
-import {
-  PLACEHOLDER_ALBUM_COVER,
-} from '../../constants/placeholders.tsx';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Recording } from '../../constants/types.tsx';
 import { catalogPlaybackMapping } from '../../services/NativeAudioRuntime';
@@ -10,38 +7,15 @@ import { useApi } from '../../hooks/useApi.ts';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions, ActionItem } from '../../constants/navigation.tsx';
 import { invalidateCache } from '../../services/DataProvider.tsx';
-import {
-  getRecordingList,
-  setRecordingList,
-} from '../../services/cache/CacheDatabase';
 import LibraryIcon from '../../../assets/icons/libraryIcon.tsx';
-
-function recordingListsAreEqual(
-  listA: Recording[],
-  listB: Recording[]
-): boolean {
-  if (listA.length !== listB.length) {
-    return false;
-  }
-  for (let index = 0; index < listA.length; index++) {
-    if (
-      listA[index].id !== listB[index].id ||
-      listA[index].title !== listB[index].title ||
-      listA[index].cover !== listB[index].cover ||
-      listA[index].isLiked !== listB[index].isLiked ||
-      listA[index].releaseId !== listB[index].releaseId
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
+import { useCollectionRecordings, CollectionRecordingPolicy } from '../../hooks/useCollectionRecordings';
+import { useDataScope } from '../../services/DataProvider';
 
 const AlbumViewer = ({ navigation, route }: any) => {
   const { albumId, albumTitle, albumArtist, albumCover, albumSmallCover, albumVerySmallCover } = route.params;
-  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const { recordings, loading, error, retry } = useCollectionRecordings(albumId, CollectionRecordingPolicy.album);
+  const scope = useDataScope();
   const { playTracks } = useMusicQueue();
-  const [fetched, setFetched] = useState(false);
   const [isAlbumSaved, setIsAlbumSaved] = useState(false);
   const api = useApi();
   const [albumMenuVisible, setAlbumMenuVisible] = useState(false);
@@ -50,29 +24,13 @@ const AlbumViewer = ({ navigation, route }: any) => {
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>([]);
 
   useEffect(() => {
-    const cachedEntry = getRecordingList(albumId, 'album');
-    if (cachedEntry && cachedEntry.recordings.length > 0) {
-      setRecordings(cachedEntry.recordings);
-      setFetched(true);
-    }
-
-    api
-      .get(`Metadata/get-recordings?albumId=${albumId}`)
-      .then(res => {
-        const freshRecordings: Recording[] = res.data;
-        if (!cachedEntry || !recordingListsAreEqual(cachedEntry.recordings, freshRecordings)) {
-          setRecordings(freshRecordings);
-          setRecordingList(albumId, 'album', freshRecordings);
-        }
-        setFetched(true);
-      })
-      .catch(() => setFetched(true));
-
-    api
-      .get(`Library/albums/${albumId}/saved`)
-      .then(res => setIsAlbumSaved(res.data.isSaved))
-      .catch(() => {});
-  }, []);
+    const cancellation = new AbortController();
+    setIsAlbumSaved(false);
+    void api.get(`Library/albums/${albumId}/saved`, { signal: cancellation.signal })
+      .then(response => { if (!cancellation.signal.aborted) setIsAlbumSaved(response.data.isSaved); })
+      .catch(() => undefined);
+    return () => cancellation.abort();
+  }, [api, albumId, scope]);
 
   const handlePlayFromRecording = useCallback((recordingIndex: number) => {
     const tracks = recordings.map(recording => catalogPlaybackMapping.map(recording, albumId));
@@ -88,8 +46,8 @@ const AlbumViewer = ({ navigation, route }: any) => {
       const { isSaved } = res.data;
       setIsAlbumSaved(isSaved);
       invalidateCache('library');
-    } catch (error) {
-      console.error('Failed to toggle album in library:', error);
+    } catch {
+      console.warn(AlbumMessages.saveFailed);
     }
   }, [api, albumId]);
 
@@ -129,7 +87,9 @@ const AlbumViewer = ({ navigation, route }: any) => {
         onMorePress={handleAlbumMorePress}
         onSongPlay={handlePlayFromRecording}
         onSongMorePress={handleSongMorePress}
-        isLoading={!fetched}
+        isLoading={loading}
+        errorMessage={error}
+        onRetry={retry}
         emptyMessage="Album temporarily unavailable, check again in a few minutes"
       />
       {albumMenuVisible && (
@@ -172,3 +132,5 @@ const AlbumViewer = ({ navigation, route }: any) => {
 };
 
 export default AlbumViewer;
+
+const AlbumMessages = Object.freeze({ saveFailed: 'Album library changes could not be saved.' });

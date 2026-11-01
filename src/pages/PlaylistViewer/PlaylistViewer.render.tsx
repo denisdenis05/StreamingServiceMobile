@@ -1,46 +1,22 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { Recording } from '../../constants/types.tsx';
-import {
-  PLACEHOLDER_ALBUM_COVER,
-} from '../../constants/placeholders.tsx';
 import CollectionViewer from '../../components/CollectionViewer';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
-import {
-  getRecordingList,
-  setRecordingList,
-} from '../../services/cache/CacheDatabase';
-
-function recordingListsAreEqual(
-  listA: Recording[],
-  listB: Recording[]
-): boolean {
-  if (listA.length !== listB.length) {
-    return false;
-  }
-  for (let index = 0; index < listA.length; index++) {
-    if (
-      listA[index].id !== listB[index].id ||
-      listA[index].title !== listB[index].title ||
-      listA[index].cover !== listB[index].cover ||
-      listA[index].isLiked !== listB[index].isLiked ||
-      listA[index].releaseId !== listB[index].releaseId
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
+import { useCollectionRecordings, CollectionRecordingPolicy } from '../../hooks/useCollectionRecordings';
+import { notifyLibraryChanged } from '../../services/LibraryChanges';
 
 const PlaylistViewer = ({ navigation, route }: any) => {
   const { playlistId, playlistTitle, playlistOwner, playlistCover, isOwner } =
     route.params;
-  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const { recordings, loading, error, loadMore, retry } = useCollectionRecordings(
+    playlistId, CollectionRecordingPolicy.playlist,
+  );
   const { playPlaylist } = useMusicQueue();
-  const [fetched, setFetched] = useState(false);
   const api = useApi();
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
   const [selectedRecordingIds, setSelectedRecordingIds] = useState<string[]>(
@@ -48,62 +24,6 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   );
   const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
   const [contextMenuOptions, setContextMenuOptions] = useState(menuOptions);
-
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const PAGE_SIZE = 20;
-
-  useEffect(() => {
-    const cachedEntry = getRecordingList(playlistId, 'playlist');
-    if (cachedEntry && cachedEntry.recordings.length > 0) {
-      setRecordings(cachedEntry.recordings);
-      setFetched(true);
-    }
-
-    fetchRecordingsFromServer(1);
-  }, []);
-
-  const fetchRecordingsFromServer = useCallback((pageNumber: number) => {
-    if (pageNumber === 1) setFetched(false);
-    else setIsLoadingMore(true);
-
-    api
-      .get(`Library/playlists/${playlistId}/recordings?page=${pageNumber}&pageSize=${PAGE_SIZE}`)
-      .then(res => {
-        const freshRecordings: Recording[] = res.data;
-
-        if (pageNumber === 1) {
-          const cachedEntry = getRecordingList(playlistId, 'playlist');
-          if (!cachedEntry || !recordingListsAreEqual(cachedEntry.recordings, freshRecordings)) {
-            setRecordings(freshRecordings);
-            setRecordingList(playlistId, 'playlist', freshRecordings);
-          }
-        } else {
-          setRecordings(previous => {
-            const combined = [...previous, ...freshRecordings];
-            setRecordingList(playlistId, 'playlist', combined);
-            return combined;
-          });
-        }
-
-        if (freshRecordings.length < PAGE_SIZE) setHasMore(false);
-        setFetched(true);
-        setIsLoadingMore(false);
-      })
-      .catch(err => {
-        console.error('Failed to fetch playlist recordings:', err);
-        setFetched(true);
-        setIsLoadingMore(false);
-      });
-  }, [api, playlistId]);
-
-  const handleLoadMore = useCallback(() => {
-    if (!hasMore || isLoadingMore) return;
-    const nextPage = page + 1;
-    setPage(nextPage);
-    fetchRecordingsFromServer(nextPage);
-  }, [hasMore, isLoadingMore, page, fetchRecordingsFromServer]);
 
   const FirstPlaylistEntryIndex = 0;
   const handlePlayFromRecording = useCallback((recordingIndex: number) => {
@@ -141,14 +61,11 @@ const PlaylistViewer = ({ navigation, route }: any) => {
         icon: () => null,
         onClick: async () => {
           try {
+            setMutationError(null);
             await api.delete(`library/playlists/${playlistId}/recordings/${recording.id}`);
-            setRecordings(previous => {
-              const updated = previous.filter(r => r.id !== recording.id);
-              setRecordingList(playlistId, 'playlist', updated);
-              return updated;
-            });
-          } catch (err) {
-            console.error('Failed to remove song from playlist:', err);
+            notifyLibraryChanged();
+          } catch {
+            setMutationError(PlaylistMessages.removeFailed);
           }
         },
       });
@@ -171,8 +88,10 @@ const PlaylistViewer = ({ navigation, route }: any) => {
         onMorePress={isOwner ? handlePlaylistMore : undefined}
         onSongPlay={handlePlayFromRecording}
         onSongMorePress={handleSongMorePress}
-        isLoading={!fetched || isLoadingMore}
-        onEndReached={handleLoadMore}
+        isLoading={loading}
+        errorMessage={mutationError ?? error}
+        onRetry={error ? retry : undefined}
+        onEndReached={loadMore}
         emptyMessage="Playlist is empty"
       />
       {menuVisible && (
@@ -197,3 +116,5 @@ const PlaylistViewer = ({ navigation, route }: any) => {
 };
 
 export default PlaylistViewer;
+
+const PlaylistMessages = Object.freeze({ removeFailed: 'The song could not be removed. Try the playlist menu again.' });

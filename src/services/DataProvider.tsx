@@ -1,12 +1,15 @@
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { subscribeLibraryChanges } from './LibraryChanges';
 import { authenticationSession } from './AuthenticationService';
 import { AccountQueryStore, QueryFetcher, QuerySnapshot } from './data/AccountQueryStore';
 
+const LibraryQueryPolicy = Object.freeze({ libraryKey: 'library' });
 const queryStore = new AccountQueryStore(() => Date.now());
 queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier);
+const unsubscribeLibrary = subscribeLibraryChanges(() => queryStore.invalidate(LibraryQueryPolicy.libraryKey));
 const unsubscribeAuthentication = authenticationSession.subscribe(() => queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier));
 declare const module: { readonly hot?: { dispose(callback: () => void): void } };
-module.hot?.dispose(() => { unsubscribeAuthentication(); queryStore.clear(); });
+module.hot?.dispose(() => { unsubscribeAuthentication(); unsubscribeLibrary(); queryStore.clear(); });
 export const invalidateCache = (key: string): void => queryStore.invalidate(key);
 export const useDataScope = (): object => useSyncExternalStore(queryStore.subscribeScope, queryStore.getScope, queryStore.getScope);
 

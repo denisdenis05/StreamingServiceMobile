@@ -24,7 +24,7 @@
     "test:spotify-native": "python3 tools/test-spotify-librespot-jni.py",
     "test:spotify-probes": "node --test tools/spotify-device-probe.test.cjs tools/spotify-jam-probe.test.cjs tools/spotify-connect-probe.test.cjs tools/spotify-native-search-probe.test.cjs",
     "test:spotify-ios": "python3 tools/spotify-ios-proof-check.py",
-    "test:settings": "tsc --project tsconfig.settings.json && node --test tools/settings-services.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/profile-settings-lastfm.test.ts tools/profile-settings-screen.test.tsx tools/profile-settings-deeplink.test.ts"
+    "test:settings": "tsc --project tsconfig.settings.json && node --test tools/settings-services.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/profile-settings-lastfm.test.ts tools/profile-settings-screen.test.tsx tools/profile-settings-deeplink.test.ts tools/lastfm-settings-screen.test.tsx tools/liked-songs-settings-service.test.ts tools/liked-songs-settings-platform.test.ts tools/liked-songs-settings-screen.test.tsx tools/recording-like.test.ts tools/recording-like-platform.test.tsx tools/library-heart-refresh.test.tsx tools/library-heart-ui.test.tsx"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

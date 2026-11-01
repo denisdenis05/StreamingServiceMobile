@@ -33,6 +33,8 @@ import { SpotifySettingsCopy } from '../src/pages/Settings/SpotifySettings.copy'
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 
 const Imports = Object.freeze({
+  settingsComponents: '../src/pages/Settings/Settings.components',
+  settingsScreen: '../src/pages/Settings/SpotifySettings.render',
   player: '../src/services/PlayerJamRuntime',
   service: '../src/services/SpotifyMobileService',
   screen: '../src/pages/SpotifyJam/SpotifyJam.render',
@@ -149,10 +151,10 @@ jest.doMock(Imports.container, () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => children,
 }));
-const { SettingsButton } = require('../src/pages/Settings/Settings.components');
+const { SettingsButton } = require(Imports.settingsComponents);
 const SpotifyJam = require(Imports.screen).default;
 const SpotifySettings =
-  require('../src/pages/Settings/SpotifySettings.render').default;
+  require(Imports.settingsScreen).default;
 let rendered: ReactTestRenderer;
 const navigation = { goBack: jest.fn(), navigate: jest.fn() };
 

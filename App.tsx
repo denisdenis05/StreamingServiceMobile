@@ -27,6 +27,7 @@ import { spotifyMobile } from './src/services/SpotifyMobileService';
 import { SpotifyAuthorizationNavigation } from './src/services/spotify/SpotifyAuthorizationNavigation';
 
 import Settings from './src/pages/Settings/Settings.render';
+import LikedSongsSettings from './src/pages/Settings/LikedSongsSettings.render';
 import SpotifySettings from './src/pages/Settings/SpotifySettings.render';
 import LastFmSettings from './src/pages/Settings/LastFmSettings.render';
 import AboutSettings from './src/pages/Settings/AboutSettings.render';
@@ -169,6 +170,7 @@ const InnerApp = () => {
       <Stack.Screen name="Library" component={Library} />
       <Stack.Screen name={SpotifyJamRoute} component={SpotifyJam} />
       <Stack.Screen name={SettingsRoutes.main} component={Settings} />
+      <Stack.Screen name={SettingsRoutes.likedSongs} component={LikedSongsSettings} />
       <Stack.Screen name={SettingsRoutes.spotify} component={SpotifySettings} />
       <Stack.Screen name={SettingsRoutes.account} component={AccountSettings} />
       <Stack.Screen name={SettingsRoutes.lastFm} component={LastFmSettings} />

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View } from 'react-native';
+import DefaultText from '../DefaultText';
+import { View, TouchableOpacity } from 'react-native';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 import {
   ActionsContainer,
@@ -20,7 +21,6 @@ import PlayIcon from '../../../assets/icons/playIcon.tsx';
 import PlaylistSong from '../PlaylistSong';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import DownloadIcon from '../../../assets/icons/downloadIcon.tsx';
-import { HeaderTitle } from '../../pages/Home/Home.style.tsx';
 import { Recording } from '../../constants/types.tsx';
 import PlayingOverlay from '../PlayingOverlay';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
@@ -41,6 +41,8 @@ interface CollectionViewerProps {
   isLoading?: boolean;
   emptyMessage?: string;
   onEndReached?: () => void;
+  errorMessage?: string | null;
+  onRetry?: () => void;
 }
 
 const CollectionViewer: React.FC<CollectionViewerProps> = ({
@@ -59,6 +61,8 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
   isLoading,
   emptyMessage = 'Collection temporarily unavailable',
   onEndReached,
+  errorMessage,
+  onRetry,
 }) => {
   const { currentTrack } = useMusicQueue();
   const hasPlayingOverlay = currentTrack !== null;
@@ -105,12 +109,17 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
           </ControlsContainer>
         </LineContainer>
         <RecordingsContainer>
+          {errorMessage && <DefaultText accessibilityRole="alert">{errorMessage}</DefaultText>}
+          {errorMessage && onRetry && <TouchableOpacity accessibilityRole="button" onPress={onRetry}>
+            <DefaultText>{CollectionCopy.retry}</DefaultText>
+          </TouchableOpacity>}
           {songs.length > 0 ? (
             songs.map((recording: Recording, index: number) => (
               <PlaylistSong
                 key={recording.id.toString()}
                 navigation={navigation}
                 songId={recording.id}
+                isLiked={recording.isLiked}
                 songTitle={recording.title}
                 songAuthor={recording.artistName}
                 albumId={''}
@@ -123,11 +132,11 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
                 onMorePress={(event: any) => onSongMorePress(event, recording)}
               />
             ))
-          ) : !isLoading ? (
+          ) : !isLoading && !errorMessage ? (
             <SongTitle>{emptyMessage}</SongTitle>
           ) : null}
-          {isLoading && songs.length > 0 && (
-            <SongTitle>Loading more...</SongTitle>
+          {isLoading && (
+            <SongTitle>{songs.length > CollectionCopy.emptyCount ? CollectionCopy.loadingMore : CollectionCopy.loading}</SongTitle>
           )}
         </RecordingsContainer>
         {hasPlayingOverlay && <View style={{ height: 90 }} />}
@@ -138,3 +147,5 @@ const CollectionViewer: React.FC<CollectionViewerProps> = ({
 };
 
 export default CollectionViewer;
+
+const CollectionCopy = Object.freeze({ retry: 'Try again', loading: 'Loading songs…', loadingMore: 'Loading more…', emptyCount: 0 });

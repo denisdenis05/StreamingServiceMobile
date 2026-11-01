@@ -16,6 +16,8 @@ import {
   PlaylistItem,
   StyledButton,
 } from './AddToPlaylist.style.tsx';
+import { notifyLibraryChanged } from '../../services/LibraryChanges';
+import DefaultText from '../../components/DefaultText';
 import { useApi } from '../../hooks/useApi.ts';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -23,6 +25,7 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const AddToPlaylist = ({ navigation, route }: any) => {
   const { songs } = route.params;
   const [playlists, setPlaylists] = useState<any[]>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const api = useApi();
@@ -49,6 +52,15 @@ const AddToPlaylist = ({ navigation, route }: any) => {
     })
   ).current;
 
+  const fetchPlaylists = useCallback(async () => {
+    try {
+      const res = await api.get('library/playlists');
+      setPlaylists(res.data);
+    } catch {
+      setErrorMessage(PlaylistMutationCopy.loadFailed);
+    }
+  }, [api]);
+
   useEffect(() => {
     translateY.setValue(SCREEN_HEIGHT);
     Animated.spring(translateY, {
@@ -57,20 +69,12 @@ const AddToPlaylist = ({ navigation, route }: any) => {
     }).start();
 
     fetchPlaylists();
-  }, []);
-
-  const fetchPlaylists = useCallback(async () => {
-    try {
-      const res = await api.get('library/playlists');
-      setPlaylists(res.data);
-    } catch (err) {
-      console.error('Failed to fetch playlists:', err);
-    }
-  }, [api]);
+  }, [fetchPlaylists, translateY]);
 
   const addToExistingPlaylist = useCallback(async (playlistId: string) => {
     if (isLoading) return;
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const payload = songs.map((s: any) => ({
         id: s.id,
@@ -80,9 +84,10 @@ const AddToPlaylist = ({ navigation, route }: any) => {
         cover: s.cover,
       }));
       await api.post(`library/playlists/${playlistId}/recordings`, payload);
+      notifyLibraryChanged();
       navigation.goBack();
-    } catch (err) {
-      console.error('Failed to add to playlist:', err);
+    } catch {
+      setErrorMessage(PlaylistMutationCopy.addFailed);
     } finally {
       setIsLoading(false);
     }
@@ -98,12 +103,14 @@ const AddToPlaylist = ({ navigation, route }: any) => {
   const createNewPlaylist = useCallback(async () => {
     if (isLoading) return;
     setIsLoading(true);
+    setErrorMessage(null);
     try {
       const recordingIds = songs.map((s: any) => s.id);
       await api.post('library/playlists', { name: '', recordingIds });
+      notifyLibraryChanged();
       navigation.goBack();
-    } catch (err) {
-      console.error('Failed to create playlist:', err);
+    } catch {
+      setErrorMessage(PlaylistMutationCopy.createFailed);
     } finally {
       setIsLoading(false);
     }
@@ -126,6 +133,7 @@ const AddToPlaylist = ({ navigation, route }: any) => {
             disabled={isLoading}
           />
 
+          {errorMessage && <DefaultText accessibilityRole="alert">{errorMessage}</DefaultText>}
           <ListContainer>
             <FlatList
               data={playlists}
@@ -152,4 +160,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 20,
     marginTop: 60,
   },
+});
+
+const PlaylistMutationCopy = Object.freeze({
+  loadFailed: 'Playlists could not be loaded. Reopen this page to try again.',
+  addFailed: 'Songs could not be added. Try again.',
+  createFailed: 'The playlist could not be created. Try again.',
 });

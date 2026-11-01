@@ -18,6 +18,8 @@
     "src/services/settings/PlaybackSettingsService.ts",
     "src/services/settings/StorageSettingsService.ts",
     "src/services/settings/StorageStatistics.ts",
-    "src/services/settings/LastFmController.ts"
+    "src/services/settings/LastFmController.ts",
+    "src/services/settings/LikedSongsSettingsService.ts",
+    "src/services/settings/RecordingLikeService.ts"
   ]
 }

@@ -1,4 +1,6 @@
 import React from 'react';
+import { View } from 'react-native';
+import HeartIcon from '../../../assets/icons/heartIcon';
 import {
   AlbumCover,
   CardAuthor,
@@ -12,6 +14,7 @@ import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 
 const PlaylistSong = React.memo(({
+  isLiked,
   songTitle,
   songAuthor,
   playAction,
@@ -23,6 +26,7 @@ const PlaylistSong = React.memo(({
 }: {
   navigation: any;
   songId: any;
+  isLiked?: boolean;
   songTitle: any;
   songAuthor: any;
   albumId: any;
@@ -49,6 +53,9 @@ const PlaylistSong = React.memo(({
             <CardAuthor numberOfLines={1}>{songAuthor}</CardAuthor>
           </TextContainer>
         </MusicCard>
+        {isLiked && <View accessible accessibilityLabel={PlaylistSongCopy.liked}>
+          <HeartIcon height={iconSizes.sm} fill={colors.accentPrimary} />
+        </View>}
         <MoreIcon height={iconSizes.sm} onPress={onMorePress} fill={colors.normalText} />
       </CardContainer>
     </MainContainer>
@@ -56,3 +63,5 @@ const PlaylistSong = React.memo(({
 });
 
 export default PlaylistSong;
+
+const PlaylistSongCopy = Object.freeze({ liked: 'Liked song' });
