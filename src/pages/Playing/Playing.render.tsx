@@ -1,5 +1,4 @@
-import { useApi } from '../../hooks/useApi.ts';
-import { useData } from '../../services/DataProvider.tsx';
+import { useRecordingLike } from '../../services/RecordingLikePlatform';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 import HeartEmptyIcon from '../../../assets/icons/heartEmptyIcon.tsx';
 
@@ -11,10 +10,12 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import {
+  ActivityIndicator,
   Animated,
+  Pressable,
+  Text,
   Dimensions,
   PanResponder,
-  Platform,
   StyleSheet,
 } from 'react-native';
 import {
@@ -81,29 +82,21 @@ const Playing = ({ navigation }: any) => {
     jam.mode === SpotifyPlayerJamMode.Stopping ||
     (jam.mode === SpotifyPlayerJamMode.Following &&
       !jam.remoteControlsAvailable);
-  const api = useApi();
-  const { data: isLiked, updateData } = useData<boolean>(
-    `isLiked:${currentTrack?.recordingIdentifier}`,
-    undefined,
-    currentTrack?.isLiked,
-  );
-
-  const toggleLike = useCallback(async () => {
-    if (!currentTrack?.recordingIdentifier) return;
-    const newLikedState = !isLiked;
-    updateData(newLikedState);
-    try {
-      await api.post(`Library/likes/${currentTrack.recordingIdentifier}`, {
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: currentTrack.album,
-        cover: currentTrack.artworkAddress,
-      });
-    } catch {
-      console.warn(PlayingPreferenceMessages.failure);
-      updateData(!newLikedState);
-    }
-  }, [currentTrack, isLiked, updateData, api]);
+  const {
+    state: preferenceState,
+    toggle: toggleRecordingLike,
+    refresh: refreshRecordingLike,
+  } = useRecordingLike(currentTrack?.recordingIdentifier);
+  const toggleLike = useCallback(() => {
+    void toggleRecordingLike({
+      title: currentTrack?.title,
+      artist: currentTrack?.artist,
+      album: currentTrack?.album,
+      cover: currentTrack?.artworkAddress,
+    });
+  }, [toggleRecordingLike, currentTrack]);
+  const preferenceDisabled =
+    preferenceState.pending || preferenceState.isLiked === null;
 
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
@@ -155,7 +148,7 @@ const Playing = ({ navigation }: any) => {
       toValue: 0,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [translateY]);
 
   return (
     <BackdropContainer>
@@ -196,20 +189,56 @@ const Playing = ({ navigation }: any) => {
               <SongTitle>{currentTrack?.title}</SongTitle>
               <SongAuthor>{currentTrack?.artist}</SongAuthor>
             </SongDescriptorContainer>
-            {isLiked ? (
-              <HeartIcon
-                height={iconSizes.md}
-                onPress={toggleLike}
-                fill={colors.accentPrimary}
-              />
-            ) : (
-              <HeartEmptyIcon
-                height={iconSizes.md}
-                onPress={toggleLike}
-                fill={colors.normalText}
-              />
-            )}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                preferenceState.pending
+                  ? PlayingPreferenceMessages.checking
+                  : preferenceState.isLiked === null
+                  ? PlayingPreferenceMessages.unknown
+                  : preferenceState.isLiked
+                  ? PlayingPreferenceMessages.remove
+                  : PlayingPreferenceMessages.add
+              }
+              accessibilityState={{
+                disabled: preferenceDisabled,
+                busy: preferenceState.pending,
+                selected: preferenceState.isLiked === true,
+              }}
+              disabled={preferenceDisabled}
+              onPress={toggleLike}
+              style={styles.heartTarget}
+            >
+              {preferenceState.pending ? (
+                <ActivityIndicator color={colors.normalText} />
+              ) : preferenceState.isLiked === null ? (
+                <Text style={styles.heartFailureText}>
+                  {PlayingPreferenceMessages.unknownSymbol}
+                </Text>
+              ) : preferenceState.isLiked ? (
+                <HeartIcon height={iconSizes.md} fill={colors.accentPrimary} />
+              ) : (
+                <HeartEmptyIcon
+                  height={iconSizes.md}
+                  fill={colors.normalText}
+                />
+              )}
+            </Pressable>
           </SongDetailsContainer>
+          {preferenceState.failure !== null && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={PlayingPreferenceMessages.retry}
+              onPress={() => {
+                void refreshRecordingLike();
+              }}
+              style={styles.heartFailure}
+            >
+              <Text style={styles.heartFailureText}>
+                {preferenceState.failure} {PlayingPreferenceMessages.retry}
+              </Text>
+            </Pressable>
+          )}
           <AudioProgressBar
             isLoading={isLoading}
             isBuffering={false}
@@ -292,7 +321,16 @@ const Playing = ({ navigation }: any) => {
 
 export default Playing;
 
+const PlayingPreferenceLayout = Object.freeze({ touchSize: 48, inset: 8 });
 const styles = StyleSheet.create({
+  heartTarget: {
+    minWidth: PlayingPreferenceLayout.touchSize,
+    minHeight: PlayingPreferenceLayout.touchSize,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartFailure: { padding: PlayingPreferenceLayout.inset },
+  heartFailureText: { color: colors.normalText, textAlign: 'center' },
   container: {
     flex: 1,
     backgroundColor: colors.background,
@@ -304,4 +342,11 @@ const styles = StyleSheet.create({
 
 const PlayingScrollPolicy = Object.freeze({ startOffset: 0 });
 
-const PlayingPreferenceMessages = Object.freeze({ failure: 'The song preference could not be saved.' });
+const PlayingPreferenceMessages = Object.freeze({
+  unknown: 'Song heart unavailable',
+  unknownSymbol: '—',
+  checking: 'Checking song heart',
+  add: 'Like song',
+  remove: 'Remove song from Liked Songs',
+  retry: 'Retry heart status',
+});
