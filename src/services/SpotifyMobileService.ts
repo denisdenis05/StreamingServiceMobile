@@ -79,6 +79,7 @@ export const spotifyConnect = new SpotifyConnectStore({ clock: playbackClock, na
 
 export const spotifyMobile = new SpotifyMobileController({
   nativeConnection: spotifyConnect,
+  nativeDevices: (accountIdentifier, cancellation) => spotifyConnect.readDevices(accountIdentifier, cancellation),
   authorizationReturnStatus: () => spotifyLoginBrowser.getReturnStatus(),
   account: authenticationSession, gateway, clock, nextIdentifier,
   membershipRefreshed: () => spotifyIntegration.resumeObserversAfterMembership(),

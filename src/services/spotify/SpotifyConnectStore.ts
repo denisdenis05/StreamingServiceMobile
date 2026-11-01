@@ -1,5 +1,7 @@
 import { IntegrationFailure, IntegrationFailureCode, copySpotifyConnectCommand, decodeSpotifyConnectObservation, copySpotifyConnectMetadataIdentifiers, decodeSpotifyConnectMetadata, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
 import type { SpotifyLoginProvider, SpotifyConnectCommand, SpotifyConnectCommandPort, SpotifyConnectObservation, SpotifyConnectObservationPort, SharedPlaybackClock, SpotifyConnectMetadataPort, SpotifyConnectSearchPort, CatalogSearch, SpotifySong } from 'streaming-service-spotify-jam';
+import type { SpotifyMobileDevice } from './SpotifyMobileGateway';
+import { SpotifyMobilePolicy } from './SpotifyMobilePolicy';
 
 export enum SpotifyConnectStatus {
   Detached = 'detached', Connecting = 'connecting', Ready = 'ready', Reconnecting = 'reconnecting', Failed = 'failed',
@@ -34,6 +36,8 @@ export interface SpotifyConnectDependencies {
 }
 
 const GuestMembershipPolicy = Object.freeze({ maximumParticipants: 256 });
+const DeviceListPolicy = Object.freeze({ maximumClusterDevices: 256, maximumNameCharacters: 512,
+  emptyActiveIdentifier: '', nameControlPattern: /[\u0000-\u001f\u007f]/ });
 
 const Policy = Object.freeze({ zero: 0, firstGeneration: 1, stringType: 'string', objectType: 'object',
   booleanType: 'boolean', maximumRequestIdentifierCharacters: 128,
@@ -215,6 +219,53 @@ export class SpotifyConnectStore implements SpotifyConnectCommandPort, SpotifyCo
       let response: unknown;
       try { response = JSON.parse(serialized); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
       return decodeSpotifyConnectObservation(response, { handle, generation, hostDeviceIdentifier, sentMonotonicMilliseconds, receivedMonotonicMilliseconds });
+    } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
+  }
+
+  async readDevices(accountIdentifier: string, cancellation: AbortSignal): Promise<readonly SpotifyMobileDevice[]> {
+    if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+    const binding = this.binding;
+    if (!binding || binding.accountIdentifier !== accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    this.requireCurrent(binding);
+    const native = binding.native; const handle = binding.handle; const generation = this.snapshot.generation;
+    if (!native || handle === null || this.snapshot.status !== SpotifyConnectStatus.Ready) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    try {
+      const serialized = await this.awaitNativeRead(binding, cancellation, () => native.read(binding.identifier, generation));
+      if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+      this.requireCurrent(binding);
+      if (this.snapshot.generation !== generation || this.snapshot.status !== SpotifyConnectStatus.Ready)
+        throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (typeof serialized !== Policy.stringType || serialized.length > Policy.maximumBatchCharacters)
+        throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      let response: Record<string, unknown>;
+      try { response = object(JSON.parse(serialized)); } catch { throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse); }
+      if (response.handle !== handle || response.generation !== generation) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (response.failure !== undefined && response.failure !== null) throw new IntegrationFailure(failureCode({ code: response.failure }));
+      const cluster = object(object(response.reading).cluster);
+      const activeIdentifier = cluster.activeDeviceIdentifier === DeviceListPolicy.emptyActiveIdentifier
+        ? DeviceListPolicy.emptyActiveIdentifier : identifier(cluster.activeDeviceIdentifier);
+      if (activeIdentifier.length > Policy.maximumDeviceCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      if (!Array.isArray(cluster.devices) || cluster.devices.length > DeviceListPolicy.maximumClusterDevices)
+        throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      const seen = new Set<string>();
+      const devices: SpotifyMobileDevice[] = [];
+      for (const candidate of cluster.devices) {
+        const device = object(candidate);
+        if ([device.canPlay, device.controllable, device.hidden].some(value => typeof value !== Policy.booleanType))
+          throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+        if (device.canPlay !== true || device.controllable !== true || device.hidden !== false) continue;
+        const deviceIdentifier = identifier(device.identifier);
+        if (deviceIdentifier.length > Policy.maximumDeviceCharacters) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+        if (seen.has(deviceIdentifier)) continue;
+        if (typeof device.name !== Policy.stringType || !(device.name as string).trim()
+          || (device.name as string).length > DeviceListPolicy.maximumNameCharacters
+          || DeviceListPolicy.nameControlPattern.test(device.name as string)) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+        seen.add(deviceIdentifier);
+        devices.push(Object.freeze({ identifier: deviceIdentifier, name: device.name as string, active: deviceIdentifier === activeIdentifier }));
+      }
+      const activeDevice = devices.find(device => device.active);
+      const ordered = activeDevice ? [activeDevice, ...devices.filter(device => device !== activeDevice)] : devices;
+      return Object.freeze(ordered.slice(SpotifyMobilePolicy.firstPosition, SpotifyMobilePolicy.maximumDevices));
     } catch (failure) { throw new IntegrationFailure(failureCode(failure)); }
   }
 

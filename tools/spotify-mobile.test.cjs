@@ -953,3 +953,103 @@ test(GuestCommandProjectionNames.absent, async () => {
   const current = fixture(); const login = librespotLogin(); current.state.librespotLogin = () => login.provider;
   await current.controller.loginWithLibrespot(librespotInput()); assertion.equal(current.controller.getSnapshot().canSubmitGuestCommands, false); current.controller.dispose();
 });
+
+test('Librespot device refresh uses account-bound native discovery without any public device call', async () => {
+  const calls = [];
+  const current = fixture({ nativeDevices: async (accountIdentifier, cancellation) => {
+    calls.push({ accountIdentifier, cancellation });
+    return [{ identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }];
+  } });
+  current.state.devices = async () => assertion.fail(); const login = librespotLogin();
+  current.state.librespotLogin = () => login.provider; await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(calls.length, Fixture.singleCall);
+  assertion.equal(calls[Fixture.firstPosition].accountIdentifier, Fixture.spotifyAccount);
+  assertion.equal(calls[Fixture.firstPosition].cancellation.aborted, false);
+  assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
+  assertion.equal(current.controller.getSnapshot().deviceFailure, null); current.controller.dispose();
+});
+test('Librespot native device failure remains visible and never falls back to the public Web API', async () => {
+  const current = fixture({ nativeDevices: async () => { throw new library.IntegrationFailure(library.IntegrationFailureCode.RateLimited); } });
+  current.state.devices = async () => assertion.fail(); current.state.librespotLogin = () => librespotLogin().provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(current.controller.getSnapshot().connected, true);
+  assertion.equal(current.controller.getSnapshot().deviceFailure, library.IntegrationFailureCode.RateLimited);
+  assertion.deepEqual(current.controller.getSnapshot().devices, []); current.controller.dispose();
+});
+test('Librespot without a native discovery port reports unsupported instead of using public devices', async () => {
+  const current = fixture(); current.state.devices = async () => assertion.fail(); current.state.librespotLogin = () => librespotLogin().provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(current.controller.getSnapshot().deviceFailure, library.IntegrationFailureCode.Unsupported); current.controller.dispose();
+});
+test('OAuth device refresh preserves the developer gateway and never calls native discovery', async () => {
+  const current = fixture({ nativeDevices: async () => assertion.fail() });
+  current.state.login = () => browserLogin().provider;
+  await current.controller.login({ clientIdentifier: Fixture.deviceIdentifier, redirectAddress: SpotifyMobilePolicy.authorizationRedirectAddress });
+  assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
+  assertion.equal(current.controller.getSnapshot().deviceFailure, null); current.controller.dispose();
+});
+test('Account retirement discards a late native device result and aborts its application lifetime', async () => {
+  const delayed = deferred(); const discoveryStarted = deferred(); let cancellation;
+  const current = fixture({ nativeDevices: async (accountIdentifier, signal) => { cancellation = signal; discoveryStarted.resolve(); return delayed.promise; } });
+  current.state.librespotLogin = () => librespotLogin().provider;
+  const connecting = current.controller.loginWithLibrespot(librespotInput());
+  await discoveryStarted.promise; current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true });
+  delayed.resolve([{ identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }]); await connecting;
+  assertion.equal(cancellation.aborted, true); assertion.equal(current.controller.getSnapshot().connected, false);
+  assertion.deepEqual(current.controller.getSnapshot().devices, []); current.controller.dispose();
+});
+test('Native registration becoming ready refreshes its device list once without public requests or polling', async () => {
+  const observers = new Set(); let reads = Fixture.noCalls;
+  let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
+  const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
+    nativeDevices: async () => {
+      reads += Fixture.sequenceIncrement;
+      if (native.status !== ConnectFixture.ready) throw new library.IntegrationFailure(library.IntegrationFailureCode.Unsupported);
+      return [{ identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: true }];
+    } });
+  current.state.devices = async () => assertion.fail(); current.state.librespotLogin = () => librespotLogin().provider;
+  await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(current.controller.getSnapshot().deviceFailure, library.IntegrationFailureCode.Unsupported);
+  native = { ...native, status: ConnectFixture.ready, deviceIdentifier: ConnectFixture.device };
+  for (const observer of observers) observer(); await waitForSavedLoginIdle(current.controller);
+  assertion.equal(reads, Fixture.connectionAndRefreshCount);
+  assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
+  for (const observer of observers) observer(); await Promise.resolve();
+  assertion.equal(reads, Fixture.connectionAndRefreshCount); current.controller.dispose();
+});
+test('Native device refresh follows actual active playback instead of retaining a stale automatic selection', async () => {
+  let activeIdentifier = Fixture.deviceIdentifier;
+  const current = fixture({ nativeDevices: async () => [
+    { identifier: Fixture.deviceIdentifier, name: Fixture.deviceName, active: activeIdentifier === Fixture.deviceIdentifier },
+    { identifier: Fixture.otherDeviceIdentifier, name: Fixture.deviceName, active: activeIdentifier === Fixture.otherDeviceIdentifier },
+  ] });
+  current.state.librespotLogin = () => librespotLogin().provider; await current.controller.loginWithLibrespot(librespotInput());
+  assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.deviceIdentifier);
+  activeIdentifier = Fixture.otherDeviceIdentifier; await current.controller.reloadDevices();
+  assertion.equal(current.controller.getSnapshot().selectedDeviceIdentifier, Fixture.otherDeviceIdentifier); current.controller.dispose();
+});
+test('Native ready discovery waits for an in-flight Jam command and reads only once when idle', async () => {
+  const observers = new Set(); let reads = Fixture.noCalls;
+  let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
+  const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
+    nativeDevices: async () => { reads += Fixture.sequenceIncrement; return []; } });
+  current.state.librespotLogin = () => librespotLogin().provider; await current.controller.loginWithLibrespot(librespotInput());
+  const creating = deferred(); current.state.create = () => creating.promise; const pending = current.controller.createSession();
+  native = { ...native, status: ConnectFixture.ready, deviceIdentifier: ConnectFixture.device };
+  for (const observer of observers) observer(); for (const observer of observers) observer();
+  assertion.equal(reads, Fixture.singleCall); assertion.equal(current.controller.getSnapshot().operation, SpotifyMobileOperation.Creating);
+  creating.resolve(sessionResponse()); await pending; await waitForSavedLoginIdle(current.controller);
+  assertion.equal(reads, Fixture.connectionAndRefreshCount); current.controller.dispose();
+});
+test('Account retirement cancels a deferred ready device refresh before the old command finishes', async () => {
+  const observers = new Set(); let reads = Fixture.noCalls;
+  let native = { status: ConnectFixture.connecting, generation: ConnectFixture.generation, deviceIdentifier: null, failure: null };
+  const current = fixture({ nativeConnection: { getSnapshot: () => native, subscribe(listener) { observers.add(listener); return () => observers.delete(listener); } },
+    nativeDevices: async () => { reads += Fixture.sequenceIncrement; return []; } });
+  current.state.librespotLogin = () => librespotLogin().provider; await current.controller.loginWithLibrespot(librespotInput());
+  const creating = deferred(); current.state.create = () => creating.promise; const pending = current.controller.createSession();
+  native = { ...native, status: ConnectFixture.ready, deviceIdentifier: ConnectFixture.device };
+  for (const observer of observers) observer();
+  current.changeAccount({ accountIdentifier: Fixture.otherAccount, isLoggedIn: true }); creating.resolve(sessionResponse()); await pending;
+  assertion.equal(reads, Fixture.singleCall); assertion.equal(current.controller.getSnapshot().connected, false); current.controller.dispose();
+});

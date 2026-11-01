@@ -7,6 +7,7 @@ import { spotifyInvitationToken } from './SpotifyInvitation';
 import { spotifyQueueTrackIdentifier } from './SpotifyQueueTrack';
 import type { SpotifyAuthorizationReturnStatus } from './SpotifyLoginBrowser';
 import type { SpotifyConnectSnapshot } from './SpotifyConnectStore';
+import { SpotifyConnectStatus } from './SpotifyConnectStore';
 
 export enum SpotifyMobileOperation {
   Idle = 'idle', Connecting = 'connecting', Disconnecting = 'disconnecting', Devices = 'devices', Creating = 'creating',
@@ -56,6 +57,7 @@ export interface SpotifyMobileDependencies {
   readonly shutdownNative?: () => Promise<void>;
   readonly connectNative?: (provider: SpotifyLoginProvider, accountIdentifier: string, cancellation: AbortSignal) => void;
   readonly nativeDeviceIdentifier?: (mode: JamJoinMode) => string | null;
+  readonly nativeDevices?: (accountIdentifier: string, cancellation: AbortSignal) => Promise<readonly SpotifyMobileDevice[]>;
   readonly resolveInvitation?: (invitation: string, cancellation: AbortSignal) => Promise<string>;
 }
 
@@ -77,6 +79,7 @@ export class SpotifyMobileController {
   private applicationAccountIdentifier: string | null = null;
   private disposed = false;
   private observedApplicationAccountIdentifier: string | null;
+  private pendingNativeDeviceRefresh: Readonly<{ lifetime: AbortController; accountIdentifier: string; generation: number }> | null = null;
 
   constructor(private readonly dependencies: SpotifyMobileDependencies) {
     const initialAccount = dependencies.account.getSnapshot();
@@ -104,7 +107,17 @@ export class SpotifyMobileController {
     });
     this.stopNativeObservation = dependencies.nativeConnection?.subscribe(() => {
       if (!this.disposed && this.snapshot.connected && this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot) {
-        this.publish({ ...this.snapshot, nativeConnection: dependencies.nativeConnection!.getSnapshot() });
+        const previous = this.snapshot.nativeConnection;
+        const connection = dependencies.nativeConnection!.getSnapshot();
+        this.publish({ ...this.snapshot, nativeConnection: connection });
+        if (connection.status !== SpotifyConnectStatus.Ready) this.pendingNativeDeviceRefresh = null;
+        const accountIdentifier = this.credentials?.accountIdentifier;
+        if (this.snapshot.connected && accountIdentifier && dependencies.nativeDevices
+          && connection.status === SpotifyConnectStatus.Ready
+          && (previous?.status !== SpotifyConnectStatus.Ready || previous.generation !== connection.generation)) {
+          this.pendingNativeDeviceRefresh = { lifetime: this.cancellation, accountIdentifier, generation: connection.generation };
+          this.refreshNativeDevicesWhenIdle();
+        }
       }
     });
   }
@@ -374,16 +387,48 @@ export class SpotifyMobileController {
     if (!this.start(SpotifyMobileOperation.Devices)) return;
     const lifetime = this.cancellation;
     try {
-      const credentials = this.credentialProvider === null ? this.currentCredentials(lifetime.signal)
-        : await this.credentialProvider.getCredentials(lifetime.signal);
-      const devices = await this.dependencies.gateway.devices(credentials.accessToken, lifetime.signal);
+      const devices = await this.readDevices(lifetime);
       if (!this.current(lifetime)) return;
-      const selected = devices.find(device => device.identifier === this.snapshot.selectedDeviceIdentifier)
-        ?? devices.find(device => device.active) ?? devices[SpotifyMobilePolicy.firstPosition];
+      const previous = devices.find(device => device.identifier === this.snapshot.selectedDeviceIdentifier);
+      const active = devices.find(device => device.active);
+      const selected = (this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot ? active ?? previous : previous ?? active)
+        ?? devices[SpotifyMobilePolicy.firstPosition];
       this.publish({ ...this.snapshot, devices: Object.freeze(devices.map(device => Object.freeze({ ...device }))),
         selectedDeviceIdentifier: selected?.identifier ?? null, deviceFailure: null });
     } catch (failure) { if (this.current(lifetime)) this.publish({ ...this.snapshot, deviceFailure: this.failureCode(failure) }); }
     finally { this.finish(lifetime); }
+  }
+
+  private async readDevices(lifetime: AbortController): Promise<readonly SpotifyMobileDevice[]> {
+    if (this.snapshot.authenticationMethod === SpotifyLoginMethod.Librespot) {
+      if (!this.dependencies.nativeDevices) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+      const accountIdentifier = this.credentials?.accountIdentifier;
+      if (!accountIdentifier) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+      if (this.pendingNativeDeviceRefresh?.lifetime === lifetime
+        && this.pendingNativeDeviceRefresh.accountIdentifier === accountIdentifier
+        && this.pendingNativeDeviceRefresh.generation === this.snapshot.nativeConnection?.generation)
+        this.pendingNativeDeviceRefresh = null;
+      return this.dependencies.nativeDevices(accountIdentifier, lifetime.signal);
+    }
+    const credentials = this.credentialProvider === null ? this.currentCredentials(lifetime.signal)
+      : await this.credentialProvider.getCredentials(lifetime.signal);
+    return this.dependencies.gateway.devices(credentials.accessToken, lifetime.signal);
+  }
+
+  private refreshNativeDevicesWhenIdle(): void {
+    const pending = this.pendingNativeDeviceRefresh;
+    if (!pending) return;
+    if (!this.current(pending.lifetime) || !this.snapshot.connected
+      || this.snapshot.authenticationMethod !== SpotifyLoginMethod.Librespot
+      || this.credentials?.accountIdentifier !== pending.accountIdentifier
+      || this.snapshot.nativeConnection?.status !== SpotifyConnectStatus.Ready
+      || this.snapshot.nativeConnection.generation !== pending.generation) {
+      this.pendingNativeDeviceRefresh = null;
+      return;
+    }
+    if (this.snapshot.operation !== SpotifyMobileOperation.Idle) return;
+    this.pendingNativeDeviceRefresh = null;
+    void this.reloadDevices();
   }
 
   selectDevice(identifier: string): void {
@@ -462,6 +507,7 @@ export class SpotifyMobileController {
   disconnect(): void { if (!this.disposed) this.retireConnection(true); }
 
   private retireConnection(forgetSaved: boolean): void {
+    this.pendingNativeDeviceRefresh = null;
     const provider = this.loginSession;
     const account = this.dependencies.account.getSnapshot();
     const retiredAccountIdentifier = this.applicationAccountIdentifier ?? (account.isLoggedIn ? account.accountIdentifier : null);
@@ -581,7 +627,10 @@ export class SpotifyMobileController {
   }
 
   private finish(lifetime: AbortController): void {
-    if (this.current(lifetime)) this.publish({ ...this.snapshot, operation: SpotifyMobileOperation.Idle });
+    if (this.current(lifetime)) {
+      this.publish({ ...this.snapshot, operation: SpotifyMobileOperation.Idle });
+      this.refreshNativeDevicesWhenIdle();
+    }
   }
 
   private current(lifetime: AbortController): boolean { return !this.disposed && lifetime === this.cancellation && !lifetime.signal.aborted; }

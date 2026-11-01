@@ -505,3 +505,99 @@ test(GuestFixture.malformed, async () => {
   await assert.rejects(current.store.verify(guestIdentity(), new AbortController().signal), { code: library.IntegrationFailureCode.InvalidResponse });
   await current.store.detach();
 });
+
+const DeviceListFixture = Object.freeze({ name: 'Synthetic speaker', otherDevice: 'synthetic-other-device',
+  hiddenDevice: 'synthetic-hidden-observer', devicePrefix: 'synthetic-device-', maximumVisibleDevices: 50,
+  maximumClusterDevices: 256, first: 0, one: 1 });
+function nativeDevice(identifier = Fixture.device, changes = {}) {
+  return { identifier, name: DeviceListFixture.name, canPlay: true, controllable: true, hidden: false, ...changes };
+}
+function deviceResponse(devices = [nativeDevice()], activeDeviceIdentifier = Fixture.device) {
+  return { handle: Fixture.handle, generation: Fixture.generation, reading: { cluster: { devices, activeDeviceIdentifier } } };
+}
+async function deviceFixture(response = deviceResponse()) {
+  const current = fixture(); await current.attach(); current.send(registration());
+  current.state.reading = deferred(); current.state.reading.resolve(response); return current;
+}
+test('Native device discovery returns actual named active cluster devices and deduplicates identifiers', async () => {
+  const current = await deviceFixture(deviceResponse([nativeDevice(DeviceListFixture.otherDevice), nativeDevice(), nativeDevice()]));
+  const devices = await current.store.readDevices(Fixture.account, new AbortController().signal);
+  assert.deepEqual(devices, [{ identifier: Fixture.device, name: DeviceListFixture.name, active: true },
+    { identifier: DeviceListFixture.otherDevice, name: DeviceListFixture.name, active: false }]);
+  assert.ok(Object.isFrozen(devices)); assert.ok(devices.every(Object.isFrozen));
+  assert.deepEqual(current.calls.reads, [{ identifier: current.calls.starts[DeviceListFixture.first].identifier, generation: Fixture.generation }]);
+  await current.store.detach();
+});
+test('Native device discovery excludes hidden observers and devices that cannot play or accept control', async () => {
+  const current = await deviceFixture(deviceResponse([nativeDevice(DeviceListFixture.hiddenDevice, { hidden: true }),
+    nativeDevice(Fixture.device, { canPlay: false }), nativeDevice(DeviceListFixture.otherDevice, { controllable: false })]));
+  assert.deepEqual(await current.store.readDevices(Fixture.account, new AbortController().signal), []);
+  await current.store.detach();
+});
+test('An omitted native observer is never invented as a StreamingService playback device', async () => {
+  const current = await deviceFixture(deviceResponse([], DeviceListFixture.otherDevice));
+  assert.deepEqual(await current.store.readDevices(Fixture.account, new AbortController().signal), []);
+  await current.store.detach();
+});
+test('Native device discovery bounds returned devices while retaining the actual active device', async () => {
+  const devices = Array.from({ length: DeviceListFixture.maximumVisibleDevices + DeviceListFixture.one },
+    (unusedElement, deviceIndex) => nativeDevice(DeviceListFixture.devicePrefix + deviceIndex));
+  const activeIdentifier = devices.at(-DeviceListFixture.one).identifier;
+  const current = await deviceFixture(deviceResponse(devices, activeIdentifier));
+  const result = await current.store.readDevices(Fixture.account, new AbortController().signal);
+  assert.equal(result.length, DeviceListFixture.maximumVisibleDevices);
+  assert.equal(result[DeviceListFixture.first].identifier, activeIdentifier);
+  assert.equal(result[DeviceListFixture.first].active, true); await current.store.detach();
+});
+test('Native device discovery rejects oversized clusters and malformed capability or name data', async () => {
+  const invalid = [deviceResponse(Array.from({ length: DeviceListFixture.maximumClusterDevices + DeviceListFixture.one }, () => nativeDevice())),
+    deviceResponse([nativeDevice(Fixture.device, { hidden: null })]), deviceResponse([nativeDevice(Fixture.device, { name: Fixture.privateFailure + '\n' })])];
+  for (const response of invalid) {
+    const current = await deviceFixture(response);
+    await assert.rejects(current.store.readDevices(Fixture.account, new AbortController().signal), { code: library.IntegrationFailureCode.InvalidResponse });
+    await current.store.detach();
+  }
+});
+test('Native device discovery rejects a receipt from another handle or generation', async () => {
+  for (const response of [{ ...deviceResponse(), handle: Fixture.otherHandle }, { ...deviceResponse(), generation: Fixture.nextGeneration }]) {
+    const current = await deviceFixture(response);
+    await assert.rejects(current.store.readDevices(Fixture.account, new AbortController().signal), { code: library.IntegrationFailureCode.Superseded });
+    await current.store.detach();
+  }
+});
+test('Native device discovery rejects another account without reading private cluster data', async () => {
+  const current = await deviceFixture();
+  await assert.rejects(current.store.readDevices(Fixture.otherAccount, new AbortController().signal), { code: library.IntegrationFailureCode.Unauthorized });
+  assert.equal(current.calls.reads.length, Fixture.zero); await current.store.detach();
+});
+test('Native device cancellation rejects promptly and discards a late cluster receipt', async () => {
+  const current = await deviceFixture(); current.state.reading = deferred(); const cancellation = new AbortController();
+  const reading = current.store.readDevices(Fixture.account, cancellation.signal);
+  const rejected = assert.rejects(reading, { code: library.IntegrationFailureCode.Canceled }); cancellation.abort(); await rejected;
+  current.state.reading.resolve(deviceResponse()); await flush(); await current.store.detach();
+});
+test('Native device discovery cannot accept a read completed after reconnect advances its generation', async () => {
+  const current = await deviceFixture(); current.state.reading = deferred();
+  const reading = current.store.readDevices(Fixture.account, new AbortController().signal);
+  current.send(registration(), Fixture.nextGeneration); current.state.reading.resolve(deviceResponse());
+  await assert.rejects(reading, { code: library.IntegrationFailureCode.Superseded }); await current.store.detach();
+});
+test('Native device discovery preserves typed native failure without exposing its response body', async () => {
+  const current = await deviceFixture({ ...deviceResponse(), failure: library.IntegrationFailureCode.RateLimited, private: Fixture.privateFailure });
+  await assert.rejects(current.store.readDevices(Fixture.account, new AbortController().signal), failure => {
+    assert.equal(failure.code, library.IntegrationFailureCode.RateLimited);
+    assert.equal(failure.message.includes(Fixture.privateFailure), false); return true;
+  }); await current.store.detach();
+});
+test('Native device discovery cannot dispatch while registration is connecting or reconnecting', async () => {
+  const current = fixture(); await current.attach();
+  await assert.rejects(current.store.readDevices(Fixture.account, new AbortController().signal), { code: library.IntegrationFailureCode.Unsupported });
+  current.send(registration()); current.send({ type: Fixture.reconnecting, failure: library.IntegrationFailureCode.Network });
+  await assert.rejects(current.store.readDevices(Fixture.account, new AbortController().signal), { code: library.IntegrationFailureCode.Unsupported });
+  assert.equal(current.calls.reads.length, Fixture.zero); await current.store.detach();
+});
+test('Pre-canceled native device discovery never reads the cluster', async () => {
+  const current = await deviceFixture(); const cancellation = new AbortController(); cancellation.abort();
+  await assert.rejects(current.store.readDevices(Fixture.account, cancellation.signal), { code: library.IntegrationFailureCode.Canceled });
+  assert.equal(current.calls.reads.length, Fixture.zero); await current.store.detach();
+});
