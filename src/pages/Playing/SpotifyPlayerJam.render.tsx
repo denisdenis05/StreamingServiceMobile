@@ -42,11 +42,11 @@ export const PlayerJamCopy = Object.freeze({
   stop: 'Stop sharing or following',
   details: 'Open Jam, invitations & QR',
   hostHelp:
-    'Songs you choose in this app update the shared Spotify queue. New songs are matched before your queue changes.',
+    'Songs you choose in this app update the shared Spotify queue once Spotify confirms this player as host.',
   followHelp:
     'Play, pause, next, previous and seek control the Spotify host when permitted. Host changes update your local playback.',
   ownerSelection:
-    'To choose songs from your library for everyone, switch to Host from this player first.',
+    'Choose a song or playlist in this app to share it with the Jam.',
   guestSelection:
     'Stop following before choosing a different local song. You can add songs through the Jam queue when Spotify permits it.',
   stoppedHelp:
