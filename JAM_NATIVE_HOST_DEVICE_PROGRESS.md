@@ -66,3 +66,14 @@ builds and actual emulator verification.
 No Spotify authentication, catalog request, device mutation or running Spotify
 process change was performed for these source checks. Actual device visibility,
 host activation, incoming controls and queue/audio behavior remain live gates.
+
+## Repeated activation fence ordering
+
+The final provider integration run exposed a timing-dependent native test: after
+an uncertain withdrawal, a repeated current-generation activation compared a
+retained receipt against the old preflight before consulting the already-used
+activation fence. Equal millisecond samples sometimes hid this ordering. The
+actor now checks the existing dispatched fence first, after generation/lifetime
+admission. It consistently returns UnknownOutcome without a new dispatch.
+The existing unknown-deactivation regression covers this behavior. The complete
+integrated native suite passes 270 cases, including the new catalog provider.

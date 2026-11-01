@@ -1,3 +1,4 @@
+use crate::connect_client_token::{ClientTokenExchange, ClientTokenIdentity, ClientTokenCache, ClientTokenPlatform, obtain_client_token, CLIENT_TOKEN_ADDRESS, MAXIMUM_CLIENT_TOKEN_RESPONSE_BYTES};
 use crate::connect_search::diagnostics::{SearchDiagnostic, SearchDiagnosticStage};
 use crate::connect_search_traffic::{CatalogSearchTraffic, retry_after_seconds, quota_exceeded, MAXIMUM_RATE_LIMIT_BODY_BYTES, RATE_LIMIT_BODY_TIMEOUT_MILLISECONDS};
 use crate::connect_transport::native_monotonic_milliseconds;
@@ -17,6 +18,16 @@ use crate::{connect_activation::{build_explicit_activation, ConnectActivationPla
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
+const CLIENT_TOKEN_HEADER: &str = "client-token";
+const PARTNER_ORIGIN_HEADER: &str = "origin";
+const PARTNER_REFERER_HEADER: &str = "referer";
+const PARTNER_ORIGIN: &str = "https://xpui.app.spotify.com";
+const HASHCASH_SUFFIX_BYTES: usize = 16;
+const ANDROID_PLATFORM: &str = "android";
+const LINUX_PLATFORM: &str = "linux";
+const MACOS_PLATFORM: &str = "macos";
+const IOS_PLATFORM: &str = "ios";
+const WINDOWS_PLATFORM: &str = "windows";
 const BEARER_PREFIX: &str = "Bearer ";
 const AUTHORIZATION_HEADER: &str = "authorization";
 const ACCEPT_HEADER: &str = "accept";
@@ -83,6 +94,7 @@ pub struct NativeConnectSession {
     pub failure_stage: ConnectFailureStage,
     verification: RegistrationVerification,
     catalog_traffic: CatalogSearchTraffic,
+    client_token: ClientTokenCache,
 }
 
 pub trait ConnectSessionOperations: Send {
@@ -155,7 +167,7 @@ impl NativeConnectSession {
         let session = Session::new(session_configuration, None);
         let mut owned = Self { session, token: None, origin: String::new(), registration: PutStateRequest::new(),
             connection_identifier: None, registered: false, registration_attempted: false, publication_state: ConnectPublicationState::default(), failure_stage: ConnectFailureStage::Restore,
-            verification: RegistrationVerification::Cluster, catalog_traffic: CatalogSearchTraffic::default() };
+            verification: RegistrationVerification::Cluster, catalog_traffic: CatalogSearchTraffic::default(), client_token: ClientTokenCache::default() };
         tokio::time::timeout(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECONDS),
             owned.session.connect(stored.credentials, false)).await.map_err(|_| Failure::Deadline)?.map_err(sanitized_failure)?;
         if owned.session.username() != stored.account_identifier { return Err(Failure::Unauthorized); }
@@ -176,6 +188,31 @@ impl NativeConnectSession {
             else { self.session.login5().auth_token().await.map_err(sanitized_failure) }
         }).await.map_err(|_| Failure::Deadline)??;
         let access_token = token.access_token.clone(); self.token = Some(token); Ok(access_token)
+    }
+
+    fn client_token_identity(&self) -> ClientTokenIdentity {
+        ClientTokenIdentity { account_identifier: self.session.username(), client_identifier: self.session.client_id(),
+            device_identifier: self.session.device_id().to_owned() }
+    }
+
+    async fn catalog_client_token(&mut self) -> Result<String, Failure> {
+        let identity = self.client_token_identity();
+        let now = native_monotonic_milliseconds();
+        if let Some(token) = self.client_token.read(&identity, now) { return Ok(token.to_owned()); }
+        self.client_token.clear();
+        let platform = match std::env::consts::OS {
+            ANDROID_PLATFORM => ClientTokenPlatform::Android,
+            LINUX_PLATFORM => ClientTokenPlatform::Linux,
+            MACOS_PLATFORM => ClientTokenPlatform::MacOs,
+            IOS_PLATFORM => ClientTokenPlatform::Ios,
+            WINDOWS_PLATFORM => ClientTokenPlatform::Windows,
+            _ => return Err(Failure::Unsupported),
+        };
+        let grant = tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), obtain_client_token(self, &identity, platform))
+            .await.map_err(|_| Failure::Deadline)??;
+        let token = grant.token.clone();
+        self.client_token.remember(identity, grant, native_monotonic_milliseconds())?;
+        Ok(token)
     }
 
     pub async fn dealer_address(&mut self) -> Result<Url, Failure> {
@@ -389,9 +426,15 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
             let wait_milliseconds = self.catalog_traffic.minimum_wait_milliseconds(now);
             tokio::time::sleep(Duration::from_millis(wait_milliseconds)).await;
         }
+        let client_token = if catalog_search { Some(self.catalog_client_token().await.map_err(|failure| { SearchDiagnostic::client_token(None, Some(failure))
+            .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(native_monotonic_milliseconds())).emit(); failure })?) } else { None };
         let mut request = Request::builder().method(request.method.clone()).uri(address)
             .header(AUTHORIZATION_HEADER, BEARER_PREFIX.to_owned() + access_token)
             .header(ACCEPT_HEADER, request.media_type).header(CONTENT_TYPE_HEADER, request.media_type);
+        if let Some(client_token) = client_token {
+            request = request.header(CLIENT_TOKEN_HEADER, client_token).header(PARTNER_ORIGIN_HEADER, PARTNER_ORIGIN)
+                .header(PARTNER_REFERER_HEADER, PARTNER_ORIGIN);
+        }
         if !catalog_search {
             if let Some(connection) = self.connection_identifier.as_ref() { request = request.header(CONNECTION_HEADER, connection); }
         }
@@ -439,6 +482,7 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
             if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::HttpResponse, Some(status),
                 (!status.is_success()).then(|| private_http_status_failure(status.as_u16(), mutation)))
                 .traffic(self.catalog_traffic.dispatch_count(), None).emit(); }
+            if catalog_search && status.as_u16() == UNAUTHORIZED_STATUS { self.client_token.clear(); }
             if !status.is_success() { return Err(private_http_status_failure(status.as_u16(), mutation)); }
             let mut body = response.into_body();
             let mut received = Vec::new();
@@ -460,5 +504,45 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
             Err(_) => Err(timed_out_request_failure(mutation, catalog_search
                 && self.catalog_traffic.observed_rate_limit())),
         }
+    }
+}
+
+impl ClientTokenExchange for NativeConnectSession {
+    fn is_current(&self, identity: &ClientTokenIdentity) -> bool { self.client_token_identity() == *identity }
+    async fn dispatch(&mut self, body: Vec<u8>) -> Result<Vec<u8>, Failure> {
+        self.catalog_traffic.require_allowed(native_monotonic_milliseconds())?;
+        let request = Request::builder().method(Method::POST).uri(CLIENT_TOKEN_ADDRESS)
+            .header(ACCEPT_HEADER, PROTOBUF_MEDIA_TYPE).header(CONTENT_TYPE_HEADER, PROTOBUF_MEDIA_TYPE)
+            .body(body.into()).map_err(|_| Failure::InvalidInput)?;
+        let response = self.session.http_client().request_fut(request).map_err(|failure| private_http_failure(failure, false))?
+            .await.map_err(|_| Failure::Network)?;
+        let status = response.status();
+        if status.as_u16() == RATE_LIMITED_STATUS {
+            self.catalog_traffic.rate_limited(native_monotonic_milliseconds(), retry_after_seconds(response.headers()));
+        }
+        if !status.is_success() {
+            let failure = if status.as_u16() == UNAUTHORIZED_STATUS { Failure::NativeTokenRejected }
+                else { private_http_status_failure(status.as_u16(), false) };
+            SearchDiagnostic::client_token(Some(status), Some(failure))
+                .traffic(self.catalog_traffic.dispatch_count(), self.catalog_traffic.cooldown_remaining_seconds(native_monotonic_milliseconds())).emit();
+            return Err(failure);
+        }
+        let mut body = response.into_body(); let mut received = Vec::new();
+        while let Some(frame) = body.frame().await {
+            let frame = frame.map_err(|_| Failure::Network)?;
+            if let Ok(bytes) = frame.into_data() {
+                if received.len().saturating_add(bytes.len()) > MAXIMUM_CLIENT_TOKEN_RESPONSE_BYTES { return Err(Failure::Backpressure); }
+                received.extend_from_slice(&bytes);
+            }
+        }
+        SearchDiagnostic::client_token(Some(status), None).emit();
+        Ok(received)
+    }
+    async fn solve(&mut self, prefix: Vec<u8>, difficulty: i32) -> Result<Vec<u8>, Failure> {
+        tokio::task::spawn_blocking(move || {
+            let mut suffix = [u8::default(); HASHCASH_SUFFIX_BYTES];
+            librespot_core::util::solve_hash_cash(&[], &prefix, difficulty, &mut suffix).map_err(sanitized_failure)?;
+            Ok(suffix.to_vec())
+        }).await.map_err(|_| Failure::Canceled)?
     }
 }

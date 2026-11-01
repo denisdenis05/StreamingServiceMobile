@@ -124,7 +124,7 @@ test(FailureFixture.names.private, () => {
   }
 });
 
-const CatalogFixture = Object.freeze({ origin: 'https://api.spotify.com', stage: 'httpResponse', admission: 'dispatchAdmission', status: 429,
+const CatalogFixture = Object.freeze({ origin: 'https://api-partner.spotify.com', stage: 'httpResponse', admission: 'dispatchAdmission', status: 429,
   failure: 'backpressure', summaryStage: 'native-catalog-http', privateValue: 'synthetic-private-diagnostic',
   foreignOrigin: 'https://synthetic.example/', invalidStatus: 999 });
 test('Catalog diagnostics preserve fixed HTTP origin and status while discarding every private extra field', () => {
@@ -178,4 +178,17 @@ test(TrafficDiagnosticFixture.invalidName, () => {
     quotaExceeded: CatalogFixture.privateValue });
   assertion.equal(projected.retryAfterSeconds, undefined); assertion.equal(projected.cooldownRemainingSeconds, undefined);
   assertion.equal(projected.requestCount, undefined); assertion.equal(projected.quotaExceeded, undefined);
+});
+
+const ClientTokenDiagnosticFixture = Object.freeze({ origin: 'https://clienttoken.spotify.com', stage: 'clientToken',
+  name: 'Native client token diagnostics retain only their own fixed origin stage and safe counters' });
+test(ClientTokenDiagnosticFixture.name, () => {
+  const projected = projectCatalogDiagnostic({ ...CatalogFixture, ...ClientTokenDiagnosticFixture, ...TrafficDiagnosticFixture,
+    token: CatalogFixture.privateValue, challenge: CatalogFixture.privateValue });
+  assertion.equal(projected.origin, ClientTokenDiagnosticFixture.origin);
+  assertion.equal(projected.operation, ClientTokenDiagnosticFixture.stage);
+  assertion.equal(projected.requestCount, TrafficDiagnosticFixture.requestCount);
+  assertion.equal(JSON.stringify(projected).includes(CatalogFixture.privateValue), false);
+  assertion.equal(projectCatalogDiagnostic({ ...CatalogFixture, origin: ClientTokenDiagnosticFixture.origin }), null);
+  assertion.equal(projectCatalogDiagnostic({ ...CatalogFixture, stage: ClientTokenDiagnosticFixture.stage }), null);
 });

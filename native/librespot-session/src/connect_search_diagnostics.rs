@@ -3,11 +3,12 @@ use serde::Serialize;
 use crate::model::Failure;
 use super::CATALOG_SEARCH_ORIGIN;
 
+const CLIENT_TOKEN_ORIGIN: &str = "https://clienttoken.spotify.com";
 pub const LOG_TARGET: &str = "streaming_spotify_catalog_diagnostic";
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub enum SearchDiagnosticStage { RequestCompletion, DispatchAdmission, Transport, HttpResponse, ResponseBody, Decode }
+pub enum SearchDiagnosticStage { RequestCompletion, DispatchAdmission, Transport, HttpResponse, ResponseBody, Decode, ClientToken }
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,12 @@ impl SearchDiagnostic {
     pub fn new(stage: SearchDiagnosticStage, status: Option<http::StatusCode>, failure: Option<Failure>) -> Self {
         Self { origin: CATALOG_SEARCH_ORIGIN, stage, status: status.map(|status| status.as_u16()), failure: failure.map(Failure::code),
             retry_after_seconds: None, cooldown_remaining_seconds: None, request_count: None, quota_exceeded: None }
+    }
+
+    pub fn client_token(status: Option<http::StatusCode>, failure: Option<Failure>) -> Self {
+        let mut diagnostic = Self::new(SearchDiagnosticStage::ClientToken, status, failure);
+        diagnostic.origin = CLIENT_TOKEN_ORIGIN;
+        diagnostic
     }
 
     pub fn traffic(mut self, request_count: u64, cooldown_remaining_seconds: Option<u64>) -> Self {

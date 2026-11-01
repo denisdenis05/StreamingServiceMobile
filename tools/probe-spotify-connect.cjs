@@ -19,12 +19,12 @@ const Policy = Object.freeze({ program: '../native/librespot-session/target/debu
   lineEvent: 'line', closeEvent: 'close', errorEvent: 'error', dataEvent: 'data', endEvent: 'end', failureField: 'failure',
   networkFailure: 'network', invalidResponse: 'invalid-response', canceled: 'canceled',
   allowedFailures: ['network', 'invalid-response', 'invalid-input', 'unauthorized', 'forbidden', 'not-found',
-    'deadline', 'canceled', 'backpressure', 'rate-limited', 'unknown-outcome', 'unsupported', 'superseded'],
+    'deadline', 'canceled', 'backpressure', 'rate-limited', 'unknown-outcome', 'unsupported', 'superseded', 'native-token-rejected'],
   failureCodes: Object.values(IntegrationFailureCode),
   phases: ['authorization', 'nativeGrant', 'observation'], authorizationPhase: 'authorization', grantPhase: 'nativeGrant', observationPhase: 'observation',
   stage: 'connect-probe', inputOutput: 'pipe', diagnosticOutput: 'pipe',
-  catalogOrigin: 'https://api.spotify.com', catalogStage: 'native-catalog-http', minimumHttpStatus: 100, maximumHttpStatus: 599,
-  diagnosticStages: ['requestCompletion', 'dispatchAdmission', 'transport', 'httpResponse', 'responseBody', 'decode'] });
+  catalogOrigin: 'https://api-partner.spotify.com', clientTokenOrigin: 'https://clienttoken.spotify.com', clientTokenStage: 'clientToken', catalogStage: 'native-catalog-http', minimumHttpStatus: 100, maximumHttpStatus: 599,
+  diagnosticStages: ['requestCompletion', 'dispatchAdmission', 'transport', 'httpResponse', 'responseBody', 'decode', 'clientToken'] });
 const Copy = Object.freeze({ ready: 'Observing Spotify Connect. Commands: refresh, play, pause, next, previous, queue <Spotify track ID>, restart, stop. Restart reuses the in-memory credential after native cleanup. Playback capability is disabled for this transport test.' });
 
 function projectEvent(value) {
@@ -61,10 +61,11 @@ function projectEvent(value) {
 const CatalogBooleanType = 'boolean';
 const CatalogTrafficFields = Object.freeze(['retryAfterSeconds', 'cooldownRemainingSeconds', 'requestCount']);
 function projectCatalogDiagnostic(value) {
-  if (!value || value.origin !== Policy.catalogOrigin || !Policy.diagnosticStages.includes(value.stage)
+  if (!value || !Policy.diagnosticStages.includes(value.stage)
+    || value.origin !== (value.stage === Policy.clientTokenStage ? Policy.clientTokenOrigin : Policy.catalogOrigin)
     || value.status !== null && (!Number.isSafeInteger(value.status) || value.status < Policy.minimumHttpStatus || value.status > Policy.maximumHttpStatus)
     || value.failure !== null && !Policy.allowedFailures.includes(value.failure)) return null;
-  const projected = { stage: Policy.catalogStage, origin: Policy.catalogOrigin, operation: value.stage, status: value.status, failure: value.failure };
+  const projected = { stage: Policy.catalogStage, origin: value.origin, operation: value.stage, status: value.status, failure: value.failure };
   for (const field of CatalogTrafficFields) {
     if (Number.isSafeInteger(value[field]) && value[field] >= Policy.emptyCount) projected[field] = value[field];
   }

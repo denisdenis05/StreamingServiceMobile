@@ -10,19 +10,20 @@ use url::Url;
 
 use crate::{connect_authentication::{ConnectHttpRequest, ConnectRequestPurpose}, model::{bounded_text, Failure}};
 
-pub const CATALOG_SEARCH_ORIGIN: &str = "https://api.spotify.com";
-const SEARCH_PATH: &str = "/v1/search";
+pub const CATALOG_SEARCH_ORIGIN: &str = "https://api-partner.spotify.com";
+const SEARCH_PATH: &str = "/pathfinder/v2/query";
+const SEARCH_OPERATION: &str = "searchTracks";
+const SEARCH_OPERATION_HASH: &str = "b02683192a98dde7966b5e6655a79eeb62713eab703eda9902c932818dd52751";
+const PERSISTED_QUERY_VERSION: usize = 1;
+const LEGACY_PERSISTED_QUERY_NOT_FOUND: &str = "PersistedQueryNotFound";
+const PERSISTED_QUERY_NOT_FOUND: &str = "PERSISTED_QUERY_NOT_FOUND";
+const TRACK_RESPONSE_KIND: &str = "Track";
 const JSON_MEDIA_TYPE: &str = "application/json";
-const TRACK_KIND: &str = "track";
 const TRACK_URI_PREFIX: &str = "spotify:track:";
 const TRACK_FILTER_PREFIX: &str = "track:";
 const ARTIST_FILTER_PREFIX: &str = " artist:";
 const QUOTE: char = '"';
 const ESCAPE: char = '\\';
-const QUERY_PARAMETER: &str = "q";
-const TYPE_PARAMETER: &str = "type";
-const MARKET_PARAMETER: &str = "market";
-const LIMIT_PARAMETER: &str = "limit";
 const MINIMUM_RESULTS: usize = 1;
 const MAXIMUM_RESULTS: usize = 10;
 const MAXIMUM_RESPONSE_BYTES: usize = 1048576;
@@ -33,7 +34,6 @@ const MARKET_CHARACTERS: usize = 2;
 const EMPTY_COUNT: usize = 0;
 const MINIMUM_DURATION_MILLISECONDS: u64 = 1;
 const MAXIMUM_SAFE_INTEGER: u64 = 9007199254740991;
-const QUERY_PARAMETER_COUNT: usize = 4;
 const MAXIMUM_ESCAPED_TEXT_EXPANSION: usize = 4;
 const QUERY_FILTER_OVERHEAD_CHARACTERS: usize = 32;
 const MAXIMUM_QUERY_CHARACTERS: usize = MAXIMUM_TEXT_CHARACTERS * MAXIMUM_ESCAPED_TEXT_EXPANSION + QUERY_FILTER_OVERHEAD_CHARACTERS;
@@ -84,73 +84,91 @@ fn quoted(value: &str) -> String {
     result.push(QUOTE); result
 }
 
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PartnerSearchVariables {
+    search_term: String, offset: usize, limit: usize, number_of_top_results: usize,
+    include_pre_releases: bool, include_artist_has_concerts_field: bool, include_audiobooks: bool,
+    include_authors: bool, include_episode_content_ratings_v2: bool,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PersistedQuery { version: usize, sha256_hash: String }
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PartnerExtensions { persisted_query: PersistedQuery }
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PartnerRequest { operation_name: String, variables: PartnerSearchVariables, extensions: PartnerExtensions }
+
 pub fn search_request(input: &ConnectSearchInput) -> Result<ConnectHttpRequest, Failure> {
     input.validate()?;
     let query = TRACK_FILTER_PREFIX.to_owned() + &quoted(&input.title) + ARTIST_FILTER_PREFIX + &quoted(&input.author);
-    let mut address = Url::parse(&(CATALOG_SEARCH_ORIGIN.to_owned() + SEARCH_PATH)).map_err(|_| Failure::InvalidInput)?;
-    address.query_pairs_mut().append_pair(QUERY_PARAMETER, &query).append_pair(TYPE_PARAMETER, TRACK_KIND)
-        .append_pair(MARKET_PARAMETER, &input.market).append_pair(LIMIT_PARAMETER, &input.limit.to_string());
-    let path = address.path().to_owned() + QUERY_DELIMITER + address.query().ok_or(Failure::InvalidInput)?;
-    Ok(ConnectHttpRequest { method: Method::GET, path, body: Vec::new(), media_type: JSON_MEDIA_TYPE, purpose: ConnectRequestPurpose::CatalogSearch })
+    let body = PartnerRequest { operation_name: SEARCH_OPERATION.to_owned(), variables: PartnerSearchVariables {
+        search_term: query, offset: EMPTY_COUNT, limit: input.limit, number_of_top_results: input.limit,
+        include_pre_releases: true, include_artist_has_concerts_field: false, include_audiobooks: false,
+        include_authors: false, include_episode_content_ratings_v2: false,
+    }, extensions: PartnerExtensions { persisted_query: PersistedQuery { version: PERSISTED_QUERY_VERSION,
+        sha256_hash: SEARCH_OPERATION_HASH.to_owned() } } };
+    Ok(ConnectHttpRequest { method: Method::POST, path: SEARCH_PATH.to_owned(),
+        body: serde_json::to_vec(&body).map_err(|_| Failure::InvalidInput)?, media_type: JSON_MEDIA_TYPE, purpose: ConnectRequestPurpose::CatalogSearch })
 }
-
-const QUERY_DELIMITER: &str = "?";
 
 pub fn search_address(request: &ConnectHttpRequest) -> Result<Url, Failure> {
-    if !matches!(request.purpose, ConnectRequestPurpose::CatalogSearch) || request.method != Method::GET || !request.body.is_empty()
-        || request.media_type != JSON_MEDIA_TYPE { return Err(Failure::InvalidInput); }
-    let address = Url::parse(&(CATALOG_SEARCH_ORIGIN.to_owned() + &request.path)).map_err(|_| Failure::InvalidInput)?;
-    if address.origin().ascii_serialization() != CATALOG_SEARCH_ORIGIN || address.path() != SEARCH_PATH || address.fragment().is_some()
-        || !address.username().is_empty() || address.password().is_some() { return Err(Failure::InvalidInput); }
-    let pairs = address.query_pairs().collect::<Vec<_>>();
-    if pairs.len() != QUERY_PARAMETER_COUNT { return Err(Failure::InvalidInput); }
-    let mut names = HashSet::new();
-    for (name, value) in pairs {
-        if !names.insert(name.to_string()) { return Err(Failure::InvalidInput); }
-        let valid = match name.as_ref() {
-            QUERY_PARAMETER => bounded_text(&value, MAXIMUM_QUERY_CHARACTERS),
-            TYPE_PARAMETER => value == TRACK_KIND,
-            MARKET_PARAMETER => market(&value),
-            LIMIT_PARAMETER => value.parse::<usize>().is_ok_and(|limit| (MINIMUM_RESULTS..=MAXIMUM_RESULTS).contains(&limit)),
-            _ => false,
-        };
-        if !valid { return Err(Failure::InvalidInput); }
+    if !matches!(request.purpose, ConnectRequestPurpose::CatalogSearch) || request.method != Method::POST
+        || request.path != SEARCH_PATH || request.media_type != JSON_MEDIA_TYPE || request.body.len() > MAXIMUM_RESPONSE_BYTES {
+        return Err(Failure::InvalidInput);
     }
-    Ok(address)
+    let decoded: PartnerRequest = serde_json::from_slice(&request.body).map_err(|_| Failure::InvalidInput)?;
+    let variables = decoded.variables;
+    if decoded.operation_name != SEARCH_OPERATION || decoded.extensions.persisted_query.version != PERSISTED_QUERY_VERSION
+        || decoded.extensions.persisted_query.sha256_hash != SEARCH_OPERATION_HASH
+        || !bounded_text(&variables.search_term, MAXIMUM_QUERY_CHARACTERS) || variables.search_term.trim().is_empty()
+        || variables.offset != EMPTY_COUNT || !(MINIMUM_RESULTS..=MAXIMUM_RESULTS).contains(&variables.limit)
+        || variables.number_of_top_results != variables.limit || !variables.include_pre_releases
+        || variables.include_artist_has_concerts_field || variables.include_audiobooks || variables.include_authors
+        || variables.include_episode_content_ratings_v2 { return Err(Failure::InvalidInput); }
+    Url::parse(&(CATALOG_SEARCH_ORIGIN.to_owned() + SEARCH_PATH)).map_err(|_| Failure::InvalidInput)
 }
 
 #[derive(Deserialize)]
-struct SearchResponse { tracks: SearchPage }
+struct SearchResponse { data: Option<SearchData>, errors: Option<Vec<GraphFailure>> }
 #[derive(Deserialize)]
-struct SearchPage { items: Vec<PublicTrack> }
+#[serde(rename_all = "camelCase")]
+struct SearchData { search_v2: SearchResults }
 #[derive(Deserialize)]
-struct PublicArtist { name: String }
+#[serde(rename_all = "camelCase")]
+struct SearchResults { tracks_v2: SearchPage }
 #[derive(Deserialize)]
-struct ExternalIdentifiers { #[serde(rename = "isrc")] recording_code: Option<String> }
+struct SearchPage { items: Vec<SearchItem> }
 #[derive(Deserialize)]
-struct Restriction { reason: String }
+struct SearchItem { item: TrackWrapper }
 #[derive(Deserialize)]
-struct LinkedIdentity {
+struct TrackWrapper { data: PartnerTrack }
+#[derive(Deserialize)]
+struct GraphFailure { extensions: Option<GraphFailureExtensions>, message: Option<String> }
+#[derive(Deserialize)]
+struct GraphFailureExtensions { code: Option<String> }
+#[derive(Deserialize)]
+struct PartnerArtist { profile: ArtistProfile }
+#[derive(Deserialize)]
+struct ArtistProfile { name: String }
+#[derive(Deserialize)]
+struct PartnerArtists { items: Vec<PartnerArtist> }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PartnerDuration { total_milliseconds: u64 }
+#[derive(Deserialize)]
+struct PartnerPlayability { playable: bool }
+#[derive(Deserialize)]
+struct PartnerTrack {
+    #[serde(rename = "__typename")]
+    kind: Option<String>,
     #[serde(rename = "id")]
     identifier: Option<String>,
     #[serde(rename = "uri")]
-    track_reference: Option<String>,
-}
-#[derive(Deserialize)]
-struct PublicTrack {
-    #[serde(rename = "id")]
-    identifier: String,
-    #[serde(rename = "uri")]
     track_reference: String,
-    name: String, artists: Vec<PublicArtist>,
-    #[serde(rename = "duration_ms")]
-    duration_milliseconds: u64,
-    #[serde(rename = "type")]
-    kind: String,
-    is_local: bool,
-    #[serde(rename = "external_ids")]
-    external_identifiers: Option<ExternalIdentifiers>,
-    is_playable: Option<bool>, restrictions: Option<Restriction>, linked_from: Option<LinkedIdentity>,
+    name: String, artists: PartnerArtists, duration: PartnerDuration, playability: Option<PartnerPlayability>,
 }
 
 fn valid_identifier(identifier: &str) -> bool {
@@ -163,44 +181,35 @@ fn identity(identifier: &str, track_reference: &str) -> Result<(), Failure> {
     Ok(())
 }
 
-fn project(track: PublicTrack) -> Result<ConnectSearchTrack, Failure> {
-    identity(&track.identifier, &track.track_reference)?;
-    if track.kind != TRACK_KIND || track.is_local || !bounded_text(&track.name, MAXIMUM_TEXT_CHARACTERS)
-        || track.artists.len() == EMPTY_COUNT || track.artists.len() > MAXIMUM_ARTISTS
-        || track.artists.iter().any(|artist| !bounded_text(&artist.name, MAXIMUM_TEXT_CHARACTERS))
-        || !(MINIMUM_DURATION_MILLISECONDS..=MAXIMUM_SAFE_INTEGER).contains(&track.duration_milliseconds) { return Err(Failure::InvalidResponse); }
-    if let Some(original) = track.linked_from {
-        match (original.identifier, original.track_reference) {
-            (Some(identifier), Some(track_reference)) => identity(&identifier, &track_reference)?,
-            (None, None) => (),
-            _ => return Err(Failure::InvalidResponse),
-        }
-    }
-    let recording_codes = match track.external_identifiers.and_then(|identifiers| identifiers.recording_code) {
-        Some(code) if bounded_text(&code, MAXIMUM_TEXT_CHARACTERS) => vec![code],
-        Some(_) => return Err(Failure::InvalidResponse),
-        None => Vec::new(),
-    };
-    let playable = match track.restrictions {
-        Some(restriction) => {
-            if !bounded_text(&restriction.reason, MAXIMUM_TEXT_CHARACTERS) || track.is_playable == Some(true) { return Err(Failure::InvalidResponse); }
-            Some(false)
-        },
-        None => track.is_playable,
-    };
-    Ok(ConnectSearchTrack { spotify_track_identifier: track.identifier, title: track.name,
-        artist_names: track.artists.into_iter().map(|artist| artist.name).collect(), duration_milliseconds: track.duration_milliseconds, recording_codes, playable })
+fn project(track: PartnerTrack) -> Result<ConnectSearchTrack, Failure> {
+    let identifier = track.identifier.unwrap_or_else(|| track.track_reference.strip_prefix(TRACK_URI_PREFIX).unwrap_or_default().to_owned());
+    identity(&identifier, &track.track_reference)?;
+    if track.kind.as_ref().is_some_and(|kind| kind != TRACK_RESPONSE_KIND) || !bounded_text(&track.name, MAXIMUM_TEXT_CHARACTERS)
+        || track.name.trim().is_empty() || track.artists.items.len() == EMPTY_COUNT || track.artists.items.len() > MAXIMUM_ARTISTS
+        || track.artists.items.iter().any(|artist| !bounded_text(&artist.profile.name, MAXIMUM_TEXT_CHARACTERS) || artist.profile.name.trim().is_empty())
+        || !(MINIMUM_DURATION_MILLISECONDS..=MAXIMUM_SAFE_INTEGER).contains(&track.duration.total_milliseconds) { return Err(Failure::InvalidResponse); }
+    Ok(ConnectSearchTrack { spotify_track_identifier: identifier, title: track.name,
+        artist_names: track.artists.items.into_iter().map(|artist| artist.profile.name).collect(),
+        duration_milliseconds: track.duration.total_milliseconds, recording_codes: Vec::new(), playable: track.playability.map(|playability| playability.playable) })
 }
 
 pub fn decode_search_response(input: &ConnectSearchInput, bytes: &[u8]) -> Result<Vec<ConnectSearchTrack>, Failure> {
     input.validate()?;
     if bytes.len() > MAXIMUM_RESPONSE_BYTES { return Err(Failure::Backpressure); }
     let response: SearchResponse = serde_json::from_slice(bytes).map_err(|_| Failure::InvalidResponse)?;
-    if response.tracks.items.len() > input.limit { return Err(Failure::Backpressure); }
+    if let Some(errors) = response.errors.filter(|errors| !errors.is_empty()) {
+        if errors.iter().any(|failure| failure.extensions.as_ref().and_then(|extensions| extensions.code.as_deref()).is_some_and(|code| matches!(code, PERSISTED_QUERY_NOT_FOUND | LEGACY_PERSISTED_QUERY_NOT_FOUND))
+            || failure.message.as_deref() == Some(LEGACY_PERSISTED_QUERY_NOT_FOUND)) {
+            return Err(Failure::Unsupported);
+        }
+        return Err(Failure::InvalidResponse);
+    }
+    let items = response.data.ok_or(Failure::InvalidResponse)?.search_v2.tracks_v2.items;
+    if items.len() > input.limit { return Err(Failure::Backpressure); }
     let mut identifiers = HashSet::new();
     let mut tracks = Vec::new();
-    for track in response.tracks.items {
-        let projected = project(track)?;
+    for item in items {
+        let projected = project(item.item.data)?;
         if identifiers.insert(projected.spotify_track_identifier.clone()) { tracks.push(projected); }
     }
     Ok(tracks)
