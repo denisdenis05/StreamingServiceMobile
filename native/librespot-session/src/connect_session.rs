@@ -13,7 +13,7 @@ use serde_json::Value;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::{connect_activation::{build_explicit_activation, ConnectActivationPlayerReadiness, ConnectExplicitActivation}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack, search_request, search_address, decode_search_response}, connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_withdrawal, build_deactivation, build_publication, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
+use crate::{connect_activation::{build_explicit_activation, ConnectActivationPlayerReadiness, ConnectExplicitActivation}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack, search_request, search_address, decode_search_response}, connect_membership::{decode_current_membership, ConnectJamMembership, CURRENT_MEMBERSHIP_PATH}, connect_publication::{build_withdrawal, build_deactivation, build_publication, verify_publication_response, publication_server_timestamp, ConnectPublicationState, ConnectPublicationSnapshot}, connect_authentication::{ConnectAuthenticatedDispatch, ConnectHttpRequest, ConnectRequestPurpose, execute_authenticated_request}, connect_receipts::{ConnectCommandAcknowledgement, decode_command_acknowledgement}, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata, encode_metadata_request, decode_metadata_response, METADATA_PATH}, connect_device::{initial_registration, ConnectDeviceConfiguration},
     connect_wire::{decode_cluster_snapshot, ConnectCluster, MAXIMUM_FRAME_BYTES},
     desktop_login5, model::{decode_stored_session, Failure}, session::{sanitized_failure, stored_session_configuration}};
 
@@ -244,7 +244,7 @@ impl NativeConnectSession {
         self.registration = registration;
         let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Publication).await?;
         let observed = decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)?;
-        if observed.active_device_identifier != self.device_identifier() { return Err(Failure::UnknownOutcome); }
+        verify_publication_response(&publication, &observed)?;
         Ok(observed)
     }
 
@@ -285,7 +285,9 @@ impl NativeConnectSession {
         let path = DEVICE_PATH_PREFIX.to_owned() + &identifier_segment(self.device_identifier())?;
         self.publication_state.begin_dispatch(snapshot.sequence)?;
         let response = self.request(Method::PUT, path, body, PROTOBUF_MEDIA_TYPE, ConnectRequestPurpose::Publication).await?;
-        decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)
+        let observed = decode_cluster_snapshot(&response).map_err(|_| Failure::UnknownOutcome)?;
+        verify_publication_response(&publication, &observed)?;
+        Ok(observed)
     }
 
     pub async fn command(&mut self, target_device_identifier: &str, body: serde_json::Value) -> Result<ConnectCommandAcknowledgement, Failure> {

@@ -63,13 +63,17 @@ class SpotifyHostNativeTransport(
         val roundTrip = received - sent
         if (sent !in MinimumMilliseconds..MaximumSafeInteger || received !in sent..MaximumSafeInteger
             || roundTrip < MinimumMilliseconds || roundTrip > SpotifyHostingPolicy.MaximumClockUncertaintyMilliseconds - NativePrecisionMilliseconds
-            || startedNative > completedNative || completedNative > sampledNative
-            || completedNative - startedNative > roundTrip + NativePrecisionMilliseconds) fail(Deadline)
+            || startedNative > completedNative || completedNative > sampledNative) fail(Deadline)
+        val observationDuration = completedNative - startedNative
+        val observationAge = sampledNative - completedNative
+        val uncertainty = roundTrip + observationDuration + NativePrecisionMilliseconds
+        if (observationAge > MaximumPublicationReceiptAgeMilliseconds || observationAge > received
+            || uncertainty > SpotifyHostingPolicy.MaximumClockUncertaintyMilliseconds) fail(Deadline)
         val cluster = reading.getJSONObject(ClusterField)
         val activeHost = cluster.getString(ActiveDeviceField)
         if (expectedHostDeviceIdentifier != null && activeHost != expectedHostDeviceIdentifier) fail(Superseded)
         val server = integer(cluster, ServerField, FirstIdentifier)
-        return SpotifyHostClockAnchor(identity, startedNative, completedNative, received, server, roundTrip + NativePrecisionMilliseconds, activeHost)
+        return SpotifyHostClockAnchor(identity, startedNative, completedNative, received - observationAge, server, uncertainty, activeHost)
     }
 
     override fun activate(identity: SpotifyHostIdentity, queue: SpotifyHostPlayerQueue, snapshot: JSONObject, activation: JSONObject): SpotifyPlayerOperation<Unit> {
@@ -202,6 +206,7 @@ class SpotifyHostNativeTransport(
         private const val Unsupported = "unsupported"
         private const val ReadinessField = "readiness"
         private const val OutputReadyField = "playbackOutputReady"
+        private const val MaximumPublicationReceiptAgeMilliseconds = 15000L
         private const val AuthorityAbsentField = "externalAuthorityAbsent"
         private const val KeyField = "key"
         private const val AcceptedField = "accepted"

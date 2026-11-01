@@ -216,3 +216,37 @@ fn withdrawal_rejects_a_missing_owned_identity_and_invalid_timestamp() {
     assert!(streaming_spotify_session::connect_publication::build_withdrawal(&missing, PUBLICATION_TIMESTAMP_MILLISECONDS).is_err());
     assert!(streaming_spotify_session::connect_publication::build_withdrawal(&registration(), INVALID_SERVER_TIMESTAMP_MILLISECONDS).is_err());
 }
+
+fn acknowledged_publication(publication: &PutStateRequest) -> streaming_spotify_session::connect_wire::ConnectCluster {
+    let mut cluster = librespot_protocol::connect::Cluster { active_device_id: DEVICE.to_owned(),
+        player_state: publication.device.player_state.clone(), ..Default::default() };
+    cluster.device.insert(DEVICE.to_owned(), publication.device.device_info.as_ref().unwrap().clone());
+    streaming_spotify_session::connect_wire::normalize_cluster(cluster).unwrap()
+}
+
+#[test]
+fn publication_acknowledgement_requires_its_actual_active_device_and_matching_returned_player_identity() {
+    let mut snapshot = snapshot(); snapshot.command_handling_ready = true;
+    let publication = build_publication(&registration(), &snapshot, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    let observed = acknowledged_publication(&publication);
+    streaming_spotify_session::connect_publication::verify_publication_response(&publication, &observed).unwrap();
+    let mut foreign_device = observed.clone(); foreign_device.active_device_identifier = FOREIGN_IDENTIFIER.to_owned();
+    let mut foreign_queue = observed.clone(); foreign_queue.playback.as_mut().unwrap().queue_revision = FOREIGN_IDENTIFIER.to_owned();
+    let mut foreign_session = observed.clone(); foreign_session.playback.as_mut().unwrap().session_identifier = FOREIGN_IDENTIFIER.to_owned();
+    let mut hidden_device = observed.clone(); hidden_device.devices.first_mut().unwrap().hidden = true;
+    let mut renamed_device = observed.clone(); renamed_device.devices.first_mut().unwrap().name = FOREIGN_IDENTIFIER.to_owned();
+    for invalid in [foreign_device, foreign_queue, foreign_session, hidden_device, renamed_device] {
+        assert!(matches!(streaming_spotify_session::connect_publication::verify_publication_response(&publication, &invalid), Err(Failure::UnknownOutcome)));
+    }
+}
+
+#[test]
+fn publication_acknowledgement_tolerates_omitted_optional_device_and_player_details() {
+    let mut snapshot = snapshot(); snapshot.command_handling_ready = true;
+    let publication = build_publication(&registration(), &snapshot, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    let mut observed = acknowledged_publication(&publication);
+    let partial = observed.devices.first_mut().unwrap(); partial.name.clear(); partial.can_play = false; partial.controllable = false;
+    streaming_spotify_session::connect_publication::verify_publication_response(&publication, &observed).unwrap();
+    observed.devices.clear(); observed.playback = None;
+    streaming_spotify_session::connect_publication::verify_publication_response(&publication, &observed).unwrap();
+}

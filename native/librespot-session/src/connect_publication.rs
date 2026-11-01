@@ -195,3 +195,25 @@ pub fn publication_server_timestamp(snapshot: &ConnectPublicationSnapshot, nativ
     if elapsed_milliseconds > MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS { return Err(Failure::Canceled); }
     snapshot.sampled_server_timestamp_milliseconds.checked_add(elapsed_milliseconds).ok_or(Failure::InvalidInput)
 }
+
+pub fn verify_publication_response(publication: &PutStateRequest, observed: &crate::connect_wire::ConnectCluster) -> Result<(), Failure> {
+    let expected_device = &publication.device.device_info;
+    let expected_player = &publication.device.player_state;
+    if observed.active_device_identifier != expected_device.device_id { return Err(Failure::UnknownOutcome); }
+    if let Some(device) = observed.devices.iter().find(|device| device.identifier == expected_device.device_id) {
+        if !device.name.is_empty() && device.name != expected_device.name || device.hidden { return Err(Failure::UnknownOutcome); }
+    }
+    if let Some(player) = &observed.playback {
+        if !player.session_identifier.is_empty() && player.session_identifier != expected_player.session_id
+            || !player.playback_identifier.is_empty() && player.playback_identifier != expected_player.playback_id
+            || !player.queue_revision.is_empty() && player.queue_revision != expected_player.queue_revision {
+            return Err(Failure::UnknownOutcome);
+        }
+        if let Some(track) = &player.track {
+            if track.uri != expected_player.track.uri || track.occurrence_identifier.as_ref().is_some_and(|occurrence| *occurrence != expected_player.track.uid) {
+                return Err(Failure::UnknownOutcome);
+            }
+        }
+    }
+    Ok(())
+}

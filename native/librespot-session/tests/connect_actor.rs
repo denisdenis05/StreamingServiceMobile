@@ -760,7 +760,7 @@ async fn stalled_local_state_publication_keeps_incoming_controls_and_host_retire
     assert!(matches!(event.data, ConnectEventData::Command { .. }));
     harness.acknowledge(true).await.unwrap(); assert_eq!(harness.replies.recv().await.unwrap()[PAYLOAD_FIELD][SUCCESS_FIELD], true);
     observe_publication_host(&mut harness, OTHER_TARGET).await;
-    release.send(()).unwrap(); published.await.unwrap().unwrap();
+    release.send(()).unwrap(); assert!(matches!(published.await.unwrap(), Err(Failure::UnknownOutcome)));
     assert!(matches!(publish_sample(&harness, GENERATION, publication::SECOND_SEQUENCE, CancellationToken::new()).await, Err(Failure::Canceled)));
     assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]); harness.stop().await;
 }
@@ -1069,4 +1069,72 @@ async fn http_catalog_rate_limiting_is_preserved_without_repeating_the_search() 
     let (result, searching) = oneshot::channel(); harness.actions.send(ConnectAction::Search { generation: GENERATION, input: search_input(), search_cancellation: CancellationToken::new(), result }).await.unwrap();
     assert!(matches!(searching.await.unwrap(), Err(Failure::RateLimited)));
     assert_eq!(harness.calls.lock().unwrap().search_requests.len(), ONE_CALL); harness.stop().await;
+}
+
+#[tokio::test]
+async fn active_host_reads_reuse_the_actual_publication_receipt_without_observer_registration() {
+    let mut harness = Harness::start(None); harness.register().await;
+    *harness.snapshot.lock().unwrap() = playable_cluster(TARGET);
+    let reading = activation_read(&harness).await;
+    activate_sample(&harness.actions, &reading, GENERATION, TARGET, true).await.unwrap();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    let retained = receipt.await.unwrap().unwrap();
+    assert_eq!(retained.cluster.active_device_identifier, DEVICE);
+    assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    let repeated = receipt.await.unwrap().unwrap();
+    assert_eq!(retained.request_started_native_monotonic_milliseconds, repeated.request_started_native_monotonic_milliseconds);
+    assert_eq!(retained.request_completed_native_monotonic_milliseconds, repeated.request_completed_native_monotonic_milliseconds);
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Refresh { generation: GENERATION, result }).await.unwrap();
+    assert_eq!(receipt.await.unwrap().unwrap().active_device_identifier, DEVICE);
+    assert!(matches!(harness.events.recv().await.unwrap().data, ConnectEventData::Cluster { received_from_dealer: false, .. }));
+    assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL);
+    let mut replacement = playable_cluster(OTHER_TARGET);
+    replacement.server_at_milliseconds = publication::SERVER_TIMESTAMP_MILLISECONDS as i64;
+    harness.incoming.send(DealerInput::Cluster(replacement)).await.unwrap();
+    harness.events.recv().await.unwrap();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Read { generation: GENERATION, result }).await.unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::Superseded)));
+    assert_eq!(harness.calls.lock().unwrap().refreshes, ONE_CALL);
+    harness.stop().await;
+}
+
+#[test]
+fn retained_publication_read_preserves_its_original_clock_and_rejects_expiry_or_retired_authority() {
+    const STARTED_MILLISECONDS: u64 = 100;
+    const COMPLETED_MILLISECONDS: u64 = 120;
+    const EXPIRED_MILLISECONDS: u64 = 15121;
+    const LAST_VALID_MILLISECONDS: u64 = 15120;
+    let reading = streaming_spotify_session::connect_transport::ConnectReading {
+        request_started_native_monotonic_milliseconds: STARTED_MILLISECONDS,
+        request_completed_native_monotonic_milliseconds: COMPLETED_MILLISECONDS, cluster: playable_cluster(DEVICE) };
+    let retained = streaming_spotify_session::connect_transport::retained_host_reading(&reading, true, LAST_VALID_MILLISECONDS).unwrap();
+    assert_eq!(retained.request_completed_native_monotonic_milliseconds, COMPLETED_MILLISECONDS);
+    assert!(matches!(streaming_spotify_session::connect_transport::retained_host_reading(&reading, true, EXPIRED_MILLISECONDS), Err(Failure::Deadline)));
+    assert!(matches!(streaming_spotify_session::connect_transport::retained_host_reading(&reading, false, COMPLETED_MILLISECONDS), Err(Failure::Superseded)));
+    assert!(matches!(streaming_spotify_session::connect_transport::retained_host_reading(&reading, true, STARTED_MILLISECONDS), Err(Failure::Canceled)));
+}
+
+#[tokio::test]
+async fn a_newer_dealer_queue_revision_cannot_be_replaced_by_an_older_publication_receipt() {
+    const NEWER_SERVER_MILLISECONDS: i64 = 1;
+    const NEWER_QUEUE_REVISION: &str = "synthetic-newer-dealer-queue";
+    let (release, gate) = oneshot::channel(); let (started, dispatched) = oneshot::channel();
+    let mut harness = Harness::with_publication(None, None, None, None, None, Some(gate), Some(started));
+    harness.register().await; observe_publication_host(&mut harness, DEVICE).await;
+    let mut snapshot = publication::snapshot(); snapshot.device_identifier = DEVICE.to_owned();
+    let (result, receipt) = oneshot::channel();
+    harness.actions.send(ConnectAction::Publish { generation: GENERATION, snapshot, publication_cancellation: CancellationToken::new(), result }).await.unwrap();
+    dispatched.await.unwrap();
+    let mut newer = playable_cluster(DEVICE); newer.server_at_milliseconds = NEWER_SERVER_MILLISECONDS;
+    newer.playback.as_mut().unwrap().queue_revision = NEWER_QUEUE_REVISION.to_owned();
+    harness.incoming.send(DealerInput::Cluster(newer)).await.unwrap(); harness.events.recv().await.unwrap();
+    release.send(()).unwrap();
+    assert!(matches!(receipt.await.unwrap(), Err(Failure::UnknownOutcome)));
+    assert_eq!(harness.calls.lock().unwrap().publication_sequences, vec![publication::FIRST_SEQUENCE]);
+    harness.stop().await;
 }

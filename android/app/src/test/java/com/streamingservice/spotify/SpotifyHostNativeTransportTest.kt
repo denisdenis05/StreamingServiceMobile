@@ -22,6 +22,7 @@ class SpotifyHostNativeTransportTest {
         var commandHandlingReady = true
         var elapsedMilliseconds = InitialElapsedMilliseconds
         var roundTripMilliseconds = ReadRoundTripMilliseconds
+        var nativeReadSampleMilliseconds = NativeReadSampleMilliseconds
         var owned = true
         var host = PreviousHost
         var activeDevice: String? = null
@@ -46,7 +47,7 @@ class SpotifyHostNativeTransportTest {
             }
             override fun read(handle: Long, generation: Long): String {
                 reads += SingleCount; elapsedMilliseconds += roundTripMilliseconds
-                val response = JSONObject().put(HandleField, handle).put(GenerationField, generation).put(SampledNativeField, NativeReadSampleMilliseconds)
+                val response = JSONObject().put(HandleField, handle).put(GenerationField, generation).put(SampledNativeField, nativeReadSampleMilliseconds)
                     .put(ReadingField, JSONObject().put(ReadStartedField, NativeReadStartMilliseconds).put(ReadCompletedField, NativeReadEndMilliseconds)
                         .put(ClusterField, JSONObject().put(ActiveDeviceField, activeDevice ?: host).put(ServerField, ServerMilliseconds)))
                 afterRead()
@@ -66,6 +67,18 @@ class SpotifyHostNativeTransportTest {
         val transport = SpotifyHostNativeTransport(native, queue, { elapsedMilliseconds }, { current }, { commandHandlingReady })
         fun <Response> complete(operation: SpotifyPlayerOperation<Response>): Response { queue.drain(); return operation.result.get() }
     }
+    @Test fun retainedPublicationReadPreservesItsOriginalAgeInThePlayerClockAnchor() {
+        val fixture = Fixture(); fixture.nativeReadSampleMilliseconds = NativeReadEndMilliseconds + RetainedReceiptAgeMilliseconds
+        val anchor = fixture.complete(fixture.transport.preflight(fixture.identity, PreviousHost))
+        assertEquals(fixture.elapsedMilliseconds - RetainedReceiptAgeMilliseconds, anchor.receivedElapsedMilliseconds)
+        assertEquals(NativeReadEndMilliseconds, anchor.nativeReadCompletedMilliseconds)
+        assertEquals(ServerMilliseconds, anchor.serverAtMilliseconds)
+    }
+    @Test fun expiredRetainedPublicationCannotBeTreatedAsAFreshHostObservation() {
+        val fixture = Fixture(); fixture.nativeReadSampleMilliseconds = NativeReadEndMilliseconds + ExpiredReceiptAgeMilliseconds
+        val operation = fixture.transport.preflight(fixture.identity, PreviousHost); fixture.queue.drain()
+        failure(operation.result, Deadline)
+    }
     @Test fun registrationUsesActualNativeDeviceSessionAndNextPublicationSequence() {
         val fixture = Fixture(); val registration = fixture.complete(fixture.transport.registration(fixture.identity))
         assertEquals(Device, registration.identity.deviceIdentifier); assertEquals(NativeSession, registration.identity.sessionIdentifier)
@@ -77,7 +90,7 @@ class SpotifyHostNativeTransportTest {
         assertEquals(TwoMembershipReads, fixture.membershipCount); assertEquals(SingleCount, fixture.reads)
         assertEquals(NativeReadStartMilliseconds, anchor.nativeReadStartedMilliseconds)
         assertEquals(NativeReadEndMilliseconds, anchor.nativeReadCompletedMilliseconds)
-        assertEquals(fixture.elapsedMilliseconds, anchor.receivedElapsedMilliseconds)
+        assertEquals(fixture.elapsedMilliseconds - (NativeReadSampleMilliseconds - NativeReadEndMilliseconds), anchor.receivedElapsedMilliseconds)
         assertTrue(anchor.uncertaintyMilliseconds >= ReadRoundTripMilliseconds)
     }
     @Test fun retirementReadRemainsAvailableAfterMembershipEndsOrAnotherHostTakesOver() {
@@ -249,6 +262,8 @@ class SpotifyHostNativeTransportTest {
         private const val Handle = 7L
         private const val Generation = 3L
         private const val NextSequence = 9L
+        private const val RetainedReceiptAgeMilliseconds = 500L
+        private const val ExpiredReceiptAgeMilliseconds = 15001L
         private const val InitialElapsedMilliseconds = 10000L
         private const val ReadRoundTripMilliseconds = 20L
         private const val ExcessiveRoundTripMilliseconds = 2001L

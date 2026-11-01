@@ -8,7 +8,7 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream,
     tungstenite::{self, protocol::WebSocketConfig, Message}};
 use tokio_util::sync::CancellationToken;
 
-use crate::{connect_activation::{ConnectActivationDispatchGuard, ConnectExplicitActivation, ConnectActivationPlayerReadiness}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_http_worker::{run_http_worker, CheckedHttpCommand, CompletedHttpWork, HttpCompletion, HttpWork, PendingHttpResponse, HTTP_CHANNEL_CAPACITY}, connect_publication::{ConnectPublicationSnapshot, ConnectPublicationOrder}, connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
+use crate::{connect_activation::{ConnectActivationDispatchGuard, ConnectExplicitActivation, ConnectActivationPlayerReadiness}, connect_search::{ConnectSearchInput, ConnectSearchOperations, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_http_worker::{run_http_worker, CheckedHttpCommand, CompletedHttpWork, HttpCompletion, HttpWork, PendingHttpResponse, HTTP_CHANNEL_CAPACITY}, connect_publication::{ConnectPublicationSnapshot, ConnectPublicationOrder, MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS}, connect_command_journal::ConnectCommandJournal, connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectMetadataOperations, ConnectTrackMetadata}, connect_device::ConnectDeviceConfiguration, connect_session::{ConnectFailureStage, ConnectSessionOperations, NativeConnectSession, RegistrationVerification},
     connect_wire::{decode_dealer_input, ConnectCluster, DealerInput, MAXIMUM_FRAME_BYTES}, connect_commands::ConnectCommand, model::Failure};
 
 const CONNECT_TIMEOUT_SECONDS: u64 = 15;
@@ -180,15 +180,23 @@ struct ConnectActorIdentity {
     playback_session_identifier: Option<String>,
 }
 
+pub fn retained_host_reading(reading: &ConnectReading, authority_current: bool, now_native_monotonic_milliseconds: u64) -> Result<ConnectReading, Failure> {
+    if !authority_current { return Err(Failure::Superseded); }
+    let age = now_native_monotonic_milliseconds.checked_sub(reading.request_completed_native_monotonic_milliseconds).ok_or(Failure::Canceled)?;
+    if age > MAXIMUM_PUBLICATION_SAMPLE_AGE_MILLISECONDS { return Err(Failure::Deadline); }
+    Ok(reading.clone())
+}
+
 struct ConnectActorAuthority {
     device_identifier: String,
     current_host: Option<String>,
     timestamp: (i64, i64),
     publication_retired: bool,
+    playback_identity: Option<(String, String, String)>,
 }
 
 impl ConnectActorAuthority {
-    fn new(device_identifier: String) -> Self { Self { device_identifier, current_host: None, timestamp: (i64::MIN, i64::MIN), publication_retired: false } }
+    fn new(device_identifier: String) -> Self { Self { device_identifier, current_host: None, timestamp: (i64::MIN, i64::MIN), publication_retired: false, playback_identity: None } }
 
     fn observe(&mut self, cluster: &ConnectCluster) {
         let timestamp = (cluster.server_at_milliseconds, cluster.changed_at_milliseconds);
@@ -196,9 +204,20 @@ impl ConnectActorAuthority {
         self.publication_retired |= self.current_host.as_deref() == Some(self.device_identifier.as_str()) && cluster.active_device_identifier != self.device_identifier;
         self.current_host = Some(cluster.active_device_identifier.clone());
         self.timestamp = timestamp;
+        self.playback_identity = Self::playback_identity(cluster);
     }
 
     fn permits_publication(&self) -> bool { !self.publication_retired && self.current_host.as_deref() == Some(self.device_identifier.as_str()) }
+
+    fn playback_identity(cluster: &ConnectCluster) -> Option<(String, String, String)> {
+        cluster.playback.as_ref().map(|player| (player.session_identifier.clone(), player.playback_identifier.clone(), player.queue_revision.clone()))
+    }
+
+    fn supersedes_publication_receipt(&self, cluster: &ConnectCluster) -> bool {
+        self.timestamp > (cluster.server_at_milliseconds, cluster.changed_at_milliseconds)
+            && (self.current_host.as_deref() != Some(cluster.active_device_identifier.as_str())
+                || self.playback_identity != Self::playback_identity(cluster))
+    }
 
     fn supersedes_preflight(&self, target_device_identifier: &str, cluster: &ConnectCluster) -> bool {
         self.timestamp > (cluster.server_at_milliseconds, cluster.changed_at_milliseconds)
@@ -229,6 +248,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
     let mut activation_previous_host: Option<String> = None;
     let mut activation_guard = ConnectActivationDispatchGuard::default();
     let mut latest_reading: Option<ConnectReading> = None;
+    let mut hosted_reading: Option<ConnectReading> = None;
     let mut publication_order = ConnectPublicationOrder::default();
     let mut authority = ConnectActorAuthority::new(identity.device_identifier.clone());
     let mut housekeeping = tokio::time::interval(Duration::from_millis(HOUSEKEEPING_INTERVAL_MILLISECONDS));
@@ -263,24 +283,26 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     },
                     HttpCompletion::Command { result, response } => response.complete(result),
                     HttpCompletion::Activated { mut result, response } => {
-                        if result.as_ref().is_ok_and(|cluster| cluster.active_device_identifier != identity.device_identifier) { result = Err(Failure::UnknownOutcome); }
+                        if result.as_ref().is_ok_and(|reading| reading.cluster.active_device_identifier != identity.device_identifier) { result = Err(Failure::UnknownOutcome); }
                         let expected_host = activation_previous_host.take();
                         if authority.current_host != expected_host && authority.current_host.as_deref() != Some(identity.device_identifier.as_str()) {
                             result = Err(Failure::UnknownOutcome);
                         }
-                        if let Ok(cluster) = &result { authority.observe(cluster); authority.publication_retired = false; }
-                        response.complete(result);
+                        if let Ok(reading) = &result { authority.observe(&reading.cluster); authority.publication_retired = false; hosted_reading = Some(reading.clone()); }
+                        response.complete(result.map(|reading| reading.cluster));
                     },
                     HttpCompletion::Deactivated { mut result, response } => {
                         if result.as_ref().is_ok_and(|cluster| cluster.active_device_identifier == identity.device_identifier
                             || authority.current_host.as_deref() == Some(identity.device_identifier.as_str())
                                 && authority.timestamp > (cluster.server_at_milliseconds, cluster.changed_at_milliseconds)) { result = Err(Failure::UnknownOutcome); }
-                        if let Ok(cluster) = &result { authority.observe(cluster); activation_guard.complete_deactivation(); }
+                        if let Ok(cluster) = &result { authority.observe(cluster); activation_guard.complete_deactivation(); hosted_reading = None; }
                         response.complete(result);
                     },
-                    HttpCompletion::Published { result, response } => {
-                        if let Ok(cluster) = &result { authority.observe(cluster); }
-                        response.complete(result);
+                    HttpCompletion::Published { mut result, response } => {
+                        if result.as_ref().is_ok_and(|reading| !authority.permits_publication() || reading.cluster.active_device_identifier != identity.device_identifier
+                            || authority.supersedes_publication_receipt(&reading.cluster)) { result = Err(Failure::UnknownOutcome); }
+                        if let Ok(reading) = &result { authority.observe(&reading.cluster); hosted_reading = Some(reading.clone()); }
+                        response.complete(result.map(|reading| reading.cluster));
                     },
                     HttpCompletion::Prepared { result, command } => {
                         let (body, cluster) = match result { Ok(prepared) => prepared, Err(failure) => { command.response.complete(Err(failure)); continue; } };
@@ -379,11 +401,20 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     ConnectAction::Read { generation: expected, result } => {
                         if result.is_closed() { continue; }
                         if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if let Some(reading) = &hosted_reading {
+                            let reading = retained_host_reading(reading, authority.permits_publication() && !authority.supersedes_publication_receipt(&reading.cluster), native_monotonic_milliseconds());
+                            let _ = result.send(reading); continue;
+                        }
                         submit_http_work(&work, HttpWork::Read { response: PendingHttpResponse::new(result) })?; busy = true;
                     },
                     ConnectAction::Refresh { generation: expected, result } => {
                         if result.is_closed() { continue; }
                         if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if let Some(reading) = &hosted_reading {
+                            let reading = retained_host_reading(reading, authority.permits_publication() && !authority.supersedes_publication_receipt(&reading.cluster), native_monotonic_milliseconds());
+                            if let Ok(reading) = &reading { emit(events, generation, ConnectEventData::Cluster { cluster: reading.cluster.clone(), received_from_dealer: false }, cancellation).await?; }
+                            let _ = result.send(reading.map(|reading| reading.cluster)); continue;
+                        }
                         submit_http_work(&work, HttpWork::Refresh { response: PendingHttpResponse::new(result) })?; busy = true;
                     },
                     ConnectAction::Command { generation: expected, target_device_identifier, body, result } => {

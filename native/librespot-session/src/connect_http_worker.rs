@@ -65,8 +65,8 @@ pub(crate) enum HttpCompletion {
     Prepared { result: Result<(Value, ConnectCluster), Failure>, command: CheckedHttpCommand },
     CheckedMutation { result: Result<ConnectCommandAcknowledgement, Failure>, command: CheckedHttpCommand },
     Deactivated { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
-    Activated { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
-    Published { result: Result<ConnectCluster, Failure>, response: PendingHttpResponse<ConnectCluster> },
+    Activated { result: Result<ConnectReading, Failure>, response: PendingHttpResponse<ConnectCluster> },
+    Published { result: Result<ConnectReading, Failure>, response: PendingHttpResponse<ConnectCluster> },
 }
 
 pub(crate) struct CompletedHttpWork {
@@ -138,11 +138,14 @@ async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMeta
             HttpCompletion::CheckedMutation { result, command }
         },
         HttpWork::Activate { snapshot, activation, readiness, cluster, generation, cancellation: activation_cancellation, mut response } => {
+            let started = native_monotonic_milliseconds();
             let result = if response.is_closed() || activation_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {
                 response.mark_dispatched();
                 execute(session.activate(snapshot, activation, readiness, cluster, generation), cancellation, &activation_cancellation, true).await
             };
-            HttpCompletion::Activated { result, response }
+            let completed = native_monotonic_milliseconds();
+            HttpCompletion::Activated { result: result.map(|cluster| ConnectReading { request_started_native_monotonic_milliseconds: started,
+                request_completed_native_monotonic_milliseconds: completed, cluster }), response }
         },
         HttpWork::Withdraw { sequence, cancellation: withdrawal_cancellation, mut response } => {
             let result = if response.is_closed() || withdrawal_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {
@@ -157,10 +160,13 @@ async fn perform_work(session: &mut (impl ConnectSessionOperations + ConnectMeta
             HttpCompletion::Deactivated { result, response }
         },
         HttpWork::Publish { snapshot, cancellation: publication_cancellation, mut response } => {
+            let started = native_monotonic_milliseconds();
             let result = if response.is_closed() || publication_cancellation.is_cancelled() || cancellation.is_cancelled() { Err(Failure::Canceled) } else {
                 response.mark_dispatched(); execute(session.publish(snapshot), cancellation, &publication_cancellation, true).await
             };
-            HttpCompletion::Published { result, response }
+            let completed = native_monotonic_milliseconds();
+            HttpCompletion::Published { result: result.map(|cluster| ConnectReading { request_started_native_monotonic_milliseconds: started,
+                request_completed_native_monotonic_milliseconds: completed, cluster }), response }
         },
     }
 }
