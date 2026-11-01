@@ -3,7 +3,7 @@ const assertion = require('node:assert/strict');
 const { PlaybackQueueChangeKind } = require('../.build/audio-migration/PlaybackQueueChangeLifecycle');
 const { QueueIntentSupersededError } = require('../.build/audio-migration/QueueIntentScheduler');
 const { environment, Fixture, track, deferred, settleUntil } = require('./fixtures/playback-runtime.cjs');
-const Policy = Object.freeze({ initial: 0, one: 1 });
+const Policy = Object.freeze({ initial: 0, one: 1, externalAuthority: 'synthetic-following-authority' });
 function lifecycle() {
   const state = { preparation: null, rejected: false, requests: [], commits: [] };
   return { state, async prepare(request) {
@@ -64,4 +64,71 @@ test('A later remote-style Next prevents old prepared mappings from overriding t
   const rejected = assertion.rejects(replacing, QueueIntentSupersededError);
   await settleUntil(() => changes.state.requests.length > Policy.one); await scenario.runtime.next(); changes.state.preparation.resolve(); await rejected;
   assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.thirdRecording); scenario.runtime.dispose();
+});
+
+test('Explicit owner handoff accepts a cleared external queue before committing new app playback', async () => {
+  let scenario;
+  const changes = { async prepare(request) {
+    if (scenario.snapshot().externalAuthorityIdentifier) {
+      scenario.releaseExternalAuthority();
+      await request.acknowledgeAuthorityRelease();
+    }
+    return { async committed() {} };
+  } };
+  scenario = environment(changes); await scenario.login();
+  await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex);
+  scenario.setExternalAuthority(Policy.externalAuthority);
+  await scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex);
+  assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.secondRecording);
+  assertion.equal(scenario.snapshot().externalAuthorityIdentifier, null); scenario.runtime.dispose();
+});
+test('Owner handoff rejects a replacement queue created by another actor during authority cleanup', async () => {
+  let scenario;
+  const changes = { async prepare(request) {
+    if (scenario.snapshot().externalAuthorityIdentifier) {
+      scenario.setExternalAuthority(null);
+      scenario.replaceOutsideApplication();
+      await request.acknowledgeAuthorityRelease();
+    }
+    return { async committed() {} };
+  } };
+  scenario = environment(changes); await scenario.login();
+  await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex);
+  scenario.setExternalAuthority(Policy.externalAuthority);
+  await assertion.rejects(scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex), QueueIntentSupersededError);
+  assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.firstRecording);
+  scenario.runtime.dispose();
+});
+test('Authority release cannot rebase a newer player engine even when its queue is empty', async () => {
+  let scenario;
+  const changes = { async prepare(request) {
+    if (scenario.snapshot().externalAuthorityIdentifier) {
+      scenario.releaseExternalAuthority(); scenario.restart(); await request.acknowledgeAuthorityRelease();
+    }
+    return { async committed() {} };
+  } };
+  scenario = environment(changes); await scenario.login();
+  scenario.setExternalAuthority(Policy.externalAuthority);
+  await assertion.rejects(scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex), QueueIntentSupersededError);
+  assertion.equal(scenario.snapshot().currentEntry, null); scenario.runtime.dispose();
+});
+test('Owned Available Jam accepts unchanged local authority before replacing an existing app queue', async () => {
+  const changes = { async prepare(request) {
+    await request.acknowledgeAuthorityRelease();
+    return { async committed() {} };
+  } };
+  const scenario = environment(changes); await scenario.login();
+  await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex);
+  await scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex);
+  assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.secondRecording);
+  scenario.runtime.dispose();
+});
+test('Authority handoff rejects a native source that remains externally controlled', async () => {
+  const changes = { async prepare(request) {
+    await request.acknowledgeAuthorityRelease();
+    return { async committed() {} };
+  } };
+  const scenario = environment(changes); await scenario.login(); scenario.setExternalAuthority(Policy.externalAuthority);
+  await assertion.rejects(scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex), QueueIntentSupersededError);
+  assertion.equal(scenario.snapshot().currentEntry, null); scenario.runtime.dispose();
 });

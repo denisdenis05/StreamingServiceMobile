@@ -10,7 +10,7 @@ const Fixture = Object.freeze({ scope: 'synthetic-jam-scope', replacement: 'synt
 function deferred() { let resolve; let reject; const promise = new Promise((complete, fail) => { resolve = complete; reject = fail; }); return { promise, resolve, reject }; }
 async function flush() { for (let turn = Fixture.initial; turn < Fixture.flushTurns; turn += Fixture.single) await Promise.resolve(); }
 function fixture(additionalDependencies = {}) {
-  const state = { connection: { scopeIdentifier: Fixture.scope, owned: true, native: true, admitted: true, hasHost: true },
+  const state = { connection: { scopeIdentifier: Fixture.scope, owned: true, native: true, nativeReady: true, admitted: true, hasHost: true },
     hosting: { status: SpotifyHostingStatus.Stopped, failure: null }, following: { status: SharedPlaybackStatus.Detached, failure: null },
     remoteAllowed: true, prepare: null, mutation: null, publishFailure: null, startFailure: null };
   const calls = { host: [], follow: [], prepare: [], remote: [], seek: [], publications: Fixture.initial, local: Fixture.initial,
@@ -154,7 +154,7 @@ test('Start sharing creates membership then waits for acknowledged hosting with 
   const transitions = [];
   current = fixture({ getIdentity: () => Fixture.scope, getCanCreate: () => true,
     listeningCountry: { getSnapshot: () => Fixture.normalizedMarket, set: () => undefined },
-    async createJam() { transitions.push(Fixture.scope); current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, admitted: true, hasHost: false }; current.changed(); } });
+    async createJam() { transitions.push(Fixture.scope); current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, nativeReady: true, admitted: true, hasHost: false }; current.changed(); } });
   current.state.connection = null; current.changed();
   await current.controller.startSharing();
   assertion.deepEqual(transitions, [Fixture.scope]); assertion.deepEqual(current.calls.host, [Fixture.normalizedMarket]);
@@ -195,7 +195,7 @@ test('Failed membership creation cannot start hosting and preserves its known fa
 test('Join and listen waits for actual admitted membership before following', async () => {
   let current;
   current = fixture({ getIdentity: () => Fixture.scope, getCanJoin: () => true,
-    async joinJam() { current.state.connection = { scopeIdentifier: Fixture.replacement, owned: false, native: true, admitted: true, hasHost: true }; current.changed(); } });
+    async joinJam() { current.state.connection = { scopeIdentifier: Fixture.replacement, owned: false, native: true, nativeReady: true, admitted: true, hasHost: true }; current.changed(); } });
   current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
   await current.controller.joinAndListen(Fixture.scope);
   assertion.deepEqual(current.calls.follow, [Fixture.normalizedMarket]);
@@ -204,7 +204,7 @@ test('Join and listen waits for actual admitted membership before following', as
 test('Stop during membership creation prevents delayed playback startup', async () => {
   const pending = deferred(); let current;
   current = fixture({ getCanCreate: () => true, async createJam() { await pending.promise;
-    current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, admitted: true, hasHost: true }; current.changed(); } });
+    current.state.connection = { scopeIdentifier: Fixture.replacement, owned: true, native: true, nativeReady: true, admitted: true, hasHost: true }; current.changed(); } });
   current.controller.setMarket(Fixture.market); current.state.connection = null; current.changed();
   const starting = current.controller.startSharing(); await current.controller.stop(); pending.resolve(); await starting;
   assertion.deepEqual(current.calls.host, []);
@@ -263,4 +263,90 @@ test('A delayed publication rejection cannot overwrite a newer player action fai
   });
   pending.reject(new IntegrationFailure(IntegrationFailureCode.UnknownOutcome)); await rejected;
   assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.Forbidden);
+});
+
+test('Owner selecting a new app queue releases following before hosting the committed replacement', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.following.status = SharedPlaybackStatus.Following; current.changed();
+  let acknowledged = false;
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => {
+    assertion.equal(current.state.following.status, SharedPlaybackStatus.Detached);
+    acknowledged = true;
+  });
+  assertion.equal(acknowledged, true);
+  assertion.equal(current.calls.stopFollow, Fixture.single);
+  assertion.equal(current.calls.host.length, Fixture.initial);
+  await current.local(); await committed();
+  assertion.deepEqual(current.calls.host, [Fixture.normalizedMarket]);
+  assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Hosting);
+});
+test('Guest queue replacement cannot release Spotify following even with an authority acknowledgement', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.connection.owned = false; current.state.following.status = SharedPlaybackStatus.Following; current.changed();
+  await assertion.rejects(current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined),
+    { code: IntegrationFailureCode.Unsupported });
+  assertion.equal(current.calls.stopFollow, Fixture.initial);
+  assertion.equal(current.calls.host.length, Fixture.initial);
+});
+test('Owner replacement rejects unsafe release acknowledgement without activating hosting', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.following.status = SharedPlaybackStatus.Following; current.changed();
+  await assertion.rejects(current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => {
+    throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+  }), { code: IntegrationFailureCode.Superseded });
+  assertion.equal(current.calls.host.length, Fixture.initial);
+  assertion.equal(current.controller.getSnapshot().pending, false);
+});
+test('Superseded owner queue handoff cannot start sharing a replacement account or Jam', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.following.status = SharedPlaybackStatus.Following; current.state.mutation = deferred(); current.changed();
+  const preparing = current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  const rejected = assertion.rejects(preparing, { code: IntegrationFailureCode.Superseded });
+  current.state.connection.scopeIdentifier = Fixture.replacement; current.changed(); current.state.mutation.resolve();
+  await rejected; assertion.equal(current.calls.host.length, Fixture.initial);
+});
+test('Owner handoff reports failed host activation after the real local queue commit', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.following.status = SharedPlaybackStatus.Following; current.changed();
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  current.state.startFailure = new IntegrationFailure(IntegrationFailureCode.RateLimited);
+  await assertion.rejects(committed(), { code: IntegrationFailureCode.RateLimited });
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.RateLimited);
+  assertion.equal(current.controller.getSnapshot().pending, false);
+});
+test('Later owner selection supersedes delayed follower cleanup and hosts only its own committed queue', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market);
+  current.state.following.status = SharedPlaybackStatus.Following; current.state.mutation = deferred(); current.changed();
+  const first = current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  const rejected = assertion.rejects(first, { code: IntegrationFailureCode.Superseded });
+  const second = current.controller.prepareQueueChange([Fixture.otherRecording], () => true, false, async () => undefined);
+  current.state.mutation.resolve(); await rejected; const committed = await second; await committed();
+  assertion.equal(current.calls.host.length, Fixture.single);
+});
+for (const status of [SpotifyHostingStatus.Stopped, SpotifyHostingStatus.Failed]) {
+  test(`Owned native Jam starts sharing committed app replacement from ${status}`, async () => {
+    const current = fixture(); current.controller.setMarket(Fixture.market); current.state.hosting.status = status; current.changed();
+    const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+    assertion.equal(current.calls.host.length, Fixture.initial); await committed(); await committed();
+    assertion.equal(current.calls.host.length, Fixture.single);
+    assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Hosting);
+  });
+}
+test('Recovering native registration cannot automatically take ownership of an app replacement', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market); current.state.connection.nativeReady = false; current.changed();
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  await committed(); assertion.equal(current.calls.host.length, Fixture.initial);
+  assertion.equal(current.controller.getSnapshot().canHost, false);
+});
+test('Guest Jam without following never starts hosting from an ordinary app replacement', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market); current.state.connection.owned = false; current.changed();
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  await committed(); assertion.equal(current.calls.host.length, Fixture.initial);
+  assertion.equal(current.calls.stopFollow, Fixture.initial);
+});
+test('No active Jam preserves ordinary app playback without starting sharing or requiring a country', async () => {
+  const current = fixture(); current.state.connection = null; current.changed();
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false, async () => undefined);
+  await committed(); assertion.equal(current.calls.host.length, Fixture.initial);
+  assertion.equal(current.calls.stopFollow, Fixture.initial);
 });

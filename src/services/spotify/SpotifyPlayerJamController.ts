@@ -22,6 +22,7 @@ export interface SpotifyPlayerJamConnection {
   readonly scopeIdentifier: string;
   readonly owned: boolean;
   readonly native: boolean;
+  readonly nativeReady: boolean;
   readonly admitted: boolean;
   readonly hasHost: boolean;
 }
@@ -73,6 +74,7 @@ const Policy = Object.freeze({
   emptyMarket: '',
   marketPattern: /^[A-Z]{2}$/,
   maximumRecordings: 80,
+  minimumRecordings: 1,
   millisecondsPerSecond: 1000,
   firstPosition: 0,
   maximumSeekMilliseconds: Number.MAX_SAFE_INTEGER,
@@ -98,6 +100,7 @@ export class SpotifyPlayerJamController {
   private failure: IntegrationFailureCode | null = null;
   private disposed = false;
   private membershipTransition = false;
+  private queueHandoffScope: string | null = null;
   constructor(private readonly dependencies: SpotifyPlayerJamDependencies) {
     this.scope = dependencies.getConnection()?.scopeIdentifier ?? null;
     this.snapshot = this.read();
@@ -201,13 +204,22 @@ export class SpotifyPlayerJamController {
     recordingIdentifiers: readonly (string | undefined)[],
     isCurrent: () => boolean,
     clearQueue: boolean,
+    acknowledgeAuthorityRelease?: () => Promise<void>,
   ): Promise<() => Promise<void>> {
     const connection = this.dependencies.getConnection();
     const scope = connection?.scopeIdentifier ?? null;
     const hosting = this.dependencies.getHosting().status;
-    if (this.following()) {
-      this.reject(IntegrationFailureCode.Unsupported);
-      throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    if (this.following() || this.queueHandoffScope !== null) {
+      if (!connection?.owned || !connection.native || !connection.nativeReady || clearQueue || !acknowledgeAuthorityRelease) {
+        this.reject(IntegrationFailureCode.Unsupported);
+        throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+      }
+      return this.prepareOwnerQueueHandoff(
+        recordingIdentifiers,
+        connection.scopeIdentifier,
+        isCurrent,
+        acknowledgeAuthorityRelease,
+      );
     }
     if (hosting !== SpotifyHostingStatus.Hosting) {
       if (
@@ -219,6 +231,8 @@ export class SpotifyPlayerJamController {
         this.reject(IntegrationFailureCode.Backpressure);
         throw new IntegrationFailure(IntegrationFailureCode.Backpressure);
       }
+      if (connection?.owned && connection.native && connection.nativeReady && !clearQueue && acknowledgeAuthorityRelease)
+        return this.prepareOwnerQueueHandoff(recordingIdentifiers, connection.scopeIdentifier, isCurrent, acknowledgeAuthorityRelease);
       return async () => undefined;
     }
     if (!connection?.native || !connection.owned)
@@ -265,6 +279,68 @@ export class SpotifyPlayerJamController {
       };
     } catch (failure) {
       if (this.intent === intent) {
+        this.pending = false;
+        this.failure = this.safeCode(failure);
+        this.publish();
+      }
+      throw failure;
+    }
+  }
+  private async prepareOwnerQueueHandoff(
+    recordingIdentifiers: readonly (string | undefined)[],
+    scope: string,
+    isCurrent: () => boolean,
+    acknowledgeAuthorityRelease: () => Promise<void>,
+  ): Promise<() => Promise<void>> {
+    this.requireMarket();
+    if (
+      recordingIdentifiers.length < Policy.minimumRecordings ||
+      recordingIdentifiers.length > Policy.maximumRecordings ||
+      recordingIdentifiers.some(identifier => !identifier)
+    ) throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
+    const intent = {};
+    this.intent = intent;
+    this.queueHandoffScope = scope;
+    this.pending = true;
+    this.failure = null;
+    this.publish();
+    const current = () =>
+      !this.disposed && this.intent === intent && isCurrent() &&
+      this.dependencies.getConnection()?.scopeIdentifier === scope &&
+      this.dependencies.getConnection()?.owned === true &&
+      this.dependencies.getConnection()?.native === true &&
+      this.dependencies.getConnection()?.nativeReady === true;
+    try {
+      await this.dependencies.stopFollowing();
+      if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      await acknowledgeAuthorityRelease();
+      if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      this.pending = false;
+      this.publish();
+      let committed = false;
+      return async () => {
+        if (committed || !current()) return;
+        committed = true;
+        try {
+          await this.dependencies.startHosting(this.currentMarket());
+          if (!current()) return;
+          const hosting = this.dependencies.getHosting();
+          if (hosting.status !== SpotifyHostingStatus.Hosting)
+            throw new IntegrationFailure(hosting.failure ?? IntegrationFailureCode.Network);
+        } catch (failure) {
+          if (current()) this.failure = this.safeCode(failure);
+          throw failure;
+        } finally {
+          if (this.intent === intent) {
+            this.queueHandoffScope = null;
+            this.pending = false;
+            this.publish();
+          }
+        }
+      };
+    } catch (failure) {
+      if (this.intent === intent) {
+        this.queueHandoffScope = null;
         this.pending = false;
         this.failure = this.safeCode(failure);
         this.publish();
@@ -410,6 +486,7 @@ export class SpotifyPlayerJamController {
     if (scope !== this.scope) {
       this.scope = scope;
       if (!this.membershipTransition) {
+        this.queueHandoffScope = null;
         this.intent = {};
         this.pending = false;
         this.failure = null;
@@ -445,7 +522,7 @@ export class SpotifyPlayerJamController {
       mode,
       connected: connection !== null,
       owned: connection?.owned ?? false,
-      canHost: connection?.native === true && connection.owned,
+      canHost: connection?.native === true && connection.nativeReady && connection.owned,
       canCreate: this.dependencies.getCanCreate?.() ?? false,
       canJoin: this.dependencies.getCanJoin?.() ?? false,
       canFollow:

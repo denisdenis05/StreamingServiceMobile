@@ -59,8 +59,11 @@ function connection(): SpotifyPlayerJamConnection | null {
   )
     return null;
   const native = spotifyIntegration.usesNativeConnect;
+  const readyDescriptor = native
+    ? spotifyConnect.getPlaybackConnection(snapshot.accountIdentifier)
+    : PlayerJamScopePolicy.emptyDescriptor;
   const descriptor = native
-    ? spotifyConnect.getPlaybackConnection(snapshot.accountIdentifier) ??
+    ? readyDescriptor ??
       spotifyConnect.getRecoveringPlaybackConnection(snapshot.accountIdentifier)
     : PlayerJamScopePolicy.emptyDescriptor;
   return {
@@ -75,6 +78,7 @@ function connection(): SpotifyPlayerJamConnection | null {
       participant => participant.identifier === snapshot.accountIdentifier,
     ),
     native: native && descriptor !== null,
+    nativeReady: native && readyDescriptor !== null,
     hasHost: !!session.hostDeviceIdentifier,
   };
 }
@@ -139,6 +143,9 @@ const removeQueueLifecycle = playbackQueueChanges.attach({
       request.tracks.map(track => track.recordingIdentifier),
       request.isCurrent,
       request.kind === PlaybackQueueChangeKind.Clear,
+      request.kind === PlaybackQueueChangeKind.Replace
+        ? request.acknowledgeAuthorityRelease
+        : undefined,
     );
     return { committed };
   },

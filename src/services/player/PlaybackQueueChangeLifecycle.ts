@@ -12,6 +12,7 @@ export interface PlaybackQueueChangeRequest {
   readonly kind: PlaybackQueueChangeKind;
   readonly tracks: readonly PlaybackTrack[];
   readonly isCurrent: () => boolean;
+  readonly acknowledgeAuthorityRelease?: () => Promise<void>;
 }
 export interface PlaybackQueueChangeReceipt {
   committed(): Promise<void>;

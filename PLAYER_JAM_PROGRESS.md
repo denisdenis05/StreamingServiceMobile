@@ -75,3 +75,45 @@ covers the rendered remote-controls and explicit-stop explanation.
 
 Ran focused Jest for both files: 22 passed. `npx tsc --noEmit` passed. Emulator
 and physical-device checks remain postponed; no playback claim follows.
+
+## Owned Jam queue replacement repair — 2026-11-01
+
+Selecting an app song or collection now starts sharing the actual replacement
+queue when an active Jam belongs to the connected account and the native Connect
+connection is ready. This applies to an available Jam, a failed hosting attempt,
+and an owner currently following Spotify. It does not create membership, take over
+a guest Jam, or start hosting from append, reorder, remove or clear commands.
+An existing host retains its prepare-before-mutation mapping path.
+
+Owner following is stopped before local replacement. Native authority release
+intentionally clears its queue. The app acknowledges only a cleared, empty queue
+with matching engine/authentication epochs and no external authority. Already
+local playback must retain its exact queue/control cursor during acknowledgement.
+New player epochs, competing queues, retained external ownership and stale
+account/Jam intents reject the handoff. Subsequent preparation still checks the
+confirmed cursor before committing. Hosting starts once, only after the actual
+local queue command completes, and uses the existing scoped catalog matching,
+request pacing and cancellation. A catalog or host activation failure remains a
+reported failure; local playback is not proof of successful Spotify hosting.
+
+| Behavior | Dedicated regression coverage |
+| --- | --- |
+| Owner following releases before replacement and starts hosting after the receipt | `tools/spotify-player-jam.test.cjs`, `tools/spotify-player-runtime.test.ts` |
+| Owned available/failed Jam shares an explicit app replacement without another action | `tools/spotify-player-jam.test.cjs`, `tools/spotify-player-runtime.test.ts` |
+| Guest/no-Jam behavior, reconnect readiness, failed acknowledgement and superseded cleanup | `tools/spotify-player-jam.test.cjs`, `tools/spotify-player-runtime.test.ts` |
+| Real runtime accepts expected cleared queue or unchanged local queue; rejects foreign queue, engine replacement and retained authority | `tools/player-jam-runtime.test.cjs` |
+| Duplicate receipt cannot activate hosting twice | `tools/spotify-player-jam.test.cjs` |
+
+Source checks passed:
+
+- `npx tsc --project tsconfig.spotify.json` and
+  `node --test tools/spotify-player-jam.test.cjs`: 50 cases.
+- `npm run test:player-mobile`: 382 cases, including the dedicated runtime tests.
+- `npx jest --runInBand --watchman=false --runTestsByPath tools/spotify-player-runtime.test.ts`:
+  seven cases.
+- `npx tsc --noEmit`.
+
+This chapter sent no live Spotify requests and ran no device commands. The owning
+session must verify actual host activation, visible Connect device identity,
+Spotify queue publication and audio on the emulator after native fixes and APK
+integration. A second account is still needed for guest/shared-audio acceptance.

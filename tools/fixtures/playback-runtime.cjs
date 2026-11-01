@@ -15,6 +15,7 @@ function environment(queueChanges) {
   let engine = Fixture.engine; let identifier = RuntimeFixture.initial; let suggestionCalls = RuntimeFixture.initial;
   let cacheOperation = async () => null; let suggestions = async () => [track(Fixture.thirdRecording)];
   let configureOperation = async () => undefined; let reportingOperation = async () => undefined;
+  let externalAuthorityIdentifier = null;
   const listeners = new Set(); const failures = []; const operations = []; const reports = []; const credentials = [];
   const cursor = () => ({ engineEpoch: engine, authenticationEpoch: authentication, eventSequence: sequence,
     queueRevision: state.revision, queueIdentifier: RuntimeFixture.queuePrefix + queueIdentity,
@@ -26,7 +27,7 @@ function environment(queueChanges) {
     positionMilliseconds: RuntimeFixture.initial, durationMilliseconds: RuntimeFixture.durationMilliseconds,
     bufferedAheadMilliseconds: RuntimeFixture.initial, sampledAtMonotonicMilliseconds: sequence,
     canSeek: true, canNext: true, canPrevious: true, interruption: PlaybackInterruption.None, error: playbackError,
-    playbackRate: RuntimeFixture.normalRate, volume: RuntimeFixture.normalVolume });
+    playbackRate: RuntimeFixture.normalRate, volume: RuntimeFixture.normalVolume, externalAuthorityIdentifier });
   const emit = event => { for (const listener of [...listeners]) listener(event); };
   const publish = () => { sequence += RuntimeFixture.increment; emit({ type: PlayerEventType.State, snapshot: snapshot() }); };
   const receipt = (context, status = CommandResultStatus.Applied) => ({ status, requestIdentifier: context.requestIdentifier, cursor: cursor() });
@@ -97,6 +98,11 @@ function environment(queueChanges) {
     restart() { engine += RuntimeFixture.token; state = model.createEmptyState(); publish(); },
     nativePause() { control += RuntimeFixture.increment; state = { ...state, playbackIntent: PlaybackIntent.Pause }; publish(); },
     replaceOutsideApplication() { queueIdentity += RuntimeFixture.increment; publish(); },
+    setExternalAuthority(identifier) { externalAuthorityIdentifier = identifier; publish(); },
+    releaseExternalAuthority() {
+      externalAuthorityIdentifier = null; state = model.createEmptyState(); queueIdentity += RuntimeFixture.increment;
+      content += RuntimeFixture.increment; control += RuntimeFixture.increment; publish();
+    },
   };
 }
 module.exports = { environment, RuntimeFixture, Fixture, track, deferred, settleUntil };

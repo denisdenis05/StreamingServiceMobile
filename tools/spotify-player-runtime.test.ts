@@ -4,7 +4,8 @@ const Imports = Object.freeze({ runtime: '../src/services/PlayerJamRuntime', acc
   country: '../src/services/SpotifyListeningCountryPlatform', catalog: '../src/services/SpotifyRecordingCatalogPlatform', hosting: '../src/services/spotify/SpotifyHostingStore', controller: '../src/services/spotify/SpotifyPlayerJamController', lifecycle: '../src/services/player/PlaybackQueueChangeLifecycle' });
 const Fixture = Object.freeze({ account: 'application-test-account', replacementAccount: 'replacement-test-account',
   spotifyAccount: 'spotify-test-account', session: 'jam-test-session', host: 'host-test-device',
-  country: 'RO', invitation: 'synthetic-test-invitation', clear: 'clear', firstGeneration: 1, handle: 1, zero: 0 });
+  country: 'RO', invitation: 'synthetic-test-invitation', recording: 'synthetic-recording', clear: 'clear', replace: 'replace',
+  firstGeneration: 1, handle: 1, zero: 0 });
 const { JamConnectionStatus, SharedPlaybackStatus, IntegrationFailureCode, JamJoinMode } = require('streaming-service-spotify-jam');
 const { SpotifyHostingStatus } = require(Imports.hosting);
 const { SpotifyPlayerJamMode } = require(Imports.controller);
@@ -21,6 +22,13 @@ const joinSession = jest.fn();
 const startHosting = jest.fn();
 const startFollowing = jest.fn();
 const stop = jest.fn(async () => undefined);
+const stopFollowing = jest.fn(async () => { following = { status: SharedPlaybackStatus.Detached, failure: null }; emit(); });
+let prepareQueueChange: (request: {
+  kind: string;
+  tracks: { recordingIdentifier: string }[];
+  isCurrent(): boolean;
+  acknowledgeAuthorityRelease(): Promise<void>;
+}) => Promise<{ committed(): Promise<void> }>;
 const nativeConnection = { handle: Fixture.handle, generation: Fixture.firstGeneration };
 const country = { getSnapshot: () => Fixture.country, set: jest.fn(), subscribe };
 const mobile = { subscribe, getSnapshot: () => ({ connected: true,
@@ -29,11 +37,13 @@ jest.doMock(Imports.account, () => ({ authenticationSession: { subscribe, getSna
 jest.doMock(Imports.integration, () => ({ spotifyIntegration: { usesNativeConnect: true, runtime: null } }));
 jest.doMock(Imports.country, () => ({ spotifyListeningCountry: country }));
 jest.doMock(Imports.catalog, () => ({ spotifyObservedRecordings: { captureScope: () => null, remember: jest.fn() } }));
-jest.doMock(Imports.lifecycle, () => ({ playbackQueueChanges: { attach: () => () => undefined }, PlaybackQueueChangeKind: { Clear: Fixture.clear } }));
+jest.doMock(Imports.lifecycle, () => ({ playbackQueueChanges: { attach: (lifecycle: { prepare: typeof prepareQueueChange }) => {
+  prepareQueueChange = lifecycle.prepare; return () => undefined;
+} }, PlaybackQueueChangeKind: { Clear: Fixture.clear, Replace: Fixture.replace } }));
 jest.doMock(Imports.mobile, () => ({ spotifyMobile: mobile,
   spotifyConnect: { subscribe, getPlaybackConnection: () => nativeConnection, getSnapshot: () => ({ deviceIdentifier: Fixture.host }) },
   spotifyHosting: { subscribe, getSnapshot: () => hosting, start: startHosting, stop, prepareRecordings: stop, publishLocalChanges: stop },
-  spotifyPlaybackFollower: { subscribe, getSnapshot: () => following, start: startFollowing, stop },
+  spotifyPlaybackFollower: { subscribe, getSnapshot: () => following, start: startFollowing, stop: stopFollowing },
   spotifyPlaybackCommands: { subscribe, getSnapshot: () => ({ available: true, uncertain: false, failure: null }), execute: stop, seek: stop },
 }));
 function membership(owned: boolean): NonNullable<typeof session> {
@@ -82,5 +92,43 @@ test('Runtime composition fences account replacement during membership before ho
   await playerJam.startSharing();
   expect(startHosting).not.toHaveBeenCalled();
   expect(startFollowing).not.toHaveBeenCalled();
+  playerJam.dispose();
+});
+test('Actual queue lifecycle releases owner following and starts hosting only after the replacement receipt', async () => {
+  session = membership(true); following = { status: SharedPlaybackStatus.Following, failure: null };
+  const { playerJam } = require(Imports.runtime);
+  const acknowledgeAuthorityRelease = jest.fn(async () => undefined);
+  const receipt = await prepareQueueChange({ kind: Fixture.replace,
+    tracks: [{ recordingIdentifier: Fixture.recording }], isCurrent: () => true, acknowledgeAuthorityRelease });
+  expect(stopFollowing).toHaveBeenCalledTimes(Fixture.firstGeneration);
+  expect(acknowledgeAuthorityRelease).toHaveBeenCalledTimes(Fixture.firstGeneration);
+  expect(startHosting).not.toHaveBeenCalled();
+  await receipt.committed();
+  expect(startHosting).toHaveBeenCalledWith(Fixture.country);
+  expect(playerJam.getSnapshot().mode).toBe(SpotifyPlayerJamMode.Hosting);
+  playerJam.dispose();
+});
+test('Actual queue lifecycle preserves a guest follower when an app selection requests replacement', async () => {
+  session = membership(false); following = { status: SharedPlaybackStatus.Following, failure: null };
+  const { playerJam } = require(Imports.runtime);
+  const acknowledgeAuthorityRelease = jest.fn(async () => undefined);
+  await expect(prepareQueueChange({ kind: Fixture.replace,
+    tracks: [{ recordingIdentifier: Fixture.recording }], isCurrent: () => true, acknowledgeAuthorityRelease }))
+    .rejects.toMatchObject({ code: IntegrationFailureCode.Unsupported });
+  expect(stopFollowing).not.toHaveBeenCalled();
+  expect(acknowledgeAuthorityRelease).not.toHaveBeenCalled();
+  expect(startHosting).not.toHaveBeenCalled();
+  playerJam.dispose();
+});
+test('Actual owned Jam begins app-led sharing when an app queue replaces local playback from Available', async () => {
+  session = membership(true);
+  const { playerJam } = require(Imports.runtime);
+  expect(playerJam.getSnapshot().mode).toBe(SpotifyPlayerJamMode.Available);
+  const receipt = await prepareQueueChange({ kind: Fixture.replace,
+    tracks: [{ recordingIdentifier: Fixture.recording }], isCurrent: () => true,
+    acknowledgeAuthorityRelease: async () => undefined });
+  expect(startHosting).not.toHaveBeenCalled(); await receipt.committed();
+  expect(startHosting).toHaveBeenCalledWith(Fixture.country);
+  expect(playerJam.getSnapshot().mode).toBe(SpotifyPlayerJamMode.Hosting);
   playerJam.dispose();
 });

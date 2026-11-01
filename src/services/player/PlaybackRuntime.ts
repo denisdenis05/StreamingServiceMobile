@@ -355,12 +355,25 @@ export class PlaybackRuntime {
     const account = this.authentication.getAccountIdentifier();
     const current = () =>
       account === this.authentication.getAccountIdentifier() && isCurrent();
-    const before = await this.dispatcher.getSnapshot();
+    let before = await this.dispatcher.getSnapshot();
     if (!current()) throw new QueueIntentSupersededError();
     const receipt = await this.queueChanges.prepare({
       kind,
       tracks,
       isCurrent: current,
+      acknowledgeAuthorityRelease: async () => {
+        const released = await this.dispatcher.getSnapshot();
+        if (
+          !current() ||
+          kind !== PlaybackQueueChangeKind.Replace ||
+          released.externalAuthorityIdentifier ||
+          !this.sameSession(before.cursor, released.cursor) ||
+          (before.externalAuthorityIdentifier
+            ? released.currentEntry !== null || released.queueLength !== RuntimePolicy.emptyQueueLength
+            : !this.sameQueueControl(before, released))
+        ) throw new QueueIntentSupersededError();
+        before = released;
+      },
     });
     const confirmed = await this.dispatcher.getSnapshot();
     if (!current() || !this.sameQueueControl(before, confirmed))
