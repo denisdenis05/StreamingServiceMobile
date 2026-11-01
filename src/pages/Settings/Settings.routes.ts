@@ -2,6 +2,8 @@ export const SettingsRoutes = Object.freeze({
   main: 'Settings',
   account: 'AccountSettings',
   lastFm: 'LastFmSettings',
+  spotify: 'SpotifySettings',
+  likedSongs: 'LikedSongsSettings',
   playback: 'PlaybackSettings',
   storage: 'StorageSettings',
   about: 'AboutSettings',

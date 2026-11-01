@@ -65,6 +65,7 @@ export const SpotifyJamCopy = Object.freeze({
   invitePlaceholder: 'Jam invitation link or join token', joinHelp: 'Paste a Spotify Jam share link, full open.spotify.com link, spotify:socialsession URI, or join token.',
   controlMode: 'Control the shared queue', remoteMode: 'Remote membership on selected Spotify device',
   playbackNotice: 'Follow a verified Jam host using matching songs from your library. Guest listening requires device sign-in and confirmed membership.',
+  advancedDevices: 'Enter a device ID', hideAdvancedDevices: 'Hide device ID entry',
   devices: 'Spotify device', reloadDevices: 'Reload devices', noDevices: 'Open Spotify on a device, then reload. Device access also requires playback-state permission on your token.',
   deviceIssuePrefix: 'Device discovery: ',
   manualDevicePlaceholder: 'Device ID (optional)', selectDevice: 'Use device ID', activeDevice: ' · Active in Spotify', selectedDevice: ' · Selected',

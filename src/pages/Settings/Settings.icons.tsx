@@ -7,6 +7,7 @@ export enum SettingsSymbol {
   Account = 'account',
   Settings = 'settings',
   Library = 'library',
+  Heart = 'heart',
   Create = 'create',
   LastFm = 'lastfm',
   Spotify = 'spotify',
@@ -35,6 +36,8 @@ const paths: Readonly<Record<SettingsSymbol, string>> = Object.freeze({
   [SettingsSymbol.Settings]:
     'm9 3-1 3-3 1v3l-2 2 2 2v3l3 1 1 3h6l1-3 3-1v-3l2-2-2-2V7l-3-1-1-3Z',
   [SettingsSymbol.Library]: 'M4 4v16M9 4v16m5-15 5 14M3 20h18',
+  [SettingsSymbol.Heart]:
+    'M20 5c-3-3-6-1-8 1-2-2-5-4-8-1-4 4 1 9 8 15 7-6 12-11 8-15Z',
   [SettingsSymbol.Create]: 'M12 4v16M4 12h16',
   [SettingsSymbol.LastFm]:
     'M10 8c-5-4-9 0-7 5 1 3 5 4 8 2m-2-7 5 8c2 3 8 1 7-2-1-3-7-1-7-5 0-3 5-4 7-1',

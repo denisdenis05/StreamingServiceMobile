@@ -11,7 +11,7 @@ export const SettingsSymbols = Object.freeze({
   account: SettingsSymbol.Account,
   settings: SettingsSymbol.Settings,
   library: SettingsSymbol.Library,
-  liked: SettingsSymbol.Create,
+  liked: SettingsSymbol.Heart,
   lastFm: SettingsSymbol.LastFm,
   spotify: SettingsSymbol.Spotify,
   playback: SettingsSymbol.Playback,
@@ -29,7 +29,11 @@ export function SettingsFrame({
 }) {
   return (
     <PageContainer>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.frameHeader}>
           <TouchableOpacity
             style={styles.iconButton}
@@ -78,14 +82,21 @@ export function SettingsRow({
     </TouchableOpacity>
   );
 }
+export enum SettingsButtonAppearance {
+  Primary = 'primary',
+  Secondary = 'secondary',
+  Destructive = 'destructive',
+}
 export function SettingsButton({
   title,
   onPress,
   disabled = false,
+  appearance = SettingsButtonAppearance.Primary,
 }: {
   title: string;
   onPress: () => void;
   disabled?: boolean;
+  appearance?: SettingsButtonAppearance;
 }) {
   return (
     <TouchableOpacity
@@ -94,9 +105,24 @@ export function SettingsButton({
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.button, disabled && styles.disabledButton]}
+      style={[
+        styles.button,
+        appearance !== SettingsButtonAppearance.Primary &&
+          styles.secondaryButton,
+        disabled && styles.disabledButton,
+      ]}
     >
-      <Text style={styles.buttonText}>{title}</Text>
+      <Text
+        style={[
+          styles.buttonText,
+          appearance === SettingsButtonAppearance.Secondary &&
+            styles.secondaryButtonText,
+          appearance === SettingsButtonAppearance.Destructive &&
+            styles.signOutText,
+        ]}
+      >
+        {title}
+      </Text>
     </TouchableOpacity>
   );
 }

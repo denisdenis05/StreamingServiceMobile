@@ -1,6 +1,9 @@
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { Alert, Switch, TextInput, TouchableOpacity } from 'react-native';
+import { SpotifyMobileOperation } from '../src/services/spotify/SpotifyMobileController';
+import type { SpotifyMobileSnapshot } from '../src/services/spotify/SpotifyMobileController';
+import { SpotifyConnectStatus } from '../src/services/spotify/SpotifyConnectStore';
 import { RepeatMode } from 'streaming-service-player';
 import { LastFmOperation } from '../src/services/settings/LastFmController';
 import { SettingsRoutes } from '../src/pages/Settings/Settings.routes';
@@ -61,7 +64,8 @@ const lastFmSnapshot = {
   username: null,
   connectedAt: null,
   operation: LastFmOperation.Idle,
-  failure: null,
+  failure: null as string | null,
+  authorizationPending: false,
 };
 const subscription = () => () => undefined;
 const profilePreferences = {
@@ -91,7 +95,8 @@ const lastFmSettings = {
   disconnect: jest.fn(),
   refresh: jest.fn(),
 };
-const spotifySnapshot = { connected: false };
+let spotifySnapshot: Partial<SpotifyMobileSnapshot> &
+  Pick<SpotifyMobileSnapshot, 'connected'> = { connected: false };
 const spotifyMobile = {
   subscribe: subscription,
   getSnapshot: () => spotifySnapshot,
@@ -133,7 +138,10 @@ function press(label: string) {
 }
 beforeEach(() => {
   jest.clearAllMocks();
-  spotifySnapshot.connected = false;
+  spotifySnapshot = { connected: false };
+  lastFmSnapshot.operation = LastFmOperation.Idle;
+  lastFmSnapshot.failure = null;
+  lastFmSnapshot.authorizationPending = false;
   playbackSnapshot.externallyControlled = false;
   profileSnapshot.loading = false;
 });
@@ -158,6 +166,7 @@ test('Settings rows navigate to registered destinations and back returns to Prof
   await render(<Settings navigation={navigation} />);
   for (const destination of [
     { label: copy.account, route: SettingsRoutes.account },
+    { label: copy.likedSongs, route: SettingsRoutes.likedSongs },
     { label: copy.lastFm, route: SettingsRoutes.lastFm },
     { label: copy.playback, route: SettingsRoutes.playback },
     { label: copy.storage, route: SettingsRoutes.storage },
@@ -167,7 +176,7 @@ test('Settings rows navigate to registered destinations and back returns to Prof
     expect(navigation.navigate).toHaveBeenLastCalledWith(destination.route);
   }
   press(copy.spotify);
-  expect(navigation.navigate).toHaveBeenLastCalledWith('SpotifyJam');
+  expect(navigation.navigate).toHaveBeenLastCalledWith(SettingsRoutes.spotify);
   press('Back');
   expect(navigation.goBack).toHaveBeenCalledTimes(Fixture.oneCall);
 });
@@ -222,7 +231,7 @@ test('Last.fm authorization starts only on an explicit connect press', async () 
 });
 
 test('Settings shows live Spotify connection status and uses vector icons with accessible back targets', async () => {
-  spotifySnapshot.connected = true;
+  spotifySnapshot = { connected: true };
   await render(<Settings navigation={navigation} />);
   expect(
     rendered.root
@@ -241,4 +250,64 @@ test('Settings shows live Spotify connection status and uses vector icons with a
     instance => instance.props.status === copy.connected,
   );
   expect(connectedStatus.length).toBeGreaterThan(Fixture.firstCall);
+});
+
+const ConnectionStatusCases = Object.freeze([
+  { operation: SpotifyMobileOperation.Connecting, status: copy.connecting },
+  {
+    operation: SpotifyMobileOperation.Idle,
+    nativeStatus: SpotifyConnectStatus.Reconnecting,
+    status: copy.reconnecting,
+  },
+  {
+    operation: SpotifyMobileOperation.Idle,
+    nativeStatus: SpotifyConnectStatus.Failed,
+    status: copy.reconnectNeeded,
+  },
+]);
+test.each(ConnectionStatusCases)(
+  'Settings projects the actual Spotify connection state $status',
+  async current => {
+    spotifySnapshot = {
+      connected: true,
+      operation: current.operation,
+      nativeConnection: current.nativeStatus
+        ? {
+            status: current.nativeStatus,
+            deviceIdentifier: null,
+            generation: Fixture.oneCall,
+            failure: null,
+          }
+        : undefined,
+    };
+    await render(<Settings navigation={navigation} />);
+    expect(
+      rendered.root.findAll(
+        instance =>
+          instance.props.title === copy.spotify &&
+          instance.props.status === current.status,
+      ),
+    ).toHaveLength(Fixture.oneCall);
+  },
+);
+test('Settings preserves Last.fm approval and unavailable status on its entry row', async () => {
+  lastFmSnapshot.authorizationPending = true;
+  await render(<Settings navigation={navigation} />);
+  expect(
+    rendered.root.findAll(
+      instance =>
+        instance.props.title === copy.lastFm &&
+        instance.props.status === copy.awaitingApproval,
+    ),
+  ).toHaveLength(Fixture.oneCall);
+  lastFmSnapshot.authorizationPending = false;
+  lastFmSnapshot.failure = copy.unknown;
+  await act(async () => rendered.update(<Settings navigation={navigation} />));
+  expect(
+    rendered.root.findAll(
+      instance =>
+        instance.props.title === copy.lastFm &&
+        instance.props.status === copy.unknown,
+    ),
+  ).toHaveLength(Fixture.oneCall);
 });

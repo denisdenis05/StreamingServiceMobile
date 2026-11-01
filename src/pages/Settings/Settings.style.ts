@@ -104,6 +104,12 @@ export const settingsStyles = StyleSheet.create({
     alignItems: 'center',
     padding: Layout.gap,
   },
+  secondaryButton: {
+    backgroundColor: colors.surfaceCard,
+    borderWidth: Layout.border,
+    borderColor: Layout.outline,
+  },
+  secondaryButtonText: { color: colors.accentPrimary },
   buttonText: {
     color: colors.textOnAccent,
     fontFamily: fonts.sansSerif,
@@ -163,6 +169,29 @@ export const settingsStyles = StyleSheet.create({
     fontFamily: fonts.sansSerif,
     color: Layout.destructive,
     fontSize: typography.itemTitle,
+  },
+  detailGroup: {
+    padding: Layout.gap,
+    gap: Layout.gap,
+    borderWidth: Layout.border,
+    borderColor: colors.borderSubtle,
+    borderRadius: Layout.radius,
+    backgroundColor: colors.surfaceCard,
+  },
+  input: {
+    minHeight: Layout.button,
+    padding: Layout.gap,
+    borderWidth: Layout.border,
+    borderColor: colors.borderSubtle,
+    borderRadius: Layout.radius,
+    fontFamily: fonts.sansSerif,
+    color: colors.normalText,
+    backgroundColor: colors.background,
+  },
+  error: {
+    fontFamily: fonts.sansSerif,
+    color: Layout.destructive,
+    fontSize: typography.secondary,
   },
   settingsLink: {
     backgroundColor: colors.secondaryBackground,

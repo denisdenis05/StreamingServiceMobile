@@ -1,10 +1,12 @@
 import React, { useSyncExternalStore } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { SpotifyMobileOperation } from '../../services/spotify/SpotifyMobileController';
+import { SpotifyConnectStatus } from '../../services/spotify/SpotifyConnectStore';
+import { LastFmOperation } from '../../services/settings/LastFmController';
 import { spotifyMobile } from '../../services/SpotifyMobileService';
 import { SettingsIcon, SettingsSymbol } from './Settings.icons';
 import { useAuth } from '../../hooks/AuthContext';
 import { lastFmSettings } from '../../services/settings/SettingsRuntime';
-import { SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
 import {
   SettingsFrame,
   SettingsRow,
@@ -27,6 +29,29 @@ export default function Settings({
     lastFmSettings.subscribe,
     lastFmSettings.getSnapshot,
   );
+  const spotifyStatus =
+    spotify.operation === SpotifyMobileOperation.Connecting
+      ? copy.connecting
+      : spotify.nativeConnection?.status ===
+          SpotifyConnectStatus.Reconnecting ||
+        spotify.nativeConnection?.status === SpotifyConnectStatus.Connecting
+      ? copy.reconnecting
+      : spotify.connected &&
+        (spotify.nativeConnection?.status === SpotifyConnectStatus.Failed ||
+          spotify.nativeConnection?.status === SpotifyConnectStatus.Detached)
+      ? copy.reconnectNeeded
+      : spotify.connected
+      ? copy.connected
+      : copy.disconnected;
+  const lastFmStatus = lastFm.authorizationPending
+    ? copy.awaitingApproval
+    : lastFm.operation === LastFmOperation.Loading
+    ? copy.checking
+    : lastFm.connected
+    ? copy.connected
+    : lastFm.failure
+    ? copy.unknown
+    : copy.disconnected;
   const row = (
     title: string,
     subtitle: string,
@@ -61,15 +86,24 @@ export default function Settings({
           copy.spotify,
           copy.spotifyDescription,
           SettingsSymbols.spotify,
-          SpotifyJamRoute,
-          spotify.connected ? copy.connected : undefined,
+          SettingsRoutes.spotify,
+          spotifyStatus,
         )}
         {row(
           copy.lastFm,
           copy.lastFmDescription,
           SettingsSymbols.lastFm,
           SettingsRoutes.lastFm,
-          lastFm.connected ? copy.connected : undefined,
+          lastFmStatus,
+        )}
+      </View>
+      <Text style={styles.label}>{copy.libraryGroup}</Text>
+      <View style={styles.group}>
+        {row(
+          copy.likedSongs,
+          copy.likedSongsDescription,
+          SettingsSymbols.liked,
+          SettingsRoutes.likedSongs,
         )}
       </View>
       <Text style={styles.label}>{copy.listeningGroup}</Text>
