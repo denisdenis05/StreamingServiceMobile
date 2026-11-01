@@ -1,3 +1,16 @@
+# Latest Settings and Liked Songs checkpoint — 2026-11-01
+
+Read [LIKED_SONGS_INTEGRATION_PROGRESS.md](LIKED_SONGS_INTEGRATION_PROGRESS.md)
+for the current source, feature tests, packages and release requirements.
+Mobile implementation source is `c8ca17f`; server `0fc21cc` adds persisted Liked
+Songs selection and authoritative heart responses and still needs deployment.
+Phone and emulator packages include the Settings, Spotify, Last.fm and Liked Songs
+chapters. No new live Spotify request or device execution was performed.
+Jam host registration, shared audio and external queue/reconnect acceptance remain
+unverified. The checkpoints below are historical evidence.
+
+---
+
 # Latest catalog pacing checkpoint — 2026-11-01
 
 Read [SPOTIFY_RATE_LIMIT_PROGRESS.md](SPOTIFY_RATE_LIMIT_PROGRESS.md) first.

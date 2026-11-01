@@ -68,6 +68,9 @@ this chapter. They are excluded from the open backlog above:
   initial failure with retry, populated pagination loading and populated pagination
   failure each have a distinct presentation.
 
-These changes were inspected read-only. Their pending integration-test results
-belong in the final implementation progress record; this document does not claim
-they were tested or verified on a device.
+The initial review was read-only. Root subsequently passed the dedicated
+`library-heart-refresh` and `library-heart-ui` suites (20 tests) covering these
+source behaviors, including query preservation, request cancellation, pagination,
+filled hearts and loading/error/empty feedback. Full commands and boundaries are
+in [LIKED_SONGS_INTEGRATION_PROGRESS.md](LIKED_SONGS_INTEGRATION_PROGRESS.md).
+Device layout and gesture behavior remain unverified.

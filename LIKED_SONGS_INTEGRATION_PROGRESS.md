@@ -84,3 +84,23 @@ No device, live Spotify query, Last.fm authorization or second-account Jam test
 was performed in this chapter. Active host registration, shared audio, external
 queue changes and background reconnect still require the live acceptance scenarios
 in `SPOTIFY_JAM_ACCEPTANCE.md`. Source checks do not prove these device behaviors.
+
+## Packaged artifacts
+
+Implementation source: Mobile `c8ca17f`, SpotifyJam `135a891`, Player `2a66a2a`.
+
+- Phone: `build/spotify-jam/StreamingService-Settings-LikedSongs-c8ca17f-arm64.apk`, 36,110,224 bytes; SHA256 `32ec63ca383cd20759112c0e090a10dd04bf36f8f37fcd32f093568e956a5308`.
+- Phone delivery alias: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`, identical to the versioned phone package.
+- Emulator: `build/spotify-jam/StreamingService-Settings-LikedSongs-c8ca17f-x86_64.apk`, 37,179,433 bytes; SHA256 `549c5bd8b7c08382cbe558d294abaa67adc867a4576dc05eb4718c97ac682b4b`.
+
+`PATH=/home/denis/.cargo/bin:$PATH ./android/gradlew -p android
+:app:assembleRelease --no-daemon --console=plain
+-PreactNativeArchitectures=arm64-v8a` passed in 24 seconds. The same command with
+`x86_64` passed in 20 seconds. Both packages passed APK v2 signature verification,
+`zipalign -c -P 16 4`, sole-ABI validation, and four Spotify native ELF LOAD
+segments aligned to at least 16 KiB. Both contain a fresh 2,389,488-byte Hermes
+bundle with the new settings and authoritative-heart copy. Native Spotify library
+sizes remain 5,644,440 bytes for arm64 and 6,140,272 for x86_64.
+
+Packaging does not verify installation, browser approval, playback, live data
+round trips or layout on a device. Neither new APK was installed or launched.

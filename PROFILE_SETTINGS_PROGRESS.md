@@ -1,5 +1,15 @@
 # Profile and Settings
 
+## Latest integration — 2026-11-01
+
+The follow-up Settings, dedicated Spotify account page, Last.fm lifecycle and
+persisted Liked Songs picker are implemented. See
+[LIKED_SONGS_INTEGRATION_PROGRESS.md](LIKED_SONGS_INTEGRATION_PROGRESS.md) for the
+current tests, packages and server deployment requirement, and
+[UI_BACKLOG.md](UI_BACKLOG.md) for remaining UI work. The original chapter below
+is historical; its missing Liked Songs destination and combined Spotify/Jam
+settings description have been superseded.
+
 ## Completed chapter
 
 Implemented the approved Profile → Settings hierarchy with the app's cream surfaces, forest actions, Lora headings, Outfit body text, vector icons, outlined profile editor action, grouped settings rows, live Spotify status, and explicit sign-out confirmation.
