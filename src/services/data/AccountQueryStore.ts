@@ -91,6 +91,9 @@ export class AccountQueryStore {
     this.publish(entry);
     this.load(key, entry);
   }
+  invalidateMatching(matches: (key: string) => boolean): void {
+    for (const key of [...this.entries.keys()]) if (matches(key)) this.invalidate(key);
+  }
   get retainedEntries(): number { return this.entries.size; }
   private fresh(entry: QueryEntry): boolean {
     return entry.hasValue && this.nowMilliseconds() - entry.updatedAt < this.freshnessMilliseconds;

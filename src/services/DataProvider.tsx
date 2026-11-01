@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { subscribeListeningHistoryChanges } from './ListeningHistoryChanges';
+import { isHomeRecommendationQuery } from './home/HomeRecommendationQueries';
 import { subscribeLibraryChanges } from './LibraryChanges';
 import { authenticationSession } from './AuthenticationService';
 import { AccountQueryStore, QueryFetcher, QuerySnapshot } from './data/AccountQueryStore';
@@ -6,10 +8,15 @@ import { AccountQueryStore, QueryFetcher, QuerySnapshot } from './data/AccountQu
 const LibraryQueryPolicy = Object.freeze({ libraryKey: 'library' });
 const queryStore = new AccountQueryStore(() => Date.now());
 queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier);
-const unsubscribeLibrary = subscribeLibraryChanges(() => queryStore.invalidate(LibraryQueryPolicy.libraryKey));
+export const refreshHomeRecommendations = (): void => queryStore.invalidateMatching(isHomeRecommendationQuery);
+const unsubscribeHistory = subscribeListeningHistoryChanges(refreshHomeRecommendations);
+const unsubscribeLibrary = subscribeLibraryChanges(() => {
+  queryStore.invalidate(LibraryQueryPolicy.libraryKey);
+  refreshHomeRecommendations();
+});
 const unsubscribeAuthentication = authenticationSession.subscribe(() => queryStore.setAccount(authenticationSession.getSnapshot().accountIdentifier));
 declare const module: { readonly hot?: { dispose(callback: () => void): void } };
-module.hot?.dispose(() => { unsubscribeAuthentication(); unsubscribeLibrary(); queryStore.clear(); });
+module.hot?.dispose(() => { unsubscribeAuthentication(); unsubscribeLibrary(); unsubscribeHistory(); queryStore.clear(); });
 export const invalidateCache = (key: string): void => queryStore.invalidate(key);
 export const useDataScope = (): object => useSyncExternalStore(queryStore.subscribeScope, queryStore.getScope, queryStore.getScope);
 

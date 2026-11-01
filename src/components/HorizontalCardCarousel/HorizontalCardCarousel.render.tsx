@@ -8,6 +8,7 @@ import {
   cardImageRadius,
   cardImageSize,
 } from './HorizontalCardCarousel.style.tsx';
+import { HomeCollectionCard, HomeCollectionType, homeCollectionDestination } from '../../services/home/HomeCollectionNavigation';
 import SectionTitle from '../SectionTitle';
 import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
 import { View } from 'react-native';
@@ -23,44 +24,28 @@ const HorizontalCardCarousel = ({
 }: {
   navigation: any;
   sectionTitle: string;
-  content: any;
+  content: readonly HomeCollectionCard[];
   isLoading?: boolean;
 }) => {
   if (isLoading) {
-    return <HorizontalCardSkeleton />;
+    return <HorizontalCardSkeleton sectionTitle={sectionTitle} />;
   }
-  const handleCardClick = (card: any) => {
-    if (card.type === 'Playlist') {
-      navigation.navigate('PlaylistViewer', {
-        playlistId: card.id,
-        playlistTitle: card.title,
-        playlistOwner: card.artistName,
-        playlistCover: card.cover,
-        isOwner: false,
-      });
-    } else {
-      navigation.navigate('AlbumViewer', {
-        albumId: card.id,
-        albumTitle: card.title,
-        albumArtist: card.artistName,
-        albumCover: card.cover,
-        albumSmallCover: card.smallCover,
-        albumVerySmallCover: card.verySmallCover,
-      });
-    }
+  const handleCardClick = (card: HomeCollectionCard) => {
+    const destination = homeCollectionDestination(card);
+    if (destination) navigation.navigate(destination.route, destination.parameters);
   };
 
   return (
     <MainContainer>
       <SectionTitle>{sectionTitle}</SectionTitle>
       <CardContainer>
-        {content.map((card: any) => (
+        {content.map((card: HomeCollectionCard) => (
           <MusicCard
-            key={card.id}
+            key={card.type + card.id}
             onPress={() => handleCardClick(card)}
           >
             <CardImage
-              releaseId={card.id}
+              releaseId={card.type === HomeCollectionType.Playlist ? undefined : card.id}
               cover={card.cover}
               smallCover={card.smallCover}
               verySmallCover={card.verySmallCover}
@@ -76,10 +61,11 @@ const HorizontalCardCarousel = ({
 
 export default HorizontalCardCarousel;
 
-export const HorizontalCardSkeleton = () => {
+export const HorizontalCardSkeleton = ({ sectionTitle }: { sectionTitle?: string }) => {
   return (
     <MainContainer>
-      <SkeletonLoader width={150} height={20} style={{ marginBottom: 10 }} />
+      {sectionTitle ? <SectionTitle>{sectionTitle}</SectionTitle> :
+        <SkeletonLoader width={150} height={20} style={{ marginBottom: 10 }} />}
       <CardContainer>
         {SKELETON_ITEMS.map((_, index) => (
           <View

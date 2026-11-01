@@ -89,12 +89,17 @@ test('clearing a search invalidates its operation even when its text is later re
   assertion.equal(first.signal.aborted, true); assertion.equal(first.isCurrent(), false); assertion.equal(second.isCurrent(), false);
   assertion.equal(repeated.isCurrent(), true); scope.cancel(); assertion.equal(repeated.signal.aborted, true); assertion.equal(repeated.isCurrent(), false);
 });
-const LibraryChangeHarnessPaths = Object.freeze({ module: './LibraryChanges', source: 'LibraryChanges.ts' });
+const LibraryChangeHarnessPaths = Object.freeze({ module: './LibraryChanges', source: 'LibraryChanges.ts',
+  historyModule: './ListeningHistoryChanges', historySource: 'ListeningHistoryChanges.ts',
+  homeModule: './home/HomeRecommendationQueries', homeSource: 'home/HomeRecommendationQueries.ts' });
 function hookEnvironment() {
   let accountIdentifier = 'first'; const listeners = new Set();
   const session = { getSnapshot: () => ({ accountIdentifier }), subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };
+  const libraryChanges = load(LibraryChangeHarnessPaths.source);
+  const historyChanges = load(LibraryChangeHarnessPaths.historySource, { [LibraryChangeHarnessPaths.module]: libraryChanges });
   const hooks = load('DataProvider.tsx', { react: React, './AuthenticationService': { authenticationSession: session },
-    './data/AccountQueryStore': { AccountQueryStore }, [LibraryChangeHarnessPaths.module]: load(LibraryChangeHarnessPaths.source) });
+    './data/AccountQueryStore': { AccountQueryStore }, [LibraryChangeHarnessPaths.module]: libraryChanges, [LibraryChangeHarnessPaths.historyModule]: historyChanges,
+    [LibraryChangeHarnessPaths.homeModule]: load(LibraryChangeHarnessPaths.homeSource) });
   return { hooks, account(value) { accountIdentifier = value; for (const listener of listeners) listener(); } };
 }
 test('useData resets on key and account changes without exposing the previous response', async () => {
@@ -181,4 +186,26 @@ test('explicit cache disposal clears anonymous data and aborts in-flight work', 
   const release = store.observe('anonymous', store.getScope(), () => undefined, captured => { signal = captured; return operation.promise; });
   await settle(); store.clear(); assertion.equal(signal.aborted, true); operation.resolve('late'); await settle();
   assertion.equal(store.retainedEntries, 0); release();
+});
+
+const MatchingInvalidationFixture = Object.freeze({
+  homeKey: 'section_artists', searchKey: 'search_state', searchQuery: 'retained-query',
+  initialRevision: 0, firstCall: 1, secondCall: 2, homeValue: 'fresh-home',
+});
+test('matching invalidation refetches recommendation observers without retiring search scope', async () => {
+  const { store, observe } = environment();
+  const scope = store.getScope();
+  let calls = MatchingInvalidationFixture.initialRevision;
+  const releaseHome = observe(MatchingInvalidationFixture.homeKey, async () => {
+    calls += MatchingInvalidationFixture.firstCall;
+    return MatchingInvalidationFixture.homeValue;
+  });
+  const releaseSearch = observe(MatchingInvalidationFixture.searchKey, undefined, MatchingInvalidationFixture.searchQuery);
+  await settle();
+  store.invalidateMatching(key => key === MatchingInvalidationFixture.homeKey);
+  await settle();
+  assertion.equal(calls, MatchingInvalidationFixture.secondCall);
+  assertion.equal(store.getScope(), scope);
+  assertion.equal(store.read(MatchingInvalidationFixture.searchKey).data, MatchingInvalidationFixture.searchQuery);
+  releaseHome(); releaseSearch();
 });

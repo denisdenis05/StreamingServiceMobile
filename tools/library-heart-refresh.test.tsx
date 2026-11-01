@@ -1,6 +1,8 @@
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { View } from 'react-native';
+import { notifyListeningHistoryChanged } from '../src/services/ListeningHistoryChanges';
+import { HomeRecommendationQueries, homeSectionQuery } from '../src/services/home/HomeRecommendationQueries';
 import { LibraryChangeStore, notifyLibraryChanged } from '../src/services/LibraryChanges';
 
 const Fixture = Object.freeze({
@@ -20,7 +22,7 @@ jest.mock('../src/services/AuthenticationService', () => ({ authenticationSessio
   },
 } }));
 
-const { useData, useDataScope } = require('../src/services/DataProvider') as typeof import('../src/services/DataProvider');
+const { useData, useDataScope, invalidateCache } = require('../src/services/DataProvider') as typeof import('../src/services/DataProvider');
 const { useCollectionRecordings, CollectionRecordingPolicy } = require('../src/hooks/useCollectionRecordings') as typeof import('../src/hooks/useCollectionRecordings');
 
 type RecordingState = ReturnType<typeof useCollectionRecordings>;
@@ -165,4 +167,48 @@ test('preserves search query and account scope while invalidating the library li
   expect(currentSearchQuery).toBe(searchQuery);
   expect(currentScope!).toBe(capturedScope);
   expect(libraryFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
+});
+
+test('successful listening history changes refresh Home without refetching library or resetting search', async () => {
+  notifyListeningHistoryChanged();
+  invalidateCache('library');
+  const recentFetcher = jest.fn(async () => [Fixture.playlist]);
+  const sectionsFetcher = jest.fn(async () => []);
+  const artistFetcher = jest.fn(async () => []);
+  const libraryFetcher = jest.fn(async () => []);
+  let searchQuery: string | undefined;
+  let scope: object;
+  function HistoryProbe() {
+    useData(HomeRecommendationQueries.recentQuick, recentFetcher);
+    useData(HomeRecommendationQueries.sections, sectionsFetcher);
+    useData(homeSectionQuery('artists'), artistFetcher);
+    useData('library', libraryFetcher);
+    searchQuery = useData('search_state', undefined, { query: Fixture.title }).data?.query;
+    scope = useDataScope();
+    return <View />;
+  }
+  await act(async () => { renderer = create(<HistoryProbe />); });
+  const previousScope = scope!;
+  await act(async () => notifyListeningHistoryChanged());
+  expect(recentFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
+  expect(sectionsFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
+  expect(artistFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
+  expect(libraryFetcher).toHaveBeenCalledTimes(Fixture.oneRequest);
+  expect(searchQuery).toBe(Fixture.title);
+  expect(scope!).toBe(previousScope);
+});
+
+test('library mutations refresh saved and artist recommendations along with the Library list', async () => {
+  notifyListeningHistoryChanged();
+  const savedFetcher = jest.fn(async () => []);
+  const artistsFetcher = jest.fn(async () => []);
+  function LibraryRecommendationProbe() {
+    useData(homeSectionQuery('saved'), savedFetcher);
+    useData(homeSectionQuery('artists'), artistsFetcher);
+    return <View />;
+  }
+  await act(async () => { renderer = create(<LibraryRecommendationProbe />); });
+  await act(async () => notifyLibraryChanged());
+  expect(savedFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
+  expect(artistsFetcher).toHaveBeenCalledTimes(Fixture.twoRequests);
 });
