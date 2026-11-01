@@ -443,6 +443,7 @@ async fn process_actor_events(identity: ConnectActorIdentity, initial_failure_st
                     ConnectAction::Activate { generation: expected, snapshot, activation, readiness, activation_cancellation, result } => {
                         if result.is_closed() { continue; }
                         if let Some(failure) = http_action_failure(expected, generation, registered, busy, cancellation.is_cancelled() || activation_cancellation.is_cancelled()) { let _ = result.send(Err(failure)); continue; }
+                        if let Err(failure) = activation_guard.require_available() { let _ = result.send(Err(failure)); continue; }
                         let Some(reading) = latest_reading.as_ref() else { let _ = result.send(Err(Failure::Canceled)); continue; };
                         if snapshot.device_identifier != identity.device_identifier || identity.playback_session_identifier.as_deref() != Some(snapshot.session_identifier.as_str())
                             || activation.generation != generation || !readiness.playback_output_ready || !readiness.external_authority_absent

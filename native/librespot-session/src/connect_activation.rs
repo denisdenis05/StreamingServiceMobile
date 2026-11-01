@@ -65,9 +65,12 @@ pub struct ConnectActivationDispatchGuard {
 
 impl ConnectActivationDispatchGuard {
     pub fn complete_deactivation(&mut self) { self.dispatched = false; }
+    pub fn require_available(&self) -> Result<(), Failure> {
+        if self.dispatched { Err(Failure::UnknownOutcome) } else { Ok(()) }
+    }
     pub fn acquire(&mut self, canceled: bool) -> Result<(), Failure> {
         if canceled { return Err(Failure::Canceled); }
-        if self.dispatched { return Err(Failure::UnknownOutcome); }
+        self.require_available()?;
         self.dispatched = true;
         Ok(())
     }
