@@ -20,7 +20,7 @@ Source context follows occurrence metadata through native selection, ordering, r
 
 `npx tsc --project tsconfig.audio-migration.json` passed. The five test files listed above passed 88 tests, including ten new origin cases. No network, Spotify, device or account data was accessed.
 
-## Next chapter
+## Baseline next step (completed in the chapter below)
 
 Persist explicit album origins in a bounded app sidecar, scoped to server/account/native epochs/queue identity and occurrence identifiers. Restore before reports resume; legacy or untrusted data remains unscoped. Playlist source already exists in the native queue entry. No player-library protocol change is needed.
 

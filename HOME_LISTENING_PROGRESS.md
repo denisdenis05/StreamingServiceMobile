@@ -104,3 +104,22 @@ HISTORY_CONTEXT_PROGRESS.md; mobile LISTENING_QUEUE_CONTEXT_PROGRESS.md.
 No new device, background process execution, actual playback, server deployment
 or production history write was verified. The existing Jam live acceptance gap
 is unchanged by this feature.
+
+## Updated APKs
+
+Implementation source is Mobile `490fda1`; both packages retain the existing
+Spotify native library and include the Home/history and prior Settings chapters.
+
+- Phone: `build/spotify-jam/StreamingService-Home-History-490fda1-arm64.apk`, 36,121,308 bytes; SHA256 `d535dd815f60c91574ea84e1c1f9e446710e86e63cce285ba02cbd08c797c802`.
+- Phone delivery alias: `build/spotify-jam/StreamingService-Spotify-Jam-arm64.apk`, identical to the versioned phone package.
+- Emulator: `build/spotify-jam/StreamingService-Home-History-490fda1-x86_64.apk`, 37,190,517 bytes; SHA256 `7c6f5cc3a6c155ed5f6634824afd156e8a32b244bfb23f20771dbb69da62b7cf`.
+
+Release builds using `:app:assembleRelease --no-daemon --console=plain` and the
+respective `-PreactNativeArchitectures=arm64-v8a`/`x86_64` overrides passed in
+33/21 seconds. Both passed APK v2 signature verification, 16 KiB zip alignment,
+sole-ABI checks, sourceAlbumId/Home/queue-context bundle markers, and four Spotify
+ELF LOAD segments aligned to at least 16 KiB. Each has a fresh 2,400,572-byte
+Hermes bundle. Spotify native libraries remain 5,644,440/6,140,272 bytes.
+
+Neither APK was installed or launched. Package verification is separate from live
+history writes, playback, Home layout, native background lifecycle and deployment.

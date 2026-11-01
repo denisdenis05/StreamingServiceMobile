@@ -1,3 +1,16 @@
+# Latest Home and history checkpoint — 2026-11-01
+
+[HOME_LISTENING_PROGRESS.md](HOME_LISTENING_PROGRESS.md) is the latest mobile
+release checkpoint. Source `490fda1` replaces random Home cards, reports explicit
+album/playlist queue origins, safely restores album origins for matching native
+sessions and refreshes Home on history/library changes. Both phone and emulator
+APKs are packaged and checked. Server commits `bb57ee3` and `1b500ad` must be
+deployed with migration `20261101102204_TrackPlaybackCollectionContext`.
+No deployment, device execution or new live Spotify request was performed.
+The existing unverified Jam host/audio/reconnect acceptance remains open.
+
+---
+
 # Latest Settings and Liked Songs checkpoint — 2026-11-01
 
 Read [LIKED_SONGS_INTEGRATION_PROGRESS.md](LIKED_SONGS_INTEGRATION_PROGRESS.md)
