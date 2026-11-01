@@ -350,3 +350,15 @@ test('No active Jam preserves ordinary app playback without starting sharing or 
   await committed(); assertion.equal(current.calls.host.length, Fixture.initial);
   assertion.equal(current.calls.stopFollow, Fixture.initial);
 });
+for (const status of [SharedPlaybackStatus.Waiting, SharedPlaybackStatus.Resolving, SharedPlaybackStatus.Preparing,
+  SharedPlaybackStatus.Following, SharedPlaybackStatus.Buffering, SharedPlaybackStatus.Stale,
+  SharedPlaybackStatus.Unavailable, SharedPlaybackStatus.Stopping]) {
+  test(`Explicit owner host activation cannot discard an externally followed queue in ${status}`, async () => {
+    const current = fixture(); current.controller.setMarket(Fixture.market);
+    current.state.following.status = status; current.changed();
+    assertion.equal(current.controller.getSnapshot().canHost, false);
+    await current.controller.startHosting(); await current.controller.startSharing();
+    assertion.equal(current.calls.host.length, Fixture.initial);
+    assertion.equal(current.calls.stopFollow, Fixture.initial);
+  });
+}

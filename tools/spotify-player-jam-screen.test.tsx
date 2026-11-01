@@ -95,3 +95,9 @@ test('Player Jam controls scroll inside a bounded sheet while the close action s
   expect(scroll.findAllByType(Pressable)).not.toContain(press(PlayerJamCopy.close));
   expect(StyleSheet.flatten(scroll.parent!.props.style).maxHeight).toBe(SheetLayout.maximumHeight);
 });
+test('Owner following offers app selection guidance without an unusable host-current-queue action', async () => {
+  snapshot = { ...snapshot, mode: SpotifyPlayerJamMode.Following, canHost: false, owned: true };
+  await mount(); expect(press(PlayerJamCopy.host)).toBeUndefined();
+  expect(rendered.root.findAllByType(Text).some(text => text.props.children === PlayerJamCopy.ownerSelection)).toBe(true);
+  expect(store.startSharing).not.toHaveBeenCalled();
+});

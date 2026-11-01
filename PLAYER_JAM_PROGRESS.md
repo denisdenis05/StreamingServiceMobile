@@ -117,3 +117,24 @@ This chapter sent no live Spotify requests and ran no device commands. The ownin
 session must verify actual host activation, visible Connect device identity,
 Spotify queue publication and audio on the emulator after native fixes and APK
 integration. A second account is still needed for guest/shared-audio acceptance.
+
+### Explicit host action while following
+
+The explicit host-current-queue action no longer offers a mirrored Spotify queue
+as a local hosting candidate. The controller reports no hosting capability while
+following is waiting, matching, preparing, active, buffering, stale, unavailable
+or stopping. Both explicit hosting commands reject before invoking native host
+startup, so they cannot clear the follower queue and then fail with EmptyQueue.
+The separate Jam hosting panel now uses this guarded controller instead of calling
+the hosting store directly. It directs an owner following Spotify to choose a
+song or playlist in the app; the player sheet already shows that selection path.
+The owner-only replacement handoff above remains available.
+
+Dedicated regressions: `tools/spotify-player-jam.test.cjs` covers every following
+phase; `tools/spotify-hosting-screen.test.tsx` covers the disabled mirrored-queue
+button and guarded dispatch; `tools/spotify-player-jam-screen.test.tsx` covers the
+absent player host action with owner selection guidance.
+
+Passed `npx tsc --project tsconfig.spotify.json` plus the controller suite (58
+cases), the four Spotify screen/hosting/player/composition Jest suites (88 cases),
+and `npx tsc --noEmit`. No device or Spotify network operation was performed.

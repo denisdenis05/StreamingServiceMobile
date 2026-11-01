@@ -522,7 +522,8 @@ export class SpotifyPlayerJamController {
       mode,
       connected: connection !== null,
       owned: connection?.owned ?? false,
-      canHost: connection?.native === true && connection.nativeReady && connection.owned,
+      canHost: connection?.native === true && connection.nativeReady && connection.owned &&
+        !this.following() && following.status !== SharedPlaybackStatus.Stopping,
       canCreate: this.dependencies.getCanCreate?.() ?? false,
       canJoin: this.dependencies.getCanJoin?.() ?? false,
       canFollow:
