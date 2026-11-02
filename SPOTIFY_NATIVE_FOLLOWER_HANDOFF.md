@@ -1,3 +1,44 @@
+# Active cooperative Jam verification — 2026-11-02
+
+Read `JAM_EMULATOR_REPAIR_PROGRESS.md`, `JAM_HOST_PUBLICATION_PACING_PROGRESS.md`,
+`HOST_QUEUE_RECEIPT_PROGRESS.md` and `SPOTIFY_CONNECT_REQUEST_PROGRESS.md` first.
+Historical release notes below do not replace this active checkpoint.
+
+The user now chooses all test songs. Use only downloaded Madvillainy tracks.
+The latest user selection was Raid in StreamingService; root paused playback to
+prevent album advancement while implementing current-first hosting. Do not choose
+another recording. Cue the user explicitly when the next playback change is
+needed; play/pause and verification are authorized. No APK install during their
+active test without explaining the next step.
+
+The integrated candidate reached native Hosting and sustained ten-second HTTP200
+heartbeats for over eight minutes. Official desktop displayed StreamingService,
+and its MPRIS Play/Pause controlled Android playback. This is single-account
+transport evidence, not second-account synchronized-audio acceptance.
+
+Current source chapter1031dad implements selected-occurrence capture,
+current-only initial mapping, independent bounded future matching, and active-host
+replacement preparation using the actual selected recording. Previous entire
+album matching could reject an earlier queue entry before the selected track.
+Root built and installed the1031dadx86_64 candidate; signature/alignment passed.
+The user has been cued to replay their selected downloaded track and reply
+playing. Start/check hosting after their reply; current-first live acceptance
+is pending.493 JVM,724Node/201Jest,385player and fullTS checks pass.
+
+User authorized graceful Linux Spotify restart for debugging. Existing profile is
+preserved; current CDP listens only on127.0.0.1:9222. Renderer-only90sec trace yielded
+two safe events and missed native Connect requests. Native trace chapter5fd8533 was tried live: GDB crashed after two partial safe
+HTTP1 events and closed Spotify. Root reopened Spotify normally with its existing
+profile. Chapter67a515a records failure and suppresses raw debugger diagnostics.
+Do not run more native GDB captures or claim normal-client event timing from it.
+Renderer/CDP and native trace source tests do not prove full request visibility.
+
+The x86_64 emulator remains connected at192.168.240.112:5555. Preserve Android data
+and saved native sign-in. No second Spotify account is available. Server's two
+preexisting appsettings edits and .idea directory remain unrelated and untouched.
+
+---
+
 # Latest Home and history checkpoint — 2026-11-01
 
 [HOME_LISTENING_PROGRESS.md](HOME_LISTENING_PROGRESS.md) is the latest mobile

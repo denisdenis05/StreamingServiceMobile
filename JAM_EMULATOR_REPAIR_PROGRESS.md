@@ -138,3 +138,31 @@ safe90-second trace contains two redacted events and does not expose native
 Connect traffic. A native TLS diagnostic tool is under source verification; do
 not claim a full native capture until root actually runs it. No raw packet,
 header, body, credential, account or song dump was persisted.
+
+## Current-first candidate installed — 2026-11-02
+
+Mobile1031dad now starts native hosting from the actual selected occurrence,
+keeps bounded future matching independent, and prepares only the selected active
+replacement recording. Root integrated source checks: Spotify724 Node and201
+Jest, player385, TypeScript passed. Complete Android JVM suite passed493 tests
+across34 suites with zero failures/errors/skips. Combined JVM/release build
+completed in39seconds.
+
+Installed once without clearing data:
+`build/spotify-jam/StreamingService-Jam-Current-First-1031dad-x86_64.apk`
+(37,294,873bytes), SHA-256
+`9d583b73a9f8f6d11159cc1a742ed1a98e59bea9e8538178b017613e0354a6cd`.
+APK signature and16KiB alignment passed. The app reopened successfully.
+
+The user was cued to select their same downloaded Madvillainy track again and
+reply playing. Root must then start/check Jam sharing, verify actual Spotify
+current metadata/device/queue and sustained publication, and only then cue a
+second user-selected track from that album. This candidate's live current-first
+acceptance is pending. No final phone/arm64 package is claimed for this chapter.
+
+Native GDB trace actually failed after two safe HTTP1 events and closed desktop
+Spotify. Root restored normal desktop Spotify with the original profile and
+loopback debugging, cancelled the obsolete desktop-play prompt, and prohibited
+another live native GDB attempt.67a515a records this limit;20 trace source tests
+pass but do not establish a stable real debugger capture. The two partial safe
+trace files are diagnostic artifacts, not evidence of official playback cadence.
