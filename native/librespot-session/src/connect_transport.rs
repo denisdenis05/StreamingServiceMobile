@@ -589,7 +589,13 @@ where Socket: AsyncRead + AsyncWrite + Unpin + Send + 'static {
 }
 
 pub async fn run_connect_transport(serialized_credential: String, configuration: ConnectDeviceConfiguration,
-    events: mpsc::Sender<ConnectEvent>, mut actions: mpsc::Receiver<ConnectAction>, cancellation: CancellationToken) {
+    events: mpsc::Sender<ConnectEvent>, actions: mpsc::Receiver<ConnectAction>, cancellation: CancellationToken) {
+    run_connect_transport_with_client_platform(serialized_credential, configuration, None, events, actions, cancellation).await
+}
+
+pub async fn run_connect_transport_with_client_platform(serialized_credential: String, configuration: ConnectDeviceConfiguration,
+    client_token_platform: Option<crate::connect_client_token::ClientTokenPlatform>, events: mpsc::Sender<ConnectEvent>,
+    mut actions: mpsc::Receiver<ConnectAction>, cancellation: CancellationToken) {
     let mut generation = INITIAL_GENERATION;
     let mut last_cleanup_failure = None;
     loop {
@@ -599,7 +605,7 @@ pub async fn run_connect_transport(serialized_credential: String, configuration:
             None => break,
         };
         if emit(&events, generation, ConnectEventData::Connecting, &cancellation).await.is_err() { break; }
-        let restore = NativeConnectSession::restore(&serialized_credential, &configuration);
+        let restore = NativeConnectSession::restore_with_client_platform(&serialized_credential, &configuration, client_token_platform.clone());
         let mut session = tokio::select! {
             biased;
             _ = cancellation.cancelled() => break,

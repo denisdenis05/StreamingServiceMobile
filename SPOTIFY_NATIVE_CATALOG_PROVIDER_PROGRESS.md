@@ -99,3 +99,34 @@ and run one deliberate current-session Partner search after the prior cooldown.
 Actual client-token acceptance, persisted-query availability, returned matching
 metadata and host activation remain live gates. A successful catalog search alone
 does not verify device visibility, incoming commands or synchronized playback.
+
+## Android request correction — 2026-11-02
+
+The first Android provider attempt returned HTTP 400 during client-token exchange,
+before a Partner request (catalog requestCount 0). Two source omissions were found:
+empty Android platform data and conflation of the bearer client with the platform
+client-token client. Earlier same-client claims above describe the superseded
+implementation, not the corrected composition.
+
+The Android JNI boundary now captures Build.VERSION.RELEASE/SDK_INT and
+Build.DEVICE/MODEL/MANUFACTURER before starting asynchronous work. Immutable,
+validated platform data follows the transport through reconnects. Missing fields
+fail explicitly; hardware/version values are neither fabricated nor supplied by
+JavaScript. The request serializes the actual fields.
+
+The bearer session, account and device are preserved. ClientToken uses the pinned
+library's fixed compile-platform client selection on Android/iOS/Linux; other
+platforms retain the session client. The cache and current-scope check include
+both client roles. This follows the pinned core/spclient.rs composition, which
+explicitly distinguishes session.client_id from the Android platform client used
+for client-token exchange. There is one fixed composition, no fallback client
+list, identity rotation, provider retry or change to rate-limit handling.
+
+Primary implementation:
+https://github.com/librespot-org/librespot/blob/99b6088bf3ea028f90192676ac1a337fa4b2ed12/core/src/spclient.rs
+
+`cargo test --manifest-path native/librespot-session/Cargo.toml --quiet`: 274 passed.
+New tests in `connect_client_platform.rs` cover actual field capture/serialization,
+immutable capture, each failed read and invalid build data. Client-token tests
+cover distinct session/platform client roles, preserved device identity and cache
+rejection when either client scope changes. Live acceptance remains pending.

@@ -6,7 +6,7 @@ use tokio::{runtime::Runtime, sync::oneshot};
 use tokio_util::sync::CancellationToken;
 
 use crate::{connect_activation::{ConnectExplicitActivation, ConnectActivationPlayerReadiness}, connect_publication::ConnectPublicationSnapshot, connect_search::{ConnectSearchInput, ConnectSearchTrack}, connect_membership::ConnectMembershipReading, connect_device::{validate_configuration, ConnectDeviceConfiguration}, connect_registry::ConnectRegistry,
-    connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport, ConnectAction, ConnectReading, ConnectHostIdentity}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
+    connect_receipts::ConnectCommandAcknowledgement, connect_metadata::{ConnectTrackMetadata, encode_metadata_request}, connect_transport::{native_monotonic_milliseconds, run_connect_transport_with_client_platform, ConnectAction, ConnectReading, ConnectHostIdentity}, connect_commands::ConnectCommand, model::{bounded_text, decode_stored_session, Failure}};
 
 const MAXIMUM_INPUT_BYTES: usize = 131072;
 const MAXIMUM_KEY_CHARACTERS: usize = 2048;
@@ -248,8 +248,10 @@ pub extern "system" fn Java_com_streamingservice_spotify_SpotifyLibrespotNative_
     mut environment: JNIEnv, _receiver: JObject, serialized: JString) -> jstring {
     boundary(&mut environment, |environment| {
         let input = decode_start(&crate::read_string(environment, serialized)?)?;
+        let platform = crate::connect_client_token::ClientTokenPlatform::Android(
+            crate::connect_client_platform::capture_android_client_token_data(environment)?);
         let handle = connections().start(runtime()?.handle(), |events, actions, cancellation| {
-            run_connect_transport(input.stored_credential, input.configuration, events, actions, cancellation)
+            run_connect_transport_with_client_platform(input.stored_credential, input.configuration, Some(platform), events, actions, cancellation)
         })?;
         Ok(ConnectStarted { handle })
     })

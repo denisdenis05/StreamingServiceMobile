@@ -95,6 +95,7 @@ pub struct NativeConnectSession {
     verification: RegistrationVerification,
     catalog_traffic: CatalogSearchTraffic,
     client_token: ClientTokenCache,
+    client_token_platform: Option<ClientTokenPlatform>,
 }
 
 pub trait ConnectSessionOperations: Send {
@@ -161,13 +162,18 @@ fn identifier_segment(identifier: &str) -> Result<String, Failure> {
 
 impl NativeConnectSession {
     pub async fn restore(serialized: &str, configuration: &ConnectDeviceConfiguration) -> Result<Self, Failure> {
+        Self::restore_with_client_platform(serialized, configuration, None).await
+    }
+
+    pub async fn restore_with_client_platform(serialized: &str, configuration: &ConnectDeviceConfiguration,
+        client_token_platform: Option<ClientTokenPlatform>) -> Result<Self, Failure> {
         crate::connect_device::validate_configuration(configuration)?;
         let stored = decode_stored_session(serialized)?;
         let session_configuration = stored_session_configuration(&stored, SessionConfig::default())?;
         let session = Session::new(session_configuration, None);
         let mut owned = Self { session, token: None, origin: String::new(), registration: PutStateRequest::new(),
             connection_identifier: None, registered: false, registration_attempted: false, publication_state: ConnectPublicationState::default(), failure_stage: ConnectFailureStage::Restore,
-            verification: RegistrationVerification::Cluster, catalog_traffic: CatalogSearchTraffic::default(), client_token: ClientTokenCache::default() };
+            verification: RegistrationVerification::Cluster, catalog_traffic: CatalogSearchTraffic::default(), client_token: ClientTokenCache::default(), client_token_platform };
         tokio::time::timeout(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECONDS),
             owned.session.connect(stored.credentials, false)).await.map_err(|_| Failure::Deadline)?.map_err(sanitized_failure)?;
         if owned.session.username() != stored.account_identifier { return Err(Failure::Unauthorized); }
@@ -192,7 +198,10 @@ impl NativeConnectSession {
 
     fn client_token_identity(&self) -> ClientTokenIdentity {
         ClientTokenIdentity { account_identifier: self.session.username(), client_identifier: self.session.client_id(),
-            device_identifier: self.session.device_id().to_owned() }
+            client_token_client_identifier: match std::env::consts::OS {
+                ANDROID_PLATFORM | LINUX_PLATFORM | IOS_PLATFORM => SessionConfig::default().client_id,
+                _ => self.session.client_id(),
+            }, device_identifier: self.session.device_id().to_owned() }
     }
 
     async fn catalog_client_token(&mut self) -> Result<String, Failure> {
@@ -200,14 +209,14 @@ impl NativeConnectSession {
         let now = native_monotonic_milliseconds();
         if let Some(token) = self.client_token.read(&identity, now) { return Ok(token.to_owned()); }
         self.client_token.clear();
-        let platform = match std::env::consts::OS {
-            ANDROID_PLATFORM => ClientTokenPlatform::Android,
+        let platform = if let Some(platform) = &self.client_token_platform { platform.clone() } else { match std::env::consts::OS {
+            ANDROID_PLATFORM => return Err(Failure::Unsupported),
             LINUX_PLATFORM => ClientTokenPlatform::Linux,
             MACOS_PLATFORM => ClientTokenPlatform::MacOs,
             IOS_PLATFORM => ClientTokenPlatform::Ios,
             WINDOWS_PLATFORM => ClientTokenPlatform::Windows,
             _ => return Err(Failure::Unsupported),
-        };
+        } };
         let grant = tokio::time::timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS), obtain_client_token(self, &identity, platform))
             .await.map_err(|_| Failure::Deadline)??;
         let token = grant.token.clone();

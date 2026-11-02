@@ -4,7 +4,7 @@ use librespot_protocol::clienttoken_http::{ClientTokenRequest, ClientTokenReques
     ClientTokenResponseType, ChallengeType};
 use protobuf::Message;
 
-use crate::model::{bounded_text, Failure};
+use crate::{connect_client_platform::AndroidClientTokenData, model::{bounded_text, Failure}};
 
 pub const CLIENT_TOKEN_ADDRESS: &str = "https://clienttoken.spotify.com/v1/clienttoken";
 pub const MAXIMUM_CLIENT_TOKEN_RESPONSE_BYTES: usize = 65536;
@@ -31,10 +31,10 @@ const MILLISECONDS_PER_SECOND: u64 = 1000;
 const MAXIMUM_SUFFIX_BYTES: usize = 16;
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct ClientTokenIdentity { pub account_identifier: String, pub client_identifier: String, pub device_identifier: String }
+pub struct ClientTokenIdentity { pub account_identifier: String, pub client_identifier: String, pub client_token_client_identifier: String, pub device_identifier: String }
 
-#[derive(Clone, Copy)]
-pub enum ClientTokenPlatform { Android, Linux, MacOs, Ios, Windows }
+#[derive(Clone)]
+pub enum ClientTokenPlatform { Android(AndroidClientTokenData), Linux, MacOs, Ios, Windows }
 
 pub struct ClientTokenGrant { pub token: String, pub refresh_after_seconds: u64 }
 
@@ -68,19 +68,27 @@ fn require_current(exchange: &impl ClientTokenExchange, identity: &ClientTokenId
 }
 
 pub fn initial_request(identity: &ClientTokenIdentity, platform: ClientTokenPlatform) -> Result<ClientTokenRequest, Failure> {
-    for value in [&identity.account_identifier, &identity.client_identifier, &identity.device_identifier] {
+    for value in [&identity.account_identifier, &identity.client_identifier, &identity.client_token_client_identifier, &identity.device_identifier] {
         if value.trim().is_empty() || !bounded_text(value, MAXIMUM_IDENTITY_CHARACTERS) { return Err(Failure::InvalidInput); }
     }
     let mut request = ClientTokenRequest::new();
     request.request_type = ClientTokenRequestType::REQUEST_CLIENT_DATA_REQUEST.into();
     let data = request.mut_client_data();
-    data.client_id = identity.client_identifier.clone();
+    data.client_id = identity.client_token_client_identifier.clone();
     data.client_version = librespot_core::version::spotify_semantic_version();
     let connectivity = data.mut_connectivity_sdk_data();
     connectivity.device_id = identity.device_identifier.clone();
     let platform_data = connectivity.platform_specific_data.mut_or_insert_default();
     match platform {
-        ClientTokenPlatform::Android => { platform_data.mut_android(); },
+        ClientTokenPlatform::Android(data) => {
+            data.validate()?;
+            let android = platform_data.mut_android();
+            android.android_version = data.android_version;
+            android.api_version = data.api_version;
+            android.device_name = data.device_name;
+            android.model_str = data.model;
+            android.vendor = data.manufacturer;
+        },
         ClientTokenPlatform::Linux => { platform_data.mut_desktop_linux(); },
         ClientTokenPlatform::MacOs => { platform_data.mut_desktop_macos(); },
         ClientTokenPlatform::Ios => { platform_data.mut_ios(); },
