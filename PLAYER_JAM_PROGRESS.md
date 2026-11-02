@@ -148,3 +148,13 @@ Other stages and rate-limit/authentication/network guidance retain their existin
 messages. Dedicated helper matrix and each surface's UI regression pass.
 Integrated `npm run test:spotify`: 698 Node and 199 Jest passed; TypeScript passes.
 These source checks do not establish successful native host activation.
+
+## Equivalent background catalog candidates — 2026-11-02
+
+SpotifyJam `3c7a771` applies strict same-recording duplicate-release selection.
+Mobile background tests now separately cover exact equivalent candidates resolving
+deterministically and distinct durations remaining ambiguous. Integrated Spotify
+checks pass 701 Node and 199 Jest cases; TypeScript passes. On the emulator the
+same prior ambiguous recording now reports Matched and reaches Sharing this
+player with Spotify. A later publication failure remains under investigation;
+this is not sustained playback acceptance.

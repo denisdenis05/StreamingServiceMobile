@@ -13,7 +13,8 @@ const Fixture = Object.freeze({ request: 'synthetic-resolution-request', appAcco
   otherRecording: 'synthetic-other-recording', catalog: 'synthetic-catalog', zero: 0, one: 1, two: 2, flushTurns: 40,
   matched: 'matched', ambiguous: 'ambiguous', unavailable: 'unavailable', privateMessage: 'synthetic-private-diagnostic' });
 const Names = Object.freeze({ match: 'Background matching uses native metadata and the existing strict translator for an unseen song',
-  ambiguity: 'Equivalent catalog candidates remain ambiguous instead of selecting one in the background',
+  ambiguity: 'Distinct catalog durations remain ambiguous instead of selecting one in the background',
+  equivalent: 'Equivalent recording releases resolve deterministically in the background',
   titleOnly: 'A title without artist and duration evidence cannot become a playable recording',
   duration: 'Conflicting recording duration remains unavailable', confirmed: 'Verified confirmed associations work through the existing translator',
   account: 'A different restored app account cannot search or complete the old job', replaced: 'Account replacement during the query cannot publish a match',
@@ -63,7 +64,7 @@ test(Names.match, async () => {
   assertion.deepEqual(context.calls.search[Fixture.zero].query, { title: Fixture.title, author: Fixture.artist, limit: library.DefaultMatchingPolicy.maximumCandidates });
   assertion.equal(context.calls.timers[Fixture.zero].active, false);
 });
-test(Names.ambiguity, async () => { const context = fixture(); context.state.candidates.push(recording(Fixture.otherRecording)); await context.task.execute(Fixture.request);
+test(Names.ambiguity, async () => { const context = fixture(); context.state.candidates.push({ ...recording(Fixture.otherRecording), durationMilliseconds: Fixture.duration + Fixture.one }); await context.task.execute(Fixture.request);
   assertion.equal(context.calls.completions[Fixture.zero].result.status, Fixture.ambiguous); });
 test(Names.titleOnly, async () => { const context = fixture(); context.state.candidates = [{ identifier: Fixture.recording, title: Fixture.title, author: Fixture.otherTitle }];
   await context.task.execute(Fixture.request); assertion.equal(context.calls.completions[Fixture.zero].result.status, Fixture.unavailable); });
@@ -174,4 +175,12 @@ test(FailureRetirementNames.pendingCancellation, async () => {
   cleanup.reject(new Error(Fixture.privateMessage)); search.resolve([recording()]); await flush();
   assertion.equal(context.calls.completions.length, Fixture.zero);
   assertion.equal(context.calls.failures.length, Fixture.zero);
+});
+
+test(Names.equivalent, async () => {
+  const context = fixture(); context.state.candidates.push(recording(Fixture.otherRecording));
+  await context.task.execute(Fixture.request);
+  assertion.equal(context.calls.completions[Fixture.zero].result.status, Fixture.matched);
+  assertion.equal(context.calls.completions[Fixture.zero].result.recordingIdentifier,
+    [Fixture.recording, Fixture.otherRecording].sort()[Fixture.zero]);
 });
