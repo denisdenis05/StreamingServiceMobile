@@ -1,3 +1,5 @@
+use crate::connect_request_cooldown::{require_service_allowed, observe_service_cooldown};
+use crate::connect_request_diagnostics::ConnectRequestDiagnostic;
 use crate::connect_client_token::{ClientTokenExchange, ClientTokenIdentity, ClientTokenCache, ClientTokenPlatform, obtain_client_token, CLIENT_TOKEN_ADDRESS, MAXIMUM_CLIENT_TOKEN_RESPONSE_BYTES};
 use crate::connect_search::diagnostics::{SearchDiagnostic, SearchDiagnosticStage};
 use crate::connect_search_traffic::{CatalogSearchTraffic, retry_after_seconds, quota_exceeded, MAXIMUM_RATE_LIMIT_BODY_BYTES, RATE_LIMIT_BODY_TIMEOUT_MILLISECONDS};
@@ -237,6 +239,7 @@ impl NativeConnectSession {
 
     async fn request(&mut self, method: Method, path: String, body: Vec<u8>, media_type: &'static str, purpose: ConnectRequestPurpose) -> Result<Vec<u8>, Failure> {
         if body.len() > MAXIMUM_FRAME_BYTES { return Err(Failure::InvalidInput); }
+        require_service_allowed(native_monotonic_milliseconds())?;
         execute_authenticated_request(self, &ConnectHttpRequest { method, path, body, media_type, purpose }).await
     }
 
@@ -421,9 +424,11 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
     async fn access_token(&mut self) -> Result<String, Failure> { NativeConnectSession::access_token(self).await }
     fn discard_access_token(&mut self) { self.token = None; }
     async fn dispatch_once(&mut self, request: &ConnectHttpRequest, access_token: &str) -> Result<Vec<u8>, Failure> {
-        let mutation = request.purpose.is_mutation();
+        let purpose = request.purpose;
+        let mutation = purpose.is_mutation();
         let request_body = request.body.clone();
         let catalog_search = matches!(request.purpose, ConnectRequestPurpose::CatalogSearch);
+        if !catalog_search { require_service_allowed(native_monotonic_milliseconds())?; }
         let address = if catalog_search { search_address(request)?.to_string() } else { self.origin.clone() + &request.path };
         if catalog_search {
             let now = native_monotonic_milliseconds();
@@ -453,6 +458,7 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
                 .map_err(|failure| {
                     let status = match failure.error.downcast_ref() { Some(HttpClientError::StatusCode(status)) => Some(*status), _ => None };
                     let failure = private_http_failure(failure, mutation);
+                    if !catalog_search { ConnectRequestDiagnostic::admission(purpose, status, failure).emit(); }
                     if catalog_search { SearchDiagnostic::new(SearchDiagnosticStage::DispatchAdmission, status, Some(failure)).emit(); }
                     failure
                 })?;
@@ -463,6 +469,11 @@ impl ConnectAuthenticatedDispatch for NativeConnectSession {
                     failure
                 })?;
             let status = response.status();
+            if !catalog_search {
+                let retry_seconds = retry_after_seconds(response.headers());
+                ConnectRequestDiagnostic::response(purpose, status, retry_seconds).emit();
+                if status.as_u16() == RATE_LIMITED_STATUS { observe_service_cooldown(native_monotonic_milliseconds(), retry_seconds)?; }
+            }
             if catalog_search && status.as_u16() == RATE_LIMITED_STATUS {
                 let retry_seconds = retry_after_seconds(response.headers());
                 self.catalog_traffic.rate_limited(native_monotonic_milliseconds(), retry_seconds);

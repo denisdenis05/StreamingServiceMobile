@@ -6,7 +6,8 @@ use crate::model::Failure;
 
 pub const SAFE_REQUEST_TIMEOUT_SECONDS: u64 = 15;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ConnectRequestPurpose { Observation, Metadata, CatalogSearch, Membership, Removal, Command, Publication }
 
 impl ConnectRequestPurpose {

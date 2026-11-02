@@ -15,6 +15,8 @@ pub mod connect_metadata;
 pub mod connect_search;
 pub mod connect_client_token;
 pub mod connect_client_platform;
+pub mod connect_request_diagnostics;
+pub mod connect_request_cooldown;
 pub mod connect_search_traffic;
 pub mod connect_membership;
 pub mod connect_receipts;
