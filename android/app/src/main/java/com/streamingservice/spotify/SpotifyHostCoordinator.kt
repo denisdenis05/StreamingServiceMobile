@@ -21,6 +21,7 @@ class SpotifyHostCoordinator(
     private val mappingSource: SpotifyHostQueueMappingSource? = null
 ) : SpotifyHostSessionCoordinator {
     private val projector = SpotifyHostPublicationProjector(clock)
+    private val publicationCadence = SpotifyHostPublicationCadence()
     private val started = CompletableFuture<SpotifyHostSnapshot>()
     private val stopped = CompletableFuture<Unit>()
     @Volatile private var requested = false
@@ -74,6 +75,7 @@ class SpotifyHostCoordinator(
                         dispatcher.setAccepting()
                         activationAttempted = true
                         perform(transport.activate(identity, queue, publication, activation), true) {
+                            publicationCadence.published(queue, mappings, clock.nowElapsedRealtimeMilliseconds())
                             perform(transport.preflight(identity, identity.deviceIdentifier)) confirmed@{
                                 startupTimer?.cancel(); startupTimer = null
                                 publish(SpotifyHostStatus.Hosting)
@@ -138,31 +140,36 @@ class SpotifyHostCoordinator(
         if (closing || work != null) return
         if (!current()) { terminate(Superseded); return }
         stage = SpotifyHostFailureStage.Publication
-        perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
-            sample { queue ->
-                lastCursor = queue.snapshot.cursor
-                queue.entries.forEach { entry ->
-                    if (mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier }) {
-                        mappingSource?.cached(identity, entry.recordingIdentifier)?.let { track ->
-                            mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
-                        }
+        sample { queue ->
+            lastCursor = queue.snapshot.cursor
+            queue.entries.forEach { entry ->
+                if (mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier }) {
+                    mappingSource?.cached(identity, entry.recordingIdentifier)?.let { track ->
+                        mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
                     }
                 }
-                val missing = queue.entries.firstOrNull { entry -> mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
-                if (missing != null && mappingSource != null) {
-                    resolve(queue, missing); return@sample
-                }
-                if (queue.snapshot.buffering && queue.snapshot.durationMilliseconds == null && queue.snapshot.externalAuthorityAbsent
-                    && queue.entries.any { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }) {
-                    val now = clock.nowElapsedRealtimeMilliseconds()
-                    val waitingSince = waitingForPlayerSinceElapsedMilliseconds ?: now.also { waitingForPlayerSinceElapsedMilliseconds = it }
-                    if (now < waitingSince || now - waitingSince >= MaximumPlayerPreparationMilliseconds) throw SpotifyConnectFailure(Deadline)
-                    schedule(); return@sample
-                }
-                waitingForPlayerSinceElapsedMilliseconds = null
+            }
+            val missing = queue.entries.firstOrNull { entry -> mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
+            if (missing != null && mappingSource != null) {
+                resolve(queue, missing); return@sample
+            }
+            if (queue.snapshot.buffering && queue.snapshot.durationMilliseconds == null && queue.snapshot.externalAuthorityAbsent
+                && queue.entries.any { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }) {
+                val now = clock.nowElapsedRealtimeMilliseconds()
+                val waitingSince = waitingForPlayerSinceElapsedMilliseconds ?: now.also { waitingForPlayerSinceElapsedMilliseconds = it }
+                if (now < waitingSince || now - waitingSince >= MaximumPlayerPreparationMilliseconds) throw SpotifyConnectFailure(Deadline)
+                schedule(); return@sample
+            }
+            waitingForPlayerSinceElapsedMilliseconds = null
+            if (!publicationCadence.shouldPublish(queue, mappings, acceptedCommand != null, clock.nowElapsedRealtimeMilliseconds())) {
+                schedule(); return@sample
+            }
+            perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
                 val publication = project(queue, anchor)
                 val provenance = acceptedCommand
+                val publishedMappings = mappings.toList()
                 perform(transport.publish(identity, publication), true) {
+                    publicationCadence.published(queue, publishedMappings, clock.nowElapsedRealtimeMilliseconds())
                     if (acceptedCommand === provenance) acceptedCommand = null
                     val recordings = queue.entries.map { entry -> entry.recordingIdentifier }.toSet()
                     mappings = mappings.filter { mapping -> mapping.recordingIdentifier in recordings }
@@ -277,7 +284,7 @@ class SpotifyHostCoordinator(
         private const val MaximumMappings = SpotifyHostingPolicy.MaximumQueueTracks * MappingRetentionFactor
         private const val StartupTimeoutMilliseconds = 15000L
         private const val Deadline = "deadline"
-        private const val PublishIntervalMilliseconds = 1000L
+        private const val PublishIntervalMilliseconds = SpotifyHostingPolicy.HostPlayerSampleIntervalMilliseconds
         private const val MaximumPlayerPreparationMilliseconds = 15000L
         private const val ActiveSinceField = "activeSinceServerTimestampMilliseconds"
         private const val Superseded = "superseded"
