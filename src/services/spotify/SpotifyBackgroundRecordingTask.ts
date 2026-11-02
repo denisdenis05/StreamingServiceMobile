@@ -1,6 +1,6 @@
 import { CandidateRanker, IntegrationFailure, IntegrationFailureCode, MatchStatus, TrackTranslator,
   decodeSpotifyConnectMetadata } from 'streaming-service-spotify-jam';
-import type { AssociationStore, CatalogSearch, RecordingCatalog, Scheduler, SpotifyCatalog, SpotifySong } from 'streaming-service-spotify-jam';
+import type { AssociationStore, CatalogSearch, RecordingCatalog, RecordingImportMatcher, Scheduler, SpotifyCatalog, SpotifySong } from 'streaming-service-spotify-jam';
 import type { URL as ParsedAddress } from 'react-native-url-polyfill';
 
 export interface SpotifyBackgroundRecordingJob {
@@ -29,6 +29,7 @@ export interface SpotifyBackgroundRecordingDependencies {
   readonly restoreAccount: () => Promise<void>;
   readonly currentAccountIdentifier: () => string | null;
   readonly recordings: (job: SpotifyBackgroundRecordingJob) => RecordingCatalog;
+  readonly recordingImportMatcher?: (job: SpotifyBackgroundRecordingJob) => RecordingImportMatcher;
   readonly associations: (job: SpotifyBackgroundRecordingJob) => AssociationStore;
   readonly synchronizePlayerAuthentication: (job: SpotifyBackgroundRecordingJob, cancellation: AbortSignal) => Promise<void>;
   readonly scheduler: Scheduler;
@@ -118,7 +119,7 @@ export class SpotifyBackgroundRecordingTask {
       await this.wait(this.dependencies.synchronizePlayerAuthentication(job, controller.signal), controller.signal);
       await this.requireCurrent(job, controller.signal);
       const translator = new TrackTranslator(this.dependencies.recordings(job), new BackgroundMetadataCatalog(song),
-        new CandidateRanker(), this.dependencies.associations(job));
+        new CandidateRanker(), this.dependencies.associations(job), this.dependencies.recordingImportMatcher?.(job));
       const result = await this.wait(translator.toRecording(job.spotifyTrackIdentifier, job.market, controller.signal), controller.signal);
       await this.requireCurrent(job, controller.signal);
       if (result.status === MatchStatus.Failed) throw new IntegrationFailure(result.failure ?? IntegrationFailureCode.Network);

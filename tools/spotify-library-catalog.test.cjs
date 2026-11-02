@@ -116,12 +116,12 @@ test('Legacy search retains actual observed duration so conservative reverse mat
   assertion.equal(ranked.selected.identifier, Fixture.identifier);
   assertion.equal(ranked.selected.durationMilliseconds, Fixture.durationMilliseconds);
 });
-test('Legacy unknown future recordings remain ambiguous without observed duration', async () => {
+test('Legacy future recordings match exact title and artist without inventing duration', async () => {
   const { CandidateRanker, MatchStatus } = require('streaming-service-spotify-jam');
   const current = fixture(); unavailable(current);
   const candidates = await current.query.search(current.search, current.cancellation.signal);
   const ranked = new CandidateRanker().rank({ ...current.song, durationMilliseconds: Fixture.durationMilliseconds }, candidates);
-  assertion.equal(ranked.status, MatchStatus.Ambiguous);
+  assertion.equal(ranked.status, MatchStatus.Matched);
   assertion.equal(candidates[Fixture.emptyCount].durationMilliseconds, undefined);
 });
 test('Observed duration cannot cross recording title artist or identifier boundaries', async () => {

@@ -5,6 +5,7 @@ import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureC
 import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { createSpotifyRecordingCatalog, spotifyObservedRecordings } from './SpotifyRecordingCatalogPlatform';
+import { createSpotifyRecordingImportMatcher } from './SpotifyRecordingImportPlatform';
 import { spotifyIntegration } from './SpotifyIntegration';
 import { SpotifyMobileController, SpotifyMobileOperation } from './spotify/SpotifyMobileController';
 import { SpotifyMobileGateway } from './spotify/SpotifyMobileGateway';
@@ -135,6 +136,7 @@ export const spotifyMobile = new SpotifyMobileController({
       endpoints: { resolveServiceOrigin: cancellation => identity.serviceOrigin === null
         ? gateway.resolveServiceOrigin(cancellation) : Promise.resolve(identity.serviceOrigin) },
       recordings: createSpotifyRecordingCatalog(TEMPORARY_API_URL, account.accountIdentifier, account.token),
+      recordingImportMatcher: createSpotifyRecordingImportMatcher(TEMPORARY_API_URL, account.accountIdentifier, account.token),
       associations: new MemoryAssociationStore(), requests, clock,
       experimentalMembership: true, enableHostedQueue: true, enableHostedQueueObservation: true,
       enableMembershipObservation: true, membershipRequestIdentifiers: nextIdentifier, enableHostedPlaybackCommands: true,

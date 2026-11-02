@@ -1,6 +1,7 @@
 import { NativeModules } from 'react-native';
-import { CandidateRanker, MatchStatus, IntegrationFailure, IntegrationFailureCode, SystemScheduler, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
+import { CandidateRanker, MatchStatus, TrackTranslator, MemoryAssociationStore, IntegrationFailure, IntegrationFailureCode, SystemScheduler, copySpotifyConnectSearch, decodeSpotifyConnectSearch } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
+import { createSpotifyRecordingImportMatcher } from './SpotifyRecordingImportPlatform';
 import { createSpotifyRecordingCatalog } from './SpotifyRecordingCatalogPlatform';
 import { SpotifyBackgroundHostingTask } from './spotify/SpotifyBackgroundHostingTask';
 import type { SpotifyBackgroundHostingJob } from './spotify/SpotifyBackgroundHostingTask';
@@ -36,7 +37,26 @@ export async function executeSpotifyBackgroundHosting(identifier: string): Promi
       if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
       const serialized = await native.searchHostingRecording(job.requestIdentifier, JSON.stringify(query));
       const candidates = decodeSpotifyConnectSearch(JSON.parse(serialized), job.handle, job.generation, query.limit);
-      const result = ranker.rank(source, candidates);
+      const translator = new TrackTranslator({
+        identity: catalog.identity, namespace: catalog.namespace,
+        async lookup(identifier, suppliedCancellation) {
+          if (suppliedCancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+          return identifier === source.identifier ? source : null;
+        },
+        search: (search, suppliedCancellation) => catalog.search(search, suppliedCancellation),
+      }, {
+        async lookup(identifier, _market, suppliedCancellation) {
+          if (suppliedCancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+          return candidates.find(candidate => candidate.identifier === identifier) ?? null;
+        },
+        async search(_search, _market, suppliedCancellation) {
+          if (suppliedCancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+          return candidates;
+        },
+      }, ranker, new MemoryAssociationStore(),
+      createSpotifyRecordingImportMatcher(job.baseAddress, account.accountIdentifier, account.token));
+      const result = await translator.toSpotify(job.recordingIdentifier, job.market, cancellation);
+      if (result.status === MatchStatus.Failed) throw new IntegrationFailure(result.failure ?? IntegrationFailureCode.Network);
       return result.status === MatchStatus.Matched ? result.selected?.identifier ?? null : null;
     }, scheduler: new SystemScheduler(),
   });

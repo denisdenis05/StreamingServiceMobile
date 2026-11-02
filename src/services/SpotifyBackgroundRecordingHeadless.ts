@@ -3,6 +3,7 @@ import { IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, Sys
 import type { SpotifyBackgroundRecordingJob } from './spotify/SpotifyBackgroundRecordingTask';
 import { SpotifyBackgroundRecordingTask } from './spotify/SpotifyBackgroundRecordingTask';
 import { authenticationSession } from './AuthenticationService';
+import { createSpotifyRecordingImportMatcher } from './SpotifyRecordingImportPlatform';
 import { createSpotifyRecordingCatalog } from './SpotifyRecordingCatalogPlatform';
 
 interface SpotifyJamPlaybackRecordingNative {
@@ -39,6 +40,13 @@ export async function executeSpotifyBackgroundRecording(requestIdentifier: strin
         throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
       }
       return createSpotifyRecordingCatalog(job.baseAddress, state.accountIdentifier, state.token);
+    },
+    recordingImportMatcher: job => {
+      const state = authenticationSession.getSnapshot();
+      if (!state.isLoggedIn || state.accountIdentifier !== job.streamingServiceAccountIdentifier || state.token === null) {
+        throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+      }
+      return createSpotifyRecordingImportMatcher(job.baseAddress, state.accountIdentifier, state.token);
     },
     associations: () => associations,
     async synchronizePlayerAuthentication(job, cancellation) {
