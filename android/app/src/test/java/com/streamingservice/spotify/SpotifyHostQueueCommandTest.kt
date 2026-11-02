@@ -169,7 +169,28 @@ class SpotifyHostQueueCommandTest {
         fixture.main.drain(); assertEquals(SingleExecution, queued.result.get().acceptedTracks.size)
         assertEquals(FirstOccurrence, fixture.sample().occurrenceIdentifier)
     }
+    @Test fun contextPlaySelectionStartsPlayingEvenWhenTheExistingQueueWasPaused() {
+        val fixture = Fixture(); fixture.play(); remember(fixture); fixture.actual.pause(); val before = fixture.sample()
+        val selected = fixture.execute(SpotifyHostCommand.Select(null, SecondOccurrence, false))
+        fixture.main.drain(); assertEquals(SecondOccurrence, selected.result.get().snapshot.occurrenceIdentifier)
+        assertTrue(fixture.output.playing); assertEquals(before.cursor.queueIdentifier, fixture.sample().cursor.queueIdentifier)
+    }
+    @Test fun inlineSelectedIndexStartsTheActualAssignedOccurrenceInsteadOfTheFirstTrack() {
+        val fixture = Fixture()
+        val played = fixture.execute(SpotifyHostCommand.Play(listOf(SpotifyHostTrack(TrackIdentifier, FirstOccurrence),
+            SpotifyHostTrack(TrackIdentifier, null)), false, selectedTrackIndex = SecondTrackIndex))
+        fixture.main.drain(); val accepted = played.result.get()
+        assertEquals(accepted.acceptedTracks.last().occurrenceIdentifier, accepted.snapshot.occurrenceIdentifier)
+        assertNotEquals(FirstOccurrence, accepted.snapshot.occurrenceIdentifier)
+    }
+    @Test fun contextPlaySelectionOfAForeignUidNeverReplacesTheWorkingQueue() {
+        val fixture = Fixture(); fixture.play(); remember(fixture); val before = fixture.sample()
+        val selected = fixture.execute(SpotifyHostCommand.Select(null, ThirdOccurrence, false))
+        fixture.main.drain(); assertFailure(selected.result, SpotifyPlayerFailureReason.Unavailable)
+        assertEquals(before.cursor, fixture.sample().cursor)
+    }
     companion object {
+        private const val SecondTrackIndex = 1
         private const val StaleQueueRevision = "synthetic-stale-revision"
         private const val QueueRevisionSeparator = ":"
         private const val OtherTrackIdentifier = "0123456789abcdefghijkl"

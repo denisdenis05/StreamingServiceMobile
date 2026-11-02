@@ -7,11 +7,11 @@ sealed class SpotifyHostCommand {
     object Pause : SpotifyHostCommand()
     object Next : SpotifyHostCommand()
     object Previous : SpotifyHostCommand()
-    data class Select(val track: SpotifyHostTrack) : SpotifyHostCommand()
+    data class Select(val track: SpotifyHostTrack?, val occurrenceIdentifier: String? = null, val initiallyPaused: Boolean? = null) : SpotifyHostCommand()
     data class SetQueue(val previousTracks: List<SpotifyHostTrack>, val nextTracks: List<SpotifyHostTrack>, val queueRevision: String? = null) : SpotifyHostCommand()
     data class Seek(val positionMilliseconds: Long) : SpotifyHostCommand()
     data class AddToQueue(val track: SpotifyHostTrack) : SpotifyHostCommand()
-    data class Play(val tracks: List<SpotifyHostTrack>, val initiallyPaused: Boolean, val selectedOccurrenceIdentifier: String? = null, val preservePosition: Boolean = false) : SpotifyHostCommand()
+    data class Play(val tracks: List<SpotifyHostTrack>, val initiallyPaused: Boolean, val selectedOccurrenceIdentifier: String? = null, val preservePosition: Boolean = false, val selectedTrackIndex: Int? = null) : SpotifyHostCommand()
 }
 
 data class SpotifyHostTrack(val spotifyTrackIdentifier: String, val occurrenceIdentifier: String?)
@@ -58,21 +58,51 @@ class SpotifyHostCommandDecoder {
         catch (_failure: Throwable) { fail() }
     }
 
-    private fun play(command: JSONObject): SpotifyHostCommand.Play {
+    private fun play(command: JSONObject): SpotifyHostCommand {
         val context = command.getJSONObject(ContextField)
-        if (context.has(ContextAddressField) && !context.isNull(ContextAddressField)) unsupported()
-        val pages = context.getJSONArray(PagesField)
-        if (pages.length() != SinglePage) unsupported()
-        val page = pages.getJSONObject(FirstIndex)
-        if (page.has(NextPageAddressField) && !page.isNull(NextPageAddressField)) unsupported()
-        val tracks = page.getJSONArray(TracksField)
-        if (tracks.length() < MinimumTrackCount || tracks.length() > MaximumQueueTracks) fail()
-        val selected = (FirstIndex until tracks.length()).map { position -> track(tracks.getJSONObject(position)) }
-        if (selected.mapNotNull { track -> track.occurrenceIdentifier }.let { identifiers -> identifiers.toSet().size != identifiers.size }) fail()
         val options = if (command.has(OptionsField) && !command.isNull(OptionsField)) command.getJSONObject(OptionsField) else JSONObject()
-        if (options.keys().asSequence().any { name -> name != InitiallyPausedField && !options.isNull(name) }) unsupported()
+        if (options.keys().asSequence().any { name -> name != InitiallyPausedField && name != SkipToField && !options.isNull(name) }) unsupported()
         val paused = if (options.has(InitiallyPausedField) && !options.isNull(InitiallyPausedField)) options.get(InitiallyPausedField) as? Boolean ?: fail() else false
-        return SpotifyHostCommand.Play(selected, paused)
+        val skip = if (options.has(SkipToField) && !options.isNull(SkipToField)) options.getJSONObject(SkipToField) else null
+        if (skip?.keys()?.asSequence()?.any { name -> name !in SkipToFields && !skip.isNull(name) } == true) unsupported()
+        val occurrence = skip?.let { value -> optionalText(value, SkipOccurrenceField) }
+        val address = skip?.let { value -> optionalText(value, SkipAddressField) }
+        val index = if (skip?.has(SkipIndexField) == true && !skip.isNull(SkipIndexField)) integer(skip, SkipIndexField, MaximumQueueTracks.toLong()).toInt() else null
+        val directed = address?.let { supplied -> track(JSONObject().put(TrackAddressField, supplied).put(OccurrenceField, occurrence ?: JSONObject.NULL)) }
+        val pages = context.optJSONArray(PagesField)
+        if (pages == null || pages.length() != SinglePage) return selectExisting(directed, occurrence, index, paused)
+        val page = pages.getJSONObject(FirstIndex)
+        val inline = page.optJSONArray(TracksField)
+        if (inline == null || inline.length() < MinimumTrackCount || optionalText(page, NextPageAddressField) != null) {
+            return selectExisting(directed, occurrence, index, paused)
+        }
+        if (inline.length() > MaximumQueueTracks) fail()
+        val selected = (FirstIndex until inline.length()).map { position -> track(inline.getJSONObject(position)) }
+        if (selected.mapNotNull { track -> track.occurrenceIdentifier }.let { identifiers -> identifiers.toSet().size != identifiers.size }) fail()
+        if (skip == null) return SpotifyHostCommand.Play(selected, paused)
+        if (occurrence == null && directed == null && index == null) fail()
+        val matches = selected.indices.filter { position ->
+            val candidate = selected[position]
+            (occurrence == null || candidate.occurrenceIdentifier == occurrence)
+                && (directed == null || candidate.spotifyTrackIdentifier == directed.spotifyTrackIdentifier)
+                && (index == null || position == index)
+        }
+        if (matches.size != SinglePage) fail()
+        val selectedPosition = matches.single()
+        return SpotifyHostCommand.Play(selected, paused, selected[selectedPosition].occurrenceIdentifier, selectedTrackIndex = selectedPosition)
+    }
+
+    private fun selectExisting(track: SpotifyHostTrack?, occurrence: String?, index: Int?, paused: Boolean): SpotifyHostCommand {
+        if (index != null || track == null && occurrence == null) unsupported()
+        return SpotifyHostCommand.Select(track, occurrence, paused)
+    }
+
+    private fun optionalText(value: JSONObject, field: String): String? {
+        if (!value.has(field) || value.isNull(field)) return null
+        val supplied = value.get(field) as? String ?: fail()
+        if (supplied == EmptyText) return null
+        requireIdentifier(supplied)
+        return supplied
     }
 
     private fun tracks(value: JSONObject, field: String): List<SpotifyHostTrack> {
@@ -125,6 +155,11 @@ class SpotifyHostCommandDecoder {
         private const val NextPageAddressField = "next_page_url"
         private const val OptionsField = "options"
         private const val InitiallyPausedField = "initially_paused"
+        private const val SkipToField = "skip_to"
+        private const val SkipOccurrenceField = "track_uid"
+        private const val SkipAddressField = "track_uri"
+        private const val SkipIndexField = "track_index"
+        private val SkipToFields = setOf(SkipOccurrenceField, SkipAddressField, SkipIndexField)
         private const val TrackAddressField = "uri"
         private const val OccurrenceField = "uid"
         private const val EmptyText = ""

@@ -74,7 +74,65 @@ class SpotifyHostCommandTest {
         val value = request(Next); command(value).put(TrackField, JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, EmptyText))
         assertEquals(SpotifyHostCommand.Select(SpotifyHostTrack(TrackIdentifier, null)), decode(value).command)
     }
+    private fun inlinePlay(skip: JSONObject): JSONObject {
+        val value = request(Play)
+        command(value).put(ContextField, JSONObject().put(PagesField, JSONArray().put(JSONObject().put(TracksField, JSONArray()
+            .put(JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, FirstOccurrence))
+            .put(JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, SecondOccurrence))))))
+            .put(OptionsField, JSONObject().put(SkipToField, skip))
+        return value
+    }
+    @Test fun inlinePlaySkipToUidSelectsTheActualSecondOccurrence() {
+        val action = decode(inlinePlay(JSONObject().put(SkipOccurrenceField, SecondOccurrence))).command as SpotifyHostCommand.Play
+        assertEquals(SecondOccurrence, action.selectedOccurrenceIdentifier); assertEquals(SecondTrackIndex, action.selectedTrackIndex)
+    }
+    @Test fun inlinePlaySkipToIndexRetainsTheSelectedTrackEvenWhenUidIsMissing() {
+        val value = inlinePlay(JSONObject().put(SkipIndexField, SecondTrackIndex))
+        command(value).getJSONObject(ContextField).getJSONArray(PagesField).getJSONObject(FirstTrackIndex).getJSONArray(TracksField)
+            .getJSONObject(SecondTrackIndex).remove(OccurrenceField)
+        val action = decode(value).command as SpotifyHostCommand.Play
+        assertNull(action.selectedOccurrenceIdentifier); assertEquals(SecondTrackIndex, action.selectedTrackIndex)
+    }
+    @Test fun inlinePlayContradictorySkipSelectorsCannotPickAnUnrelatedTrack() {
+        rejected(inlinePlay(JSONObject().put(SkipOccurrenceField, FirstOccurrence).put(SkipIndexField, SecondTrackIndex)))
+    }
+    @Test fun inlinePlayUriOnlySelectorCannotGuessBetweenRepeatedOccurrences() {
+        rejected(inlinePlay(JSONObject().put(SkipAddressField, TrackAddress)))
+    }
+    @Test fun contextOnlyPlayWithExplicitUidSelectsAnExistingQueueOccurrenceWithoutFetchingContext() {
+        val value = request(Play); command(value).put(ContextField, JSONObject().put(AddressField, PlaylistAddress))
+            .put(OptionsField, JSONObject().put(SkipToField, JSONObject().put(SkipOccurrenceField, SecondOccurrence)))
+        assertEquals(SpotifyHostCommand.Select(null, SecondOccurrence, false), decode(value).command)
+    }
+    @Test fun contextOnlyPlayWithExplicitUriRetainsTheRequestedPausedIntent() {
+        val value = request(Play); command(value).put(ContextField, JSONObject().put(AddressField, PlaylistAddress))
+            .put(OptionsField, JSONObject().put(InitiallyPausedField, true).put(SkipToField, JSONObject().put(SkipAddressField, TrackAddress)))
+        assertEquals(SpotifyHostCommand.Select(SpotifyHostTrack(TrackIdentifier, null), null, true), decode(value).command)
+    }
+    @Test fun contextOnlyPlayCannotGuessATrackIndexAgainstAnUnknownContext() {
+        val value = request(Play); command(value).put(ContextField, JSONObject().put(AddressField, PlaylistAddress))
+            .put(OptionsField, JSONObject().put(SkipToField, JSONObject().put(SkipIndexField, SecondTrackIndex)))
+        rejected(value)
+    }
+    @Test fun unimplementedPlaySeekOptionsRemainUnsupportedEvenWhenSelectionIsKnown() {
+        val value = inlinePlay(JSONObject().put(SkipOccurrenceField, SecondOccurrence))
+        command(value).getJSONObject(OptionsField).put(SeekOptionField, PositionMilliseconds); rejected(value)
+    }
+    @Test fun inlineContextAddressAndDefaultEmptyNextPageDoNotInvalidateItsCompleteBoundedTracks() {
+        val value = inlinePlay(JSONObject().put(SkipOccurrenceField, SecondOccurrence))
+        command(value).getJSONObject(ContextField).put(AddressField, PlaylistAddress).getJSONArray(PagesField)
+            .getJSONObject(FirstTrackIndex).put(NextPageField, EmptyText)
+        assertEquals(SecondOccurrence, (decode(value).command as SpotifyHostCommand.Play).selectedOccurrenceIdentifier)
+    }
     companion object {
+        private const val SkipToField = "skip_to"
+        private const val SkipOccurrenceField = "track_uid"
+        private const val SkipAddressField = "track_uri"
+        private const val SkipIndexField = "track_index"
+        private const val SeekOptionField = "seek_to"
+        private const val NextPageField = "next_page_url"
+        private const val FirstTrackIndex = 0
+        private const val SecondTrackIndex = 1
         private const val EmptyText = ""
         private const val QueueRevisionField = "queue_revision"
         private const val QueueRevision = "synthetic-previous-queue-revision"

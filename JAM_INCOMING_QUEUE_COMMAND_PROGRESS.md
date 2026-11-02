@@ -48,3 +48,28 @@ cover completed receipt eviction and pending-job preservation.
 These are source tests. This chapter makes no live Spotify requests, changes no
 running process and builds no APK. Root/mobile integration owns native bridge
 composition, hosting publication and actual emulator/participant verification.
+
+## Official Play selection options
+
+Pinned librespot PlayOptions defines `skip_to.track_uid`, `track_uri` and
+`track_index`. The decoder now supports these selectors for bounded inline
+contexts. Every supplied selector must identify the same single inline occurrence;
+URI-only selection cannot guess between repeated tracks. An index-selected track
+without a supplied UID retains its index until the player assigns the actual
+occurrence identifier, so selection never defaults silently to the first track.
+
+Context-only or incomplete contexts can select an already present occurrence by
+explicit UID/URI. That path uses actual local queue entries and known URI mappings,
+never fetches a context URL and never replaces the complete local queue with an
+incomplete context. Index-only selection against an unknown context is unsupported.
+Explicit Play selection applies initially_paused (default playing), whereas
+skip_next preserves the existing playback intent. Unimplemented non-null playback
+options such as seek_to remain unsupported rather than silently ignored.
+
+The follow-up focused Gradle run passed 68 tests across the same four classes:
+19 decoder, 13 dispatcher, 13 actual-player queue and 23 existing player-port tests.
+New cases cover UID/index selection, missing UID, conflicting selectors, repeated
+URI ambiguity, existing-context UID/URI selection, unknown-context index refusal,
+unsupported seek options, complete inline context metadata, actual assigned index
+selection, paused-to-playing selection and foreign UID rejection. No live/device
+result is claimed by these source tests.

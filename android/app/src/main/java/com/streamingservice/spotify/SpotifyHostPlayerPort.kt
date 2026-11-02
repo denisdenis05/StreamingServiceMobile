@@ -273,8 +273,8 @@ class SpotifyHostPlayerPort(
             .put(ProtocolFields.ExpectedQueueIdentifier, job.cursor.queueIdentifier).put(ProtocolFields.ExpectedQueueRevision, job.cursor.queueRevision)
             .put(ProtocolFields.ExpectedPlaybackControlRevision, job.cursor.controlRevision)
         if (action is SpotifyHostCommand.Select) {
-            val selected = selectedOccurrence(job, action.track)
-            command.put(ProtocolFields.EntryIdentifier, selected).put(ProtocolFields.PlayWhenReady, before.getString(ProtocolFields.PlaybackIntent) != PauseIntent)
+            val selected = selectedOccurrence(job, action)
+            command.put(ProtocolFields.EntryIdentifier, selected).put(ProtocolFields.PlayWhenReady, action.initiallyPaused?.let { paused -> !paused } ?: (before.getString(ProtocolFields.PlaybackIntent) != PauseIntent))
         }
         if (action is SpotifyHostCommand.Seek) command.put(ProtocolFields.EntryIdentifier, current).put(ProtocolFields.PositionMilliseconds, action.positionMilliseconds)
         if (recordings.isNotEmpty()) {
@@ -284,7 +284,7 @@ class SpotifyHostPlayerPort(
             command.put(ProtocolFields.Entries, entries)
             if (action is SpotifyHostCommand.Play && action.selectedOccurrenceIdentifier != null
                 && recordings.none { recording -> recording.first.occurrenceIdentifier == action.selectedOccurrenceIdentifier }) fail(SpotifyPlayerFailureReason.InvalidInput)
-            if (action is SpotifyHostCommand.Play) command.put(ProtocolFields.ActiveEntryIdentifier, (action.selectedOccurrenceIdentifier ?: recordings.first().first.occurrenceIdentifier)).put(ProtocolFields.PlayWhenReady, !action.initiallyPaused)
+            if (action is SpotifyHostCommand.Play) command.put(ProtocolFields.ActiveEntryIdentifier, (action.selectedOccurrenceIdentifier ?: recordings.getOrNull(action.selectedTrackIndex ?: EmptyCount)?.first?.occurrenceIdentifier ?: fail(SpotifyPlayerFailureReason.InvalidInput))).put(ProtocolFields.PlayWhenReady, !action.initiallyPaused)
         }
         synchronized(monitor) { requireCurrent(job); job.dispatched = true }
         val receipt = JSONObject(coordinator.execute(command.toString()))
@@ -322,9 +322,17 @@ class SpotifyHostPlayerPort(
         return (EmptyCount until entries.length()).map { position -> JSONObject(entries.getJSONObject(position).toString()) }
     }
 
-    private fun selectedOccurrence(job: Job, track: SpotifyHostTrack): String {
+    private fun selectedOccurrence(job: Job, action: SpotifyHostCommand.Select): String {
+        val track = action.track
+        val occurrence = action.occurrenceIdentifier ?: track?.occurrenceIdentifier
+        if (track == null) {
+            if (occurrence == null || !validIdentifier(occurrence) || job.queueEntries.none { entry -> entry.getString(ProtocolFields.EntryIdentifier) == occurrence }) {
+                fail(SpotifyPlayerFailureReason.Unavailable)
+            }
+            return occurrence
+        }
         val matches = synchronized(monitor) { knownMappings.filter { mapping -> mapping.spotifyTrackIdentifier == track.spotifyTrackIdentifier
-            && (track.occurrenceIdentifier == null || mapping.occurrenceIdentifier == track.occurrenceIdentifier) } }
+            && (occurrence == null || mapping.occurrenceIdentifier == occurrence) } }
             .filter { mapping -> job.queueEntries.any { entry -> entry.getString(ProtocolFields.EntryIdentifier) == mapping.occurrenceIdentifier
                 && entry.getString(ProtocolFields.RecordingIdentifier) == mapping.recordingIdentifier } }
         if (matches.size != SingleEntry) fail(SpotifyPlayerFailureReason.Unavailable)
@@ -334,7 +342,7 @@ class SpotifyHostPlayerPort(
     private fun reconcileQueue(job: Job, before: JSONObject, recordings: List<Pair<SpotifyHostTrack, SpotifyHostRecordingResolution.Matched>>) {
         val action = job.request.command
         val current = before.optJSONObject(ProtocolFields.CurrentEntry)?.getString(ProtocolFields.EntryIdentifier) ?: fail(SpotifyPlayerFailureReason.Conflict)
-        val selected = if (action is SpotifyHostCommand.Play) action.selectedOccurrenceIdentifier ?: recordings.firstOrNull()?.first?.occurrenceIdentifier else current
+        val selected = if (action is SpotifyHostCommand.Play) action.selectedOccurrenceIdentifier ?: recordings.getOrNull(action.selectedTrackIndex ?: EmptyCount)?.first?.occurrenceIdentifier else current
         val desired = recordings.map { recording -> recording.first.occurrenceIdentifier ?: fail(SpotifyPlayerFailureReason.InvalidInput) }
         if (selected !in desired || current !in desired) fail(SpotifyPlayerFailureReason.InvalidInput)
         val existing = job.queueEntries.associateBy { entry -> entry.getString(ProtocolFields.EntryIdentifier) }
