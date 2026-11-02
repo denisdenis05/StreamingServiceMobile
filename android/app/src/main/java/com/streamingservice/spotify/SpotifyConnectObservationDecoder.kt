@@ -51,8 +51,14 @@ class SpotifyConnectObservationDecoder {
             val reading = response.getJSONObject(READING_FIELD)
             val nativeStart = integer(reading, STARTED_FIELD)
             val nativeEnd = integer(reading, COMPLETED_FIELD)
-            if (nativeEnd < nativeStart || integer(response, SAMPLED_FIELD) < nativeEnd
-                || nativeEnd - nativeStart > roundTrip + NATIVE_PRECISION_MILLISECONDS) fail(INVALID_RESPONSE_FAILURE)
+            val nativeSample = integer(response, SAMPLED_FIELD)
+            if (nativeEnd < nativeStart || nativeSample < nativeEnd) fail(INVALID_RESPONSE_FAILURE)
+            val nativeDuration = nativeEnd - nativeStart
+            val receiptAge = nativeSample - nativeEnd
+            if (nativeDuration > MAXIMUM_ROUND_TRIP_MILLISECONDS || receiptAge > MAXIMUM_RECEIPT_AGE_MILLISECONDS) fail(DEADLINE_FAILURE)
+            val anchor = (boundary.sentElapsedRealtimeMilliseconds + roundTrip.toDouble() / MIDPOINT_DIVISOR
+                - receiptAge - nativeDuration.toDouble() / MIDPOINT_DIVISOR)
+            if (anchor < MINIMUM_TIME_MILLISECONDS) fail(INVALID_RESPONSE_FAILURE)
             val cluster = reading.getJSONObject(CLUSTER_FIELD)
             if (text(cluster, HOST_FIELD) != boundary.hostDeviceIdentifier) fail(SUPERSEDED_FAILURE)
             val playback = cluster.getJSONObject(PLAYBACK_FIELD)
@@ -76,8 +82,8 @@ class SpotifyConnectObservationDecoder {
             return SpotifyConnectPlaybackObservation(boundary.handle, boundary.generation, boundary.hostDeviceIdentifier,
                 text(playback, REVISION_FIELD), matchedTrack.groupValues[TRACK_IDENTIFIER_POSITION], occurrence,
                 minOf(duration, estimatedPosition), duration, progressing, buffering,
-                boundary.sentElapsedRealtimeMilliseconds + roundTrip.toDouble() / MIDPOINT_DIVISOR,
-                boundary.receivedElapsedRealtimeMilliseconds, roundTrip.toDouble() / MIDPOINT_DIVISOR + NATIVE_PRECISION_MILLISECONDS,
+                anchor, boundary.receivedElapsedRealtimeMilliseconds - receiptAge,
+                (roundTrip + nativeDuration).toDouble() / MIDPOINT_DIVISOR + NATIVE_PRECISION_MILLISECONDS,
                 serverTime, stateTime, upcoming(playback, occurrence))
         } catch (failure: SpotifyConnectFailure) { throw failure }
         catch (_failure: Throwable) { fail(INVALID_RESPONSE_FAILURE) }
@@ -122,6 +128,7 @@ class SpotifyConnectObservationDecoder {
         private const val MINIMUM_TIME_MILLISECONDS = 0L
         private const val FIRST_IDENTIFIER = 1L
         private const val MAXIMUM_ROUND_TRIP_MILLISECONDS = 1500L
+        private const val MAXIMUM_RECEIPT_AGE_MILLISECONDS = 15000L
         private const val NATIVE_PRECISION_MILLISECONDS = 1L
         private const val MAXIMUM_SAFE_INTEGER = 9007199254740991L
         private const val MIDPOINT_DIVISOR = 2.0

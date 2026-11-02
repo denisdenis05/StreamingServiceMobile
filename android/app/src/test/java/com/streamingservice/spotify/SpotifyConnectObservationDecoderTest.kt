@@ -103,14 +103,14 @@ class SpotifyConnectObservationDecoderTest {
     }
 
     @Test
-    fun nativeIntervalsAndSamplingMustFitInsideTheActualAndroidRequestBracket() {
+    fun nativeIntervalsAndSamplingMustBeOrderedAndBounded() {
         val reversed = response(); reversed.getJSONObject(READING_FIELD).put(COMPLETED_FIELD, NATIVE_START - ONE_MILLISECOND)
         requireFailure(INVALID_RESPONSE) { decoder.decode(reversed.toString(), boundary()) }
         val future = response(); future.put(SAMPLED_FIELD, NATIVE_END - ONE_MILLISECOND)
         requireFailure(INVALID_RESPONSE) { decoder.decode(future.toString(), boundary()) }
         val excessive = response(); excessive.getJSONObject(READING_FIELD).put(COMPLETED_FIELD, NATIVE_END + LONG_DELAY)
         excessive.put(SAMPLED_FIELD, NATIVE_END + LONG_DELAY)
-        requireFailure(INVALID_RESPONSE) { decoder.decode(excessive.toString(), boundary()) }
+        requireFailure(DEADLINE) { decoder.decode(excessive.toString(), boundary()) }
     }
 
     @Test
@@ -159,7 +159,39 @@ class SpotifyConnectObservationDecoderTest {
         requireFailure(INVALID_RESPONSE) { decoder.decode(PRIVATE_DIAGNOSTIC, boundary()) }
     }
 
+    @Test
+    fun retainedPublicationReceiptPreservesOriginalUncertaintyAgeAndQueueIdentityDuringFastReads() {
+        val response = response().put(SAMPLED_FIELD, NATIVE_END + RETAINED_RECEIPT_AGE)
+        val scope = boundary().copy(receivedElapsedRealtimeMilliseconds = SENT + ONE_MILLISECOND)
+        val sample = decoder.decode(response.toString(), scope)
+        assertEquals(SENT + ONE_MILLISECOND.toDouble() / MIDPOINT_DIVISOR - RETAINED_RECEIPT_AGE
+            - (NATIVE_END - NATIVE_START).toDouble() / MIDPOINT_DIVISOR, sample.anchorElapsedRealtimeMilliseconds, EXACT_TOLERANCE)
+        assertEquals(scope.receivedElapsedRealtimeMilliseconds - RETAINED_RECEIPT_AGE, sample.observedElapsedRealtimeMilliseconds)
+        assertEquals((ONE_MILLISECOND + NATIVE_END - NATIVE_START).toDouble() / MIDPOINT_DIVISOR + ONE_MILLISECOND,
+            sample.uncertaintyMilliseconds, EXACT_TOLERANCE)
+        assertEquals(OCCURRENCE, sample.occurrenceIdentifier)
+        assertEquals(REVISION, sample.queueRevision)
+    }
+
+    @Test
+    fun expiredOrBackwardNativeReceiptsCannotBecomeFreshQueueObservations() {
+        val expired = response().put(SAMPLED_FIELD, NATIVE_END + MAXIMUM_RECEIPT_AGE + ONE_MILLISECOND)
+        requireFailure(DEADLINE) { decoder.decode(expired.toString(), boundary()) }
+        val backward = response().put(SAMPLED_FIELD, NATIVE_END - ONE_MILLISECOND)
+        requireFailure(INVALID_RESPONSE) { decoder.decode(backward.toString(), boundary()) }
+    }
+
+    @Test
+    fun retainedReceiptCannotAnchorBeforeTheLocalMonotonicClockOrigin() {
+        val response = response().put(SAMPLED_FIELD, NATIVE_END + RETAINED_RECEIPT_AGE)
+        val scope = boundary().copy(sentElapsedRealtimeMilliseconds = ZERO_MILLISECONDS, receivedElapsedRealtimeMilliseconds = ONE_MILLISECOND)
+        requireFailure(INVALID_RESPONSE) { decoder.decode(response.toString(), scope) }
+    }
+
     companion object {
+        private const val RETAINED_RECEIPT_AGE = 400L
+        private const val MAXIMUM_RECEIPT_AGE = 15000L
+        private const val MIDPOINT_DIVISOR = 2.0
         private const val ADDITIONAL_OCCURRENCE_COUNT = 1
         private const val NEXT_TRACKS_FIELD = "nextTracks"
         private const val NEXT_OCCURRENCE = "next-occurrence"
@@ -170,8 +202,8 @@ class SpotifyConnectObservationDecoderTest {
         private const val OTHER_HOST = "synthetic-other-host"
         private const val SENT = 2000000L
         private const val RECEIVED = 2000200L
-        private const val EXPECTED_ANCHOR = 2000100.0
-        private const val EXPECTED_UNCERTAINTY = 101.0
+        private const val EXPECTED_ANCHOR = 2000050.0
+        private const val EXPECTED_UNCERTAINTY = 151.0
         private const val EXACT_TOLERANCE = 0.0
         private const val NATIVE_START = 5000000L
         private const val NATIVE_END = 5000100L

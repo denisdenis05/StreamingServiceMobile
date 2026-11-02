@@ -154,8 +154,8 @@ class SpotifyConnectVerifiedFollowerSourceTest {
         private const val NATIVE_START = 5000000L
         private const val NATIVE_END = 5000050L
         private const val SERVER_TIME = 1700000000000L
-        private const val EXPECTED_ANCHOR = 2001050.0
-        private const val EXPECTED_UNCERTAINTY = 51.0
+        private const val EXPECTED_ANCHOR = 2001025.0
+        private const val EXPECTED_UNCERTAINTY = 76.0
         private const val EXACT_TOLERANCE = 0.0
         private const val POSITION = 10000L
         private const val DURATION = 180000L
