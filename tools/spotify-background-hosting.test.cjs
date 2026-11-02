@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assertion = require('node:assert/strict');
 const { SpotifyBackgroundHostingTask } = require('../.build/spotify/SpotifyBackgroundHostingTask');
+const { IntegrationFailureCode } = require('streaming-service-spotify-jam');
 const Fixture = Object.freeze({ request: 'synthetic-request', account: 'synthetic-account', spotify: 'synthetic-spotify', jam: 'synthetic-jam',
   host: 'synthetic-host', address: 'https://synthetic.example/', recording: 'synthetic-recording', track: '4uLU6hMCjMI75M1A2tKUQC',
   market: 'GB', handle: 3, generation: 7, emptyCount: 0, singleCount: 1, turns: 30, otherAccount: 'synthetic-other-account' });
@@ -11,11 +12,11 @@ function fixture() {
     jamSessionIdentifier: Fixture.jam, hostDeviceIdentifier: Fixture.host, handle: Fixture.handle, generation: Fixture.generation,
     baseAddress: Fixture.address, recordingIdentifier: Fixture.recording, market: Fixture.market };
   const state = { job, pending: true, account: Fixture.account, match: null, failure: null, track: Fixture.track };
-  const calls = { completed: [], failures: [], matched: Fixture.emptyCount, timer: null, cancelled: false };
+  const calls = { failureCodes: [], completed: [], failures: [], matched: Fixture.emptyCount, timer: null, cancelled: false };
   const task = new SpotifyBackgroundHostingTask({ async claim() { return state.job; }, async isPending() { return state.pending; },
-    async complete(identifier, track) { calls.completed.push([identifier, track]); }, async fail(identifier) { calls.failures.push(identifier); if (state.failure) await state.failure.promise; },
+    async complete(identifier, track) { calls.completed.push([identifier, track]); }, async fail(identifier, code) { calls.failures.push(identifier); calls.failureCodes.push(code); if (state.failure) await state.failure.promise; },
     async restoreAccount() {}, currentAccountIdentifier: () => state.account,
-    async match() { calls.matched += Fixture.singleCount; if (state.match) await state.match.promise; return state.track; },
+    async match() { if (state.matchFailure) throw state.matchFailure; calls.matched += Fixture.singleCount; if (state.match) await state.match.promise; return state.track; },
     scheduler: { schedule(_delay, action) { calls.timer = action; return () => { calls.cancelled = true; }; } } });
   return { state, calls, task };
 }
@@ -65,4 +66,18 @@ test('An expired match task settles even when native failure cleanup never ackno
   assertion.deepEqual(current.calls.failures, [Fixture.request]);
   current.state.failure.resolve(); current.state.match.resolve(); await running; await flush();
   assertion.equal(current.calls.completed.length, Fixture.emptyCount);
+});
+
+for (const code of Object.values(IntegrationFailureCode)) {
+  test(`Background hosting preserves safe catalog failure ${code}`, async () => {
+    const current = fixture(); current.state.matchFailure = { code };
+    await current.task.execute(Fixture.request);
+    assertion.deepEqual(current.calls.failureCodes, [code]);
+    assertion.equal(current.calls.completed.length, Fixture.emptyCount);
+  });
+}
+test('Unknown background hosting failures become Network without copying private details', async () => {
+  const current = fixture(); current.state.matchFailure = new Error(Fixture.recording);
+  await current.task.execute(Fixture.request);
+  assertion.deepEqual(current.calls.failureCodes, [IntegrationFailureCode.Network]);
 });

@@ -80,3 +80,12 @@ test('The exact hosting queue capacity remains capturable', async () => {
   const captured = await captureSpotifyHostingQueue(current.player);
   assertion.equal(captured.entries.length, SpotifyHostingQueuePolicy.maximumEntries);
 });
+
+test('Hosting capture identifies the actual selected occurrence after an album opener', async () => {
+  const current = fixture();
+  current.state.currentEntry = current.state.entries[Fixture.revision];
+  current.state.finalCurrentEntry = current.state.currentEntry;
+  const captured = await captureSpotifyHostingQueue(current.player);
+  assertion.equal(captured.currentOccurrenceIdentifier, Fixture.other);
+  assertion.equal(captured.entries[Fixture.first].occurrenceIdentifier, Fixture.occurrence);
+});

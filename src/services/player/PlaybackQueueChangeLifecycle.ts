@@ -11,6 +11,7 @@ export enum PlaybackQueueChangeKind {
 export interface PlaybackQueueChangeRequest {
   readonly kind: PlaybackQueueChangeKind;
   readonly tracks: readonly PlaybackTrack[];
+  readonly selectedRecordingIdentifier?: string;
   readonly isCurrent: () => boolean;
   readonly acknowledgeAuthorityRelease?: () => Promise<void>;
 }

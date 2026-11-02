@@ -37,6 +37,11 @@ class SpotifyHostCoordinator(
     private var acceptedCommand: SpotifyHostPlayerAccepted? = null
     private var work: CompletableFuture<*>? = null
     private var cancelWork: (() -> Unit)? = null
+    private var backgroundResolution: SpotifyPlayerOperation<String>? = null
+    private var backgroundRecordingIdentifier: String? = null
+    private val attemptedBackgroundRecordings = mutableSetOf<String>()
+    private var backgroundMatchingAvailable = true
+    private var nextBackgroundResolutionElapsedMilliseconds = Long.MAX_VALUE
     private var mutationPending = false
     private var startupTimer: SpotifyNativeFollowerCancellation? = null
     private var timer: SpotifyNativeFollowerCancellation? = null
@@ -78,6 +83,7 @@ class SpotifyHostCoordinator(
                             publicationCadence.published(queue, mappings, clock.nowElapsedRealtimeMilliseconds())
                             perform(transport.preflight(identity, identity.deviceIdentifier)) confirmed@{
                                 startupTimer?.cancel(); startupTimer = null
+                                nextBackgroundResolutionElapsedMilliseconds = clock.nowElapsedRealtimeMilliseconds() + BackgroundCatalogMinimumIntervalMilliseconds
                                 publish(SpotifyHostStatus.Hosting)
                                 if (closing) return@confirmed
                                 started.complete(currentSnapshot)
@@ -97,6 +103,10 @@ class SpotifyHostCoordinator(
         timer?.cancel(); timer = null
         startupTimer?.cancel(); startupTimer = null
         dispatcher.retire()
+        val pendingBackground = backgroundResolution
+        backgroundResolution = null
+        backgroundRecordingIdentifier = null
+        try { pendingBackground?.cancel() } catch (_failure: Throwable) { Unit }
         publish(SpotifyHostStatus.Stopping)
         if (!started.isDone) started.completeExceptionally(SpotifyConnectFailure(failure ?: Canceled))
         val pending = work
@@ -149,9 +159,10 @@ class SpotifyHostCoordinator(
                     }
                 }
             }
-            val missing = queue.entries.firstOrNull { entry -> mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
-            if (missing != null && mappingSource != null) {
-                resolve(queue, missing); return@sample
+            val missingCurrent = queue.entries.firstOrNull { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier
+                && mappings.none { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier } }
+            if (missingCurrent != null && mappingSource != null) {
+                resolve(queue, missingCurrent); return@sample
             }
             if (queue.snapshot.buffering && queue.snapshot.durationMilliseconds == null && queue.snapshot.externalAuthorityAbsent
                 && queue.entries.any { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }) {
@@ -161,8 +172,8 @@ class SpotifyHostCoordinator(
                 schedule(); return@sample
             }
             waitingForPlayerSinceElapsedMilliseconds = null
-            if (!publicationCadence.shouldPublish(queue, mappings, acceptedCommand != null, clock.nowElapsedRealtimeMilliseconds())) {
-                schedule(); return@sample
+            if (!resolving && !publicationCadence.shouldPublish(queue, mappings, acceptedCommand != null, clock.nowElapsedRealtimeMilliseconds())) {
+                schedule(); resolveUpcoming(queue); return@sample
             }
             perform(transport.preflight(identity, identity.deviceIdentifier)) { anchor ->
                 val publication = project(queue, anchor)
@@ -173,7 +184,9 @@ class SpotifyHostCoordinator(
                     if (acceptedCommand === provenance) acceptedCommand = null
                     val recordings = queue.entries.map { entry -> entry.recordingIdentifier }.toSet()
                     mappings = mappings.filter { mapping -> mapping.recordingIdentifier in recordings }
+                    if (resolving) { resolving = false; publish(SpotifyHostStatus.Hosting) }
                     schedule()
+                    resolveUpcoming(queue)
                 }
             }
         }
@@ -185,13 +198,45 @@ class SpotifyHostCoordinator(
         if (closing) return
         val pause = player.pause(identity, queue.snapshot.cursor)
         performFuture(pause, {}, false) {
-            perform(requireNotNull(mappingSource).resolve(identity, entry.recordingIdentifier)) { track ->
+            val pending = backgroundResolution.takeIf { backgroundRecordingIdentifier == entry.recordingIdentifier }
+            if (pending != null) { backgroundResolution = null; backgroundRecordingIdentifier = null }
+            perform(pending ?: requireNotNull(mappingSource).resolve(identity, entry.recordingIdentifier)) { track ->
                 mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
-                resolving = false
-                publish(SpotifyHostStatus.Hosting)
                 refresh()
             }
         }
+    }
+    private fun resolveUpcoming(queue: SpotifyHostPlayerQueue) {
+        val source = mappingSource ?: return
+        if (closing || backgroundResolution != null || !backgroundMatchingAvailable
+            || attemptedBackgroundRecordings.size >= MaximumMappings) return
+        val now = clock.nowElapsedRealtimeMilliseconds()
+        if (now < nextBackgroundResolutionElapsedMilliseconds) return
+        val currentPosition = queue.entries.indexOfFirst { entry -> entry.occurrenceIdentifier == queue.snapshot.occurrenceIdentifier }
+        if (currentPosition < FirstIndex) return
+        val candidates = queue.entries.drop(currentPosition + PositionIncrement) + queue.entries.take(currentPosition)
+        val entry = candidates.firstOrNull { selected -> selected.recordingIdentifier !in attemptedBackgroundRecordings
+            && mappings.none { mapping -> mapping.recordingIdentifier == selected.recordingIdentifier } } ?: return
+        attemptedBackgroundRecordings.add(entry.recordingIdentifier)
+        nextBackgroundResolutionElapsedMilliseconds = now + BackgroundCatalogMinimumIntervalMilliseconds
+        val operation = try { source.resolve(identity, entry.recordingIdentifier) }
+            catch (_failure: Throwable) { backgroundMatchingAvailable = false; return }
+        backgroundResolution = operation
+        backgroundRecordingIdentifier = entry.recordingIdentifier
+        operation.result.whenComplete { track, failure -> decide {
+            if (backgroundResolution !== operation) return@decide
+            backgroundResolution = null
+            backgroundRecordingIdentifier = null
+            if (closing || !current()) return@decide
+            if (failure != null) {
+                if (safeCode(failure) != NotFound) backgroundMatchingAvailable = false
+                return@decide
+            }
+            if (!TrackPattern.matches(track)) { backgroundMatchingAvailable = false; return@decide }
+            mappings = mappings + SpotifyHostRecordingMapping(entry.occurrenceIdentifier, entry.recordingIdentifier, track)
+            if (work != null) publicationRequested = true
+            else { timer?.cancel(); timer = null; refresh() }
+        } }
     }
     private fun project(queue: SpotifyHostPlayerQueue, anchor: SpotifyHostClockAnchor): JSONObject {
         if (sequence !in FirstSequence..MaximumSafeInteger) throw SpotifyConnectFailure(SequenceExhausted)
@@ -277,6 +322,11 @@ class SpotifyHostCoordinator(
     private fun conflict(failure: Throwable): Boolean = (failure as? SpotifyPlayerFailure)?.reason == SpotifyPlayerFailureReason.Conflict
     private fun failedFuture(failure: Throwable) = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(failure) }
     companion object {
+        private const val BackgroundCatalogMinimumIntervalMilliseconds = 2500L
+        private const val FirstIndex = 0
+        private const val PositionIncrement = 1
+        private const val NotFound = "not-found"
+        private val TrackPattern = Regex("[A-Za-z0-9]{22}")
         private const val FirstSequence = 1L
         private const val SequenceIncrement = 1L
         private const val MaximumSafeInteger = SpotifyHostingPolicy.MaximumSafeInteger

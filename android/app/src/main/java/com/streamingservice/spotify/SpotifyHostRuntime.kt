@@ -145,7 +145,7 @@ class SpotifyHostRuntime(
     fun claimHostingRecording(identifier: String): String? = lifetime?.resources?.hostingRecordings?.claim(identifier)
     fun isHostingRecordingPending(identifier: String): Boolean = lifetime?.resources?.hostingRecordings?.isPending(identifier) == true
     fun completeHostingRecording(identifier: String, track: String) { lifetime?.resources?.hostingRecordings?.complete(identifier, track) ?: throw SpotifyConnectFailure(Superseded) }
-    fun failHostingRecording(identifier: String) { lifetime?.resources?.hostingRecordings?.fail(identifier) }
+    fun failHostingRecording(identifier: String, code: String) { lifetime?.resources?.hostingRecordings?.fail(identifier, code) }
     fun searchHostingRecording(identifier: String, serialized: String): CompletableFuture<String> = lifetime?.resources?.hostingRecordings?.search(identifier, serialized) ?: failed(Superseded)
     fun claimRecording(identifier: String): String? = lifetime?.resources?.recordings?.claim(identifier)
     fun isRecordingPending(identifier: String): Boolean = lifetime?.resources?.recordings?.isPending(identifier) == true

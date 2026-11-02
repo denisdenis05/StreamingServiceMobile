@@ -192,6 +192,7 @@ export class PlaybackRuntime {
         captured,
         () => fence === this.selectionFence,
         () => this.queue.playTracks(captured, selectedIndex),
+        captured[selectedIndex]?.recordingIdentifier,
       );
     });
   }
@@ -218,6 +219,7 @@ export class PlaybackRuntime {
       candidate.tracks,
       current,
       () => this.queue.playTracks(candidate.tracks, candidate.selectedIndex),
+      candidate.tracks[candidate.selectedIndex]?.recordingIdentifier,
     );
   }
 
@@ -351,6 +353,7 @@ export class PlaybackRuntime {
     tracks: readonly PlaybackTrack[],
     isCurrent: () => boolean,
     operation: () => Promise<void>,
+    selectedRecordingIdentifier?: string,
   ): Promise<void> {
     const account = this.authentication.getAccountIdentifier();
     const current = () =>
@@ -360,6 +363,7 @@ export class PlaybackRuntime {
     const receipt = await this.queueChanges.prepare({
       kind,
       tracks,
+      ...(selectedRecordingIdentifier === undefined ? {} : { selectedRecordingIdentifier }),
       isCurrent: current,
       acknowledgeAuthorityRelease: async () => {
         const released = await this.dispatcher.getSnapshot();

@@ -1,4 +1,5 @@
 export {};
+import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
 const Imports = Object.freeze({ native: 'react-native', authentication: '../src/services/AuthenticationService',
   network: '../src/services/ApplicationNetworkClient', task: '../src/services/SpotifyBackgroundHostingHeadless' });
 const Fixture = Object.freeze({ request: 'synthetic-request', account: 'synthetic-account', otherAccount: 'synthetic-other-account', token: 'synthetic-token',
@@ -37,5 +38,12 @@ test('A different restored account cannot query or complete the old recording jo
 test('A replaced native generation cannot be accepted as a match', async () => {
   native.searchHostingRecording.mockResolvedValue(response(Fixture.otherGeneration));
   await require(Imports.task).executeSpotifyBackgroundHosting(Fixture.request);
-  expect(native.completeHostingRecording).not.toHaveBeenCalled(); expect(native.failHostingRecording).toHaveBeenCalledWith(Fixture.request);
+  expect(native.completeHostingRecording).not.toHaveBeenCalled(); expect(native.failHostingRecording).toHaveBeenCalledWith(Fixture.request, IntegrationFailureCode.InvalidResponse);
+});
+
+test('Native backpressure remains typed when headless matching fails', async () => {
+  native.searchHostingRecording.mockRejectedValue({ code: IntegrationFailureCode.Backpressure });
+  await require(Imports.task).executeSpotifyBackgroundHosting(Fixture.request);
+  expect(native.failHostingRecording).toHaveBeenCalledWith(Fixture.request, IntegrationFailureCode.Backpressure);
+  expect(native.completeHostingRecording).not.toHaveBeenCalled();
 });

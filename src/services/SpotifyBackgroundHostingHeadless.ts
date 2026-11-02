@@ -8,7 +8,7 @@ interface HostingNative {
   claimHostingRecording(identifier: string): Promise<string | null>;
   isHostingRecordingPending(identifier: string): Promise<boolean>;
   completeHostingRecording(identifier: string, track: string): Promise<void>;
-  failHostingRecording(identifier: string): Promise<void>;
+  failHostingRecording(identifier: string, code: IntegrationFailureCode): Promise<void>;
   searchHostingRecording(identifier: string, serialized: string): Promise<string>;
 }
 const Policy = Object.freeze({ moduleName: 'SpotifyJamPlayback' } as const);
@@ -22,7 +22,7 @@ export async function executeSpotifyBackgroundHosting(identifier: string): Promi
     },
     isPending: requestIdentifier => native.isHostingRecordingPending(requestIdentifier),
     complete: (requestIdentifier, track) => native.completeHostingRecording(requestIdentifier, track),
-    fail: requestIdentifier => native.failHostingRecording(requestIdentifier),
+    fail: (requestIdentifier, code) => native.failHostingRecording(requestIdentifier, code),
     async restoreAccount() { await authenticationSession.restore(); },
     currentAccountIdentifier: () => authenticationSession.getSnapshot().accountIdentifier,
     async match(job, cancellation) {

@@ -8,17 +8,17 @@ const { SpotifyFailureMessages } = require('../.build/spotify/SpotifyMobilePolic
 const Fixture = Object.freeze({ account: 'synthetic-account', spotify: 'synthetic-spotify', jam: 'synthetic-jam', device: 'synthetic-device', previous: 'synthetic-host',
   address: 'https://synthetic.example/', token: 'synthetic-token', handle: 3, generation: 7, market: 'GB', track: '4uLU6hMCjMI75M1A2tKUQC',
   queue: 'synthetic-queue', occurrence: 'synthetic-occurrence', recording: 'synthetic-recording', engine: 'synthetic-engine', authentication: 'synthetic-authentication',
-  revision: 1, emptyCount: 0, singleCount: 1, flushTurns: 30, invalidMarket: 'invalid', invalidTrack: 'invalid', privateFailure: 'synthetic-private-error', stopped: '{"status":"Stopped","identity":null,"failure":null}' });
+  openerOccurrence: 'synthetic-opener-occurrence', openerRecording: 'synthetic-opener-recording', revision: 1, emptyCount: 0, singleCount: 1, flushTurns: 30, invalidMarket: 'invalid', invalidTrack: 'invalid', privateFailure: 'synthetic-private-error', stopped: '{"status":"Stopped","identity":null,"failure":null}' });
 function deferred() { let resolve; const promise = new Promise(complete => { resolve = complete; }); return { promise, resolve }; }
 async function flush() { for (let turn = Fixture.emptyCount; turn < Fixture.flushTurns; turn += Fixture.singleCount) await Promise.resolve(); }
 function fixture() {
   const context = { streamingServiceAccountIdentifier: Fixture.account, baseAddress: Fixture.address, spotifyAccountIdentifier: Fixture.spotify,
     jamSessionIdentifier: Fixture.jam, deviceIdentifier: Fixture.device, previousHostDeviceIdentifier: Fixture.previous, handle: Fixture.handle, generation: Fixture.generation };
-  const queue = { playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication, expectedCursor: {
+  const queue = { currentOccurrenceIdentifier: Fixture.occurrence, playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication, expectedCursor: {
     queueIdentifier: Fixture.queue, queueRevision: Fixture.revision, contentRevision: Fixture.revision, controlRevision: Fixture.revision },
     entries: [{ occurrenceIdentifier: Fixture.occurrence, recordingIdentifier: Fixture.recording }] };
   const state = { context, queue, stop: null, translation: null, initial: null, startFailure: null, startResponse: null, stopFailure: null, translationFailure: null, track: Fixture.track };
-  const calls = { preparations: [], publications: Fixture.emptyCount, starts: [], following: Fixture.emptyCount, translations: Fixture.emptyCount };
+  const calls = { translatedRecordings: [], preparations: [], publications: Fixture.emptyCount, starts: [], following: Fixture.emptyCount, translations: Fixture.emptyCount };
   let observed; let changed;
   const response = () => JSON.stringify({ status: SpotifyHostingStatus.Hosting, identity: { ...context, playerEngineEpoch: Fixture.engine, playerAuthenticationEpoch: Fixture.authentication }, failure: null });
   const store = new SpotifyHostingStore({ native: {
@@ -27,7 +27,7 @@ function fixture() {
     async stopHosting() { if (state.stopFailure) throw state.stopFailure; if (state.stop) await state.stop.promise; }, async getHostingSnapshot() { return state.initial ? state.initial.promise : Fixture.stopped; } },
     observe(listener) { observed = listener; return () => undefined; }, getContext: () => state.context,
     subscribeConnection(listener) { changed = listener; return () => undefined; }, getAccessToken: () => state.missingToken ? null : Fixture.token,
-    async whenPlayerReady() { if (state.readinessFailure) throw state.readinessFailure; }, async captureQueue() { if (state.captureFailure) throw state.captureFailure; return state.queue; }, async translate() { calls.translations += Fixture.singleCount; if (state.translationFailure) throw state.translationFailure; if (state.translation) await state.translation.promise; return state.track; },
+    async whenPlayerReady() { if (state.readinessFailure) throw state.readinessFailure; }, async captureQueue() { if (state.captureFailure) throw state.captureFailure; return state.queue; }, async translate(recordingIdentifier) { calls.translatedRecordings.push(recordingIdentifier); calls.translations += Fixture.singleCount; if (state.translationFailure) throw state.translationFailure; if (state.translation) await state.translation.promise; return state.track; },
     async stopFollowing() { calls.following += Fixture.singleCount; } });
   return { store, state, calls, response, observed: event => observed(event), changed: () => changed() };
 }
@@ -276,4 +276,24 @@ test('Catalog no-match guidance describes the recording rather than a missing Ja
     assertion.equal(spotifyHostingFailureDetail(stage, IntegrationFailureCode.NotFound), SpotifyHostingFailureDetailMessages.catalogNoMatch);
   assertion.equal(spotifyHostingFailureDetail(SpotifyHostingFailureStage.NativeActivation, IntegrationFailureCode.NotFound),
     SpotifyFailureMessages[IntegrationFailureCode.NotFound]);
+});
+
+test('An unmatched album opener cannot prevent hosting the actual selected current recording', async () => {
+  const current = fixture();
+  current.state.queue = { ...current.state.queue, entries: [
+    { occurrenceIdentifier: Fixture.openerOccurrence, recordingIdentifier: Fixture.openerRecording },
+    ...current.state.queue.entries,
+  ] };
+  await current.store.start(Fixture.market);
+  assertion.deepEqual(current.calls.translatedRecordings, [Fixture.recording]);
+  assertion.deepEqual(current.calls.starts[Fixture.emptyCount].mappings, [{ occurrenceIdentifier: Fixture.occurrence,
+    recordingIdentifier: Fixture.recording, spotifyTrackIdentifier: Fixture.track }]);
+  assertion.equal(current.store.getSnapshot().status, SpotifyHostingStatus.Hosting);
+});
+test('A captured current occurrence absent from the actual entries cannot activate any other recording', async () => {
+  const current = fixture(); current.state.queue.currentOccurrenceIdentifier = Fixture.openerOccurrence;
+  await current.store.start(Fixture.market);
+  assertion.equal(current.calls.translations, Fixture.emptyCount);
+  assertion.equal(current.calls.starts.length, Fixture.emptyCount);
+  assertion.equal(current.store.getSnapshot().failure, IntegrationFailureCode.InvalidResponse);
 });

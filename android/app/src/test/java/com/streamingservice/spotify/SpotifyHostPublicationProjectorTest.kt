@@ -31,6 +31,31 @@ class SpotifyHostPublicationProjectorTest {
         assertEquals(ExpectedQueueRevision, projected.getString(RevisionField))
         assertEquals(PositionMilliseconds, projected.getLong(PositionField)); assertEquals(Playing, projected.getString(StateField))
     }
+    @Test fun unmappedPreviousAndUpcomingOccurrencesAreOmittedAroundTheActualMappedCurrent() {
+        val fixture = Fixture()
+        val queue = fixture.queue.copy(entries = listOf(
+            SpotifyHostQueueEntry(FirstOccurrence, OtherRecording),
+            SpotifyHostQueueEntry(SecondOccurrence, Recording),
+            SpotifyHostQueueEntry(NextOccurrence, OtherRecording)))
+        val projected = fixture.project(queue, listOf(fixture.mappings.last()))
+        assertEquals(SecondOccurrence, projected.getJSONObject(TrackField).getString(OccurrenceField))
+        assertEquals(EmptyCount, projected.getJSONArray(PreviousField).length())
+        assertEquals(EmptyCount, projected.getJSONArray(NextField).length())
+    }
+    @Test fun sparseMappedTracksKeepTheirActualSideAndOrderWithoutShiftingCurrent() {
+        val fixture = Fixture()
+        val queue = fixture.queue.copy(entries = fixture.queue.entries + SpotifyHostQueueEntry(NextOccurrence, Recording))
+        val projected = fixture.project(queue, listOf(fixture.mappings.last()))
+        assertEquals(SecondOccurrence, projected.getJSONObject(TrackField).getString(OccurrenceField))
+        assertEquals(FirstOccurrence, projected.getJSONArray(PreviousField).getJSONObject(FirstIndex).getString(OccurrenceField))
+        assertEquals(NextOccurrence, projected.getJSONArray(NextField).getJSONObject(FirstIndex).getString(OccurrenceField))
+    }
+    @Test fun mappedOtherOccurrencesCannotReplaceAnUnmappedCurrent() {
+        val fixture = Fixture()
+        val queue = fixture.queue.copy(snapshot = fixture.snapshot.copy(occurrenceIdentifier = FirstOccurrence),
+            entries = listOf(SpotifyHostQueueEntry(FirstOccurrence, OtherRecording), fixture.queue.entries.last()))
+        unavailable { fixture.project(queue) }
+    }
     @Test fun nativeAndServerClockSamplesUseOnlyTheMeasuredReadAnchorAndElapsedPlayerSample() {
         val fixture = Fixture(); val projected = fixture.project()
         val elapsed = SampleElapsedMilliseconds - ReceivedElapsedMilliseconds
@@ -135,6 +160,7 @@ class SpotifyHostPublicationProjectorTest {
         private const val Queue = "synthetic-queue"
         private const val ExpectedQueueRevision = "synthetic-queue:3"
         private const val FirstOccurrence = "synthetic-first-occurrence"
+        private const val NextOccurrence = "synthetic-next-occurrence"
         private const val SecondOccurrence = "synthetic-second-occurrence"
         private const val Recording = "synthetic-recording"
         private const val OtherRecording = "synthetic-other-recording"

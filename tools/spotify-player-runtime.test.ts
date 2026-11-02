@@ -4,7 +4,7 @@ const Imports = Object.freeze({ runtime: '../src/services/PlayerJamRuntime', acc
   country: '../src/services/SpotifyListeningCountryPlatform', catalog: '../src/services/SpotifyRecordingCatalogPlatform', hosting: '../src/services/spotify/SpotifyHostingStore', controller: '../src/services/spotify/SpotifyPlayerJamController', lifecycle: '../src/services/player/PlaybackQueueChangeLifecycle' });
 const Fixture = Object.freeze({ account: 'application-test-account', replacementAccount: 'replacement-test-account',
   spotifyAccount: 'spotify-test-account', session: 'jam-test-session', host: 'host-test-device',
-  country: 'RO', invitation: 'synthetic-test-invitation', recording: 'synthetic-recording', clear: 'clear', replace: 'replace',
+  country: 'RO', invitation: 'synthetic-test-invitation', recording: 'synthetic-recording', openerRecording: 'synthetic-opener-recording', clear: 'clear', replace: 'replace',
   firstGeneration: 1, handle: 1, zero: 0 });
 const { JamConnectionStatus, SharedPlaybackStatus, IntegrationFailureCode, JamJoinMode } = require('streaming-service-spotify-jam');
 const { SpotifyHostingStatus } = require(Imports.hosting);
@@ -21,11 +21,13 @@ const createSession = jest.fn();
 const joinSession = jest.fn();
 const startHosting = jest.fn();
 const startFollowing = jest.fn();
+const prepareRecordings = jest.fn(async () => undefined);
 const stop = jest.fn(async () => undefined);
 const stopFollowing = jest.fn(async () => { following = { status: SharedPlaybackStatus.Detached, failure: null }; emit(); });
 let prepareQueueChange: (request: {
   kind: string;
   tracks: { recordingIdentifier: string }[];
+  selectedRecordingIdentifier?: string;
   isCurrent(): boolean;
   acknowledgeAuthorityRelease(): Promise<void>;
 }) => Promise<{ committed(): Promise<void> }>;
@@ -42,7 +44,7 @@ jest.doMock(Imports.lifecycle, () => ({ playbackQueueChanges: { attach: (lifecyc
 } }, PlaybackQueueChangeKind: { Clear: Fixture.clear, Replace: Fixture.replace } }));
 jest.doMock(Imports.mobile, () => ({ spotifyMobile: mobile,
   spotifyConnect: { subscribe, getPlaybackConnection: () => nativeConnection, getSnapshot: () => ({ deviceIdentifier: Fixture.host }) },
-  spotifyHosting: { subscribe, getSnapshot: () => hosting, start: startHosting, stop, prepareRecordings: stop, publishLocalChanges: stop },
+  spotifyHosting: { subscribe, getSnapshot: () => hosting, start: startHosting, stop, prepareRecordings, publishLocalChanges: stop },
   spotifyPlaybackFollower: { subscribe, getSnapshot: () => following, start: startFollowing, stop: stopFollowing },
   spotifyPlaybackCommands: { subscribe, getSnapshot: () => ({ available: true, uncertain: false, failure: null }), execute: stop, seek: stop },
 }));
@@ -131,4 +133,14 @@ test('Actual owned Jam begins app-led sharing when an app queue replaces local p
   expect(startHosting).toHaveBeenCalledWith(Fixture.country);
   expect(playerJam.getSnapshot().mode).toBe(SpotifyPlayerJamMode.Hosting);
   playerJam.dispose();
+});
+
+test('Runtime composition passes the actual selected album recording to active-host preparation', async () => {
+  session = membership(true); hosting = { status: SpotifyHostingStatus.Hosting, failure: null };
+  const { playerJam } = require(Imports.runtime);
+  const receipt = await prepareQueueChange({ kind: Fixture.replace,
+    tracks: [{ recordingIdentifier: Fixture.openerRecording }, { recordingIdentifier: Fixture.recording }],
+    selectedRecordingIdentifier: Fixture.recording, isCurrent: () => true, acknowledgeAuthorityRelease: async () => undefined });
+  expect(prepareRecordings).toHaveBeenCalledWith([Fixture.recording]);
+  await receipt.committed(); playerJam.dispose();
 });

@@ -146,6 +146,7 @@ const removeQueueLifecycle = playbackQueueChanges.attach({
       request.kind === PlaybackQueueChangeKind.Replace
         ? request.acknowledgeAuthorityRelease
         : undefined,
+      request.kind === PlaybackQueueChangeKind.Replace ? request.selectedRecordingIdentifier : undefined,
     );
     return { committed };
   },

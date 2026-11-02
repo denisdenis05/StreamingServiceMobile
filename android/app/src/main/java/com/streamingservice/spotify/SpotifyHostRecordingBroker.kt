@@ -39,6 +39,9 @@ class SpotifyHostRecordingBroker(
         synchronized(this) {
             if (identity != configuration.identity || !current()) return rejected(Superseded)
             prepared[recordingIdentifier]?.let { track -> return SpotifyPlayerOperation(CompletableFuture.completedFuture(track)) {} }
+            jobs.values.firstOrNull { pending -> pending.recording == recordingIdentifier }?.let { pending ->
+                return SpotifyPlayerOperation(pending.completion) {}
+            }
             if (!identifier(recordingIdentifier) || jobs.size >= MaximumJobs) return rejected(InvalidInput)
             val selected = identifiers.nextIdentifier()
             if (!identifier(selected) || jobs.containsKey(selected)) return rejected(InvalidInput)
@@ -96,7 +99,10 @@ class SpotifyHostRecordingBroker(
         if (!TrackPattern.matches(track)) { finish(selected, null, InvalidInput); throw SpotifyConnectFailure(InvalidInput) }
         finish(selected, track, null)
     }
-    fun fail(identifier: String) { synchronized(this) { job(identifier) }?.let { selected -> finish(selected, null, Unavailable) } }
+    fun fail(identifier: String, code: String = Unavailable) {
+        val safe = code.takeIf { selected -> selected in FailureCodes } ?: Network
+        synchronized(this) { job(identifier) }?.let { selected -> finish(selected, null, safe) }
+    }
     fun search(identifier: String, serialized: String): CompletableFuture<String> {
         val completion = CompletableFuture<String>()
         val selected = synchronized(this) {

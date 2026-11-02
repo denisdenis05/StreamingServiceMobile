@@ -8,6 +8,7 @@ export class SpotifyHostingQueueFailure extends IntegrationFailure {
   constructor(readonly queueIssue: SpotifyHostingQueueIssue) { super(IntegrationFailureCode.Unsupported); }
 }
 export interface SpotifyHostingQueue {
+  readonly currentOccurrenceIdentifier: string;
   readonly playerEngineEpoch: string;
   readonly playerAuthenticationEpoch: string;
   readonly expectedCursor: Readonly<{ queueIdentifier: string; queueRevision: number; contentRevision: number; controlRevision: number }>;
@@ -41,7 +42,7 @@ export async function captureSpotifyHostingQueue(player: Pick<PlayerObservation,
   });
   if (!entries.some(entry => entry.occurrenceIdentifier === snapshot.currentEntry?.entryIdentifier)
     || new Set(entries.map(entry => entry.occurrenceIdentifier)).size !== entries.length) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-  return Object.freeze({ playerEngineEpoch: cursor.engineEpoch, playerAuthenticationEpoch: cursor.authenticationEpoch,
+  return Object.freeze({ currentOccurrenceIdentifier: snapshot.currentEntry.entryIdentifier, playerEngineEpoch: cursor.engineEpoch, playerAuthenticationEpoch: cursor.authenticationEpoch,
     expectedCursor: Object.freeze({ queueIdentifier: cursor.queueIdentifier, queueRevision: cursor.queueRevision,
       contentRevision: cursor.queueContentRevision, controlRevision: cursor.playbackControlRevision }), entries: Object.freeze(entries) });
 }

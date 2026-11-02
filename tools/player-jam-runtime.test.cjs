@@ -132,3 +132,23 @@ test('Authority handoff rejects a native source that remains externally controll
   await assertion.rejects(scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex), QueueIntentSupersededError);
   assertion.equal(scenario.snapshot().currentEntry, null); scenario.runtime.dispose();
 });
+
+for (const collection of [false, true]) {
+  test(`Actual ${collection ? 'collection' : 'track list'} replacement carries the selected recording after its album opener`, async () => {
+    const changes = lifecycle(); const scenario = environment(changes); await scenario.login();
+    const tracks = [track(Fixture.firstRecording), track(Fixture.secondRecording)];
+    if (collection) await scenario.runtime.playCollection(async () => ({ tracks, selectedIndex: Fixture.secondIndex }));
+    else await scenario.runtime.playTracks(tracks, Fixture.secondIndex);
+    assertion.equal(changes.state.requests[Policy.initial].selectedRecordingIdentifier, Fixture.secondRecording);
+    assertion.equal(changes.state.requests[Policy.initial].tracks[Fixture.firstIndex].recordingIdentifier, Fixture.firstRecording);
+    assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.secondRecording);
+    scenario.runtime.dispose();
+  });
+}
+test('Actual append carries no selected replacement recording for blocking preparation', async () => {
+  const changes = lifecycle(); const scenario = environment(changes); await scenario.login();
+  await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex);
+  await scenario.runtime.append([track(Fixture.secondRecording)]);
+  assertion.equal(changes.state.requests[Policy.one].selectedRecordingIdentifier, undefined);
+  scenario.runtime.dispose();
+});

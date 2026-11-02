@@ -205,6 +205,7 @@ export class SpotifyPlayerJamController {
     isCurrent: () => boolean,
     clearQueue: boolean,
     acknowledgeAuthorityRelease?: () => Promise<void>,
+    selectedRecordingIdentifier?: string,
   ): Promise<() => Promise<void>> {
     const connection = this.dependencies.getConnection();
     const scope = connection?.scopeIdentifier ?? null;
@@ -254,9 +255,10 @@ export class SpotifyPlayerJamController {
           recordingIdentifiers.some(identifier => !identifier)
         )
           throw new IntegrationFailure(IntegrationFailureCode.Unsupported);
-        await this.dependencies.prepareRecordings([
-          ...new Set(recordingIdentifiers as readonly string[]),
-        ]);
+        if (selectedRecordingIdentifier !== undefined) {
+          if (!recordingIdentifiers.includes(selectedRecordingIdentifier)) throw new IntegrationFailure(IntegrationFailureCode.InvalidInput);
+          await this.dependencies.prepareRecordings([selectedRecordingIdentifier]);
+        }
       }
       if (!current())
         throw new IntegrationFailure(IntegrationFailureCode.Superseded);

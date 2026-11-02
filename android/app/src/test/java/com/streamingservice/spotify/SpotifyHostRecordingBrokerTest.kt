@@ -35,6 +35,18 @@ class SpotifyHostRecordingBrokerTest {
         assertEquals(Recording, job.getString(RecordingField)); assertEquals(Account, job.getString(AccountField)); assertNull(fixture.broker.claim(request))
         fixture.broker.complete(request, Track); assertEquals(Track, result.result.get()); assertFalse(fixture.broker.isPending(request))
     }
+    @Test fun concurrentCurrentPreparationSharesAnExistingUpcomingJobWithoutDuplicatingSearch() {
+        val fixture = Fixture(); val background = fixture.resolve(); val selection = fixture.resolve()
+        assertEquals(SingleCount, fixture.requests.size)
+        val request = fixture.requests.single(); fixture.broker.claim(request); fixture.broker.complete(request, Track)
+        assertEquals(Track, background.result.get()); assertEquals(Track, selection.result.get())
+    }
+    @Test fun cancelingABorrowedPreparationCannotCancelTheOriginalUpcomingJob() {
+        val fixture = Fixture(); val background = fixture.resolve(); val borrowed = fixture.resolve(); borrowed.cancel()
+        assertFalse(background.result.isDone); assertEquals(EmptyCount, fixture.cancellations)
+        val request = fixture.requests.single(); fixture.broker.claim(request); fixture.broker.complete(request, Track)
+        assertEquals(Track, background.result.get())
+    }
     @Test fun confirmedPreparationIsReusedWithoutAnotherHeadlessJobAndCannotEscapeItsScope() {
         val fixture = Fixture(); val first = fixture.resolve(); val request = fixture.requests.single()
         fixture.broker.claim(request); fixture.broker.complete(request, Track)
@@ -87,7 +99,25 @@ class SpotifyHostRecordingBrokerTest {
         wanted = false; fixture.broker.complete(request, Track)
         assertTrue(prepared.isCompletedExceptionally); assertEquals(SingleCount, fixture.requests.size)
     }
+    @Test fun headlessFailurePreservesEveryKnownCategoryWithoutCachingAnUnmatchedRecording() {
+        SpotifyConnectFailureCode.entries.forEach { selected ->
+            val fixture = Fixture(); val operation = fixture.resolve(); val request = fixture.requests.single()
+            fixture.broker.claim(request); fixture.broker.fail(request, selected.wireValue)
+            try { operation.result.join(); throw AssertionError() }
+            catch (failure: java.util.concurrent.CompletionException) {
+                assertEquals(selected.wireValue, (failure.cause as SpotifyConnectFailure).code)
+            }
+            assertNull(fixture.broker.cached(fixture.identity, Recording))
+        }
+    }
+    @Test fun untrustedHeadlessFailureCategoryBecomesNetwork() {
+        val fixture = Fixture(); val operation = fixture.resolve(); val request = fixture.requests.single()
+        fixture.broker.claim(request); fixture.broker.fail(request, Recording)
+        try { operation.result.join(); throw AssertionError() }
+        catch (failure: java.util.concurrent.CompletionException) { assertEquals(Network, (failure.cause as SpotifyConnectFailure).code) }
+    }
     companion object {
+        private const val Network = "network"
         private const val Account = "synthetic-account"
         private const val SpotifyAccount = "synthetic-spotify"
         private const val Jam = "synthetic-jam"

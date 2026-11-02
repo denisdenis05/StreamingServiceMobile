@@ -37,8 +37,9 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         if (activeSince !in MinimumServerMilliseconds..sampledServerMilliseconds) unavailable()
         val currentPosition = queue.entries.indexOfFirst { entry -> entry.occurrenceIdentifier == snapshot.occurrenceIdentifier }
         if (currentPosition < FirstIndex) unavailable()
-        val tracks = queue.entries.map { entry -> track(entry, mappings) }
-        val current = tracks[currentPosition]
+        val current = track(queue.entries[currentPosition], mappings) ?: unavailable()
+        val previous = queue.entries.take(currentPosition).mapNotNull { entry -> track(entry, mappings) }
+        val upcoming = queue.entries.drop(currentPosition + PositionIncrement).mapNotNull { entry -> track(entry, mappings) }
         val playback = when {
             snapshot.paused && snapshot.buffering -> PausedBuffering
             snapshot.buffering -> Buffering
@@ -48,8 +49,8 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         val result = JSONObject().put(DeviceField, nativeIdentity.deviceIdentifier).put(SessionField, nativeIdentity.sessionIdentifier)
             .put(SequenceField, sequence).put(PlaybackField, requireNotNull(snapshot.occurrenceIdentifier))
             .put(RevisionField, snapshot.cursor.queueIdentifier + RevisionSeparator + snapshot.cursor.contentRevision)
-            .put(TrackField, current).put(PreviousTracksField, JSONArray(tracks.take(currentPosition)))
-            .put(NextTracksField, JSONArray(tracks.drop(currentPosition + PositionIncrement)))
+            .put(TrackField, current).put(PreviousTracksField, JSONArray(previous))
+            .put(NextTracksField, JSONArray(upcoming))
             .put(PositionField, minOf(snapshot.positionMilliseconds, duration)).put(DurationField, duration)
             .put(SampledServerField, sampledServerMilliseconds).put(SampledNativeField, sampledNativeMilliseconds)
             .put(UncertaintyField, anchor.uncertaintyMilliseconds).put(ActiveSinceField, activeSince).put(StateField, playback)
@@ -86,10 +87,11 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         if (sum !in MinimumMilliseconds..MaximumSafeInteger) unavailable()
         return sum
     }
-    private fun track(entry: SpotifyHostQueueEntry, mappings: List<SpotifyHostRecordingMapping>): JSONObject {
+    private fun track(entry: SpotifyHostQueueEntry, mappings: List<SpotifyHostRecordingMapping>): JSONObject? {
         if (!identifier(entry.occurrenceIdentifier) || !identifier(entry.recordingIdentifier)) unavailable()
         val exact = mappings.filter { mapping -> mapping.occurrenceIdentifier == entry.occurrenceIdentifier && mapping.recordingIdentifier == entry.recordingIdentifier }
         val selected = if (exact.isNotEmpty()) exact else mappings.filter { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier }
+        if (selected.isEmpty()) return null
         val identifiers = selected.map { mapping -> mapping.spotifyTrackIdentifier }.distinct()
         if (identifiers.size != SingleTrack || !TrackPattern.matches(identifiers.single())) unavailable()
         return JSONObject().put(SpotifyTrackField, identifiers.single()).put(OccurrenceField, entry.occurrenceIdentifier)

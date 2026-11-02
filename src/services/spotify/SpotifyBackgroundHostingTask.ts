@@ -17,7 +17,7 @@ export interface SpotifyBackgroundHostingDependencies {
   readonly claim: (identifier: string) => Promise<SpotifyBackgroundHostingJob | null>;
   readonly isPending: (identifier: string) => Promise<boolean>;
   readonly complete: (identifier: string, track: string) => Promise<void>;
-  readonly fail: (identifier: string) => Promise<void>;
+  readonly fail: (identifier: string, code: IntegrationFailureCode) => Promise<void>;
   readonly restoreAccount: () => Promise<void>;
   readonly currentAccountIdentifier: () => string | null;
   readonly match: (job: SpotifyBackgroundHostingJob, cancellation: AbortSignal) => Promise<string | null>;
@@ -42,8 +42,13 @@ export class SpotifyBackgroundHostingTask {
       await this.requireCurrent(job, cancellation.signal);
       if (!track || !SpotifyBackgroundHostingPolicy.trackPattern.test(track)) throw new IntegrationFailure(IntegrationFailureCode.NotFound);
       await this.wait(this.dependencies.complete(identifier, track), cancellation.signal);
-    } catch {
-      if (claimed) try { await this.wait(this.dependencies.fail(identifier), cancellation.signal); } catch { return; }
+    } catch (failure) {
+      let code = IntegrationFailureCode.Network;
+      try {
+        const selected = (failure as { readonly code?: unknown } | null)?.code;
+        if (Object.values(IntegrationFailureCode).includes(selected as IntegrationFailureCode)) code = selected as IntegrationFailureCode;
+      } catch {}
+      if (claimed) try { await this.wait(this.dependencies.fail(identifier, code), cancellation.signal); } catch { return; }
     } finally { cancel(); cancellation.abort(); }
   }
   private validate(identifier: string, job: SpotifyBackgroundHostingJob): void {

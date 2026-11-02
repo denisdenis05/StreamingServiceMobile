@@ -1,3 +1,10 @@
+# Current source checkpoint
+
+See [HOST_CURRENT_RECORDING_PROGRESS.md](HOST_CURRENT_RECORDING_PROGRESS.md) for
+current-first startup, sparse actual queue publication, independent bounded
+background matching and selected-recording replacement preparation. The older
+sections below retain their original implementation/build status.
+
 # App-led hosting source work
 
 ## Real queue and publication projection

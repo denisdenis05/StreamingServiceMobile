@@ -77,17 +77,12 @@ export class SpotifyHostingStore {
       stage = SpotifyHostingFailureStage.QueueCapture;
       const queue = await this.dependencies.captureQueue(); this.requireCurrent(intent, context);
       stage = SpotifyHostingFailureStage.CatalogMatching;
-      const matches = new Map<string, string>();
-      const mappings: { occurrenceIdentifier: string; recordingIdentifier: string; spotifyTrackIdentifier: string }[] = [];
-      for (const entry of queue.entries) {
-        let track = matches.get(entry.recordingIdentifier);
-        if (track === undefined) {
-          track = await this.dependencies.translate(entry.recordingIdentifier, market, intent.signal); this.requireCurrent(intent, context);
-          if (!Policy.track.test(track)) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
-          matches.set(entry.recordingIdentifier, track);
-        }
-        mappings.push({ ...entry, spotifyTrackIdentifier: track });
-      }
+      const current = queue.entries.find(entry => entry.occurrenceIdentifier === queue.currentOccurrenceIdentifier);
+      if (!current) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      const track = await this.dependencies.translate(current.recordingIdentifier, market, intent.signal);
+      this.requireCurrent(intent, context);
+      if (!Policy.track.test(track)) throw new IntegrationFailure(IntegrationFailureCode.InvalidResponse);
+      const mappings = [{ ...current, spotifyTrackIdentifier: track }];
       stage = SpotifyHostingFailureStage.QueueValidation;
       const currentQueue = await this.dependencies.captureQueue(); this.requireCurrent(intent, context);
       if (JSON.stringify(queue) !== JSON.stringify(currentQueue)) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
