@@ -40,11 +40,40 @@ RETURN_INTEGER_SIGN_BIT = 0x80000000
 SUPPORTED_HOST_ARCHITECTURES = frozenset(('x86_64', 'amd64'))
 DEBUGGER_ARCHITECTURE_COMMAND = 'show architecture'
 SUPPORTED_DEBUGGER_ARCHITECTURE = 'i386:x86-64'
+MAXIMUM_SUMMARY_COUNTER = 1000000000
+SUMMARY_COUNTER_FIELDS = ('eventCount', 'errorCount', 'completedTransferCount', 'discardedTransferCount')
+SUMMARY_REASONS = frozenset(('duration-completed', 'event-limit', 'debugger-stopped', 'process-exited', 'detach-failed'))
+COMPLETED_REASONS = frozenset(('duration-completed', 'event-limit'))
+DEBUGGER_FAILED = 'debugger-failed'
+SUMMARY_MISSING = 'debugger-summary-missing'
 
 
 def successful_native_return(return_register):
     integer_return = return_register & RETURN_INTEGER_MASK
     return INITIAL_COUNT < integer_return < RETURN_INTEGER_SIGN_BIT
+
+
+def project_debugger_result(completed_process, output_path):
+    projected = None
+    for line in (completed_process.stdout or '').splitlines():
+        try:
+            candidate = json.loads(line)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(candidate, dict) or candidate.get('schema') != SCHEMA or candidate.get('reason') not in SUMMARY_REASONS:
+            continue
+        if not all(type(candidate.get(field)) is int and INITIAL_COUNT <= candidate[field] <= MAXIMUM_SUMMARY_COUNTER
+                for field in SUMMARY_COUNTER_FIELDS):
+            continue
+        projected = {field: candidate[field] for field in SUMMARY_COUNTER_FIELDS}
+        projected['reason'] = candidate['reason']
+    result = {'schema': SCHEMA, 'outputPath': output_path, 'debuggerExitCode': completed_process.returncode,
+        'captureComplete': False}
+    if completed_process.returncode != INITIAL_COUNT:
+        return {**result, 'reason': DEBUGGER_FAILED}
+    if projected is None:
+        return {**result, 'reason': SUMMARY_MISSING}
+    return {**result, **projected, 'captureComplete': projected['reason'] in COMPLETED_REASONS}
 
 
 def launch():
@@ -70,7 +99,10 @@ def launch():
     script_path = str(pathlib.Path(__file__).resolve())
     command = ['gdb', '-nx', '-q', '-batch', '-ex', 'source ' + script_path,
         '--args', SPOTIFY_EXECUTABLE, '--remote-debugging-port=9222', '--remote-debugging-address=127.0.0.1']
-    return subprocess.call(command, env=environment)
+    completed_process = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    summary = project_debugger_result(completed_process, output_path)
+    print(json.dumps(summary))
+    return INITIAL_COUNT if summary['captureComplete'] else INITIAL_IDENTIFIER
 
 
 def spotify_running():

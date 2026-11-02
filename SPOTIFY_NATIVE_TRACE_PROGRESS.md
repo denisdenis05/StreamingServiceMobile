@@ -1,5 +1,40 @@
 # Native desktop Spotify TLS trace
 
+## Actual integration failed
+
+The root session attempted a bounded 180-second native capture on 2026-11-02.
+GDB exited with status 1 after a native debugger backtrace. Only two sanitized
+HTTP/1 records reached `/tmp/spotify-native-safe-20261102.jsonl`: an unclassified
+GET and an HTTP 101 upgrade response. This is not evidence of the Connect command
+flow, matching official requests or complete native traffic visibility.
+
+All Spotify processes ended during that failure. The root restored the official
+client normally with its existing profile and loopback CDP. No credentials,
+account data or track metadata appeared in the reported backtrace. No raw
+backtrace file was created. The diagnostic tool is **not ready for live use**;
+there has been no second native attempt by this implementation agent.
+
+The Python fake debugger tests exercise our callback code, not GDB's real
+multithreaded breakpoint machinery. They cannot reproduce or rule out a native
+GDB failure around optimized functions, return breakpoints, thread exit or
+concurrent event handling. The exact native crash cause remains undiagnosed.
+The successful pure parser tests do not change this integration failure.
+
+A follow-up source fix now captures GDB stdout and stderr only in memory and
+rebuilds its console summary from fixed fields and bounded integer counters.
+A nonzero debugger exit emits `debugger-failed`, never a partial success claim.
+Raw debugger output and arbitrary exception text are not forwarded or saved.
+This improves diagnostic privacy; it does **not** prevent the debugger from
+crashing or terminating its inferior.
+
+Do not repeat native instrumentation during the user's manual playback tests.
+A future approach requires a separate design and a disposable-process stability
+check before touching the live client. Replacing FinishBreakpoint with static
+return-address breakpoints would still require thread/recursion fencing and
+careful unwinding; it is not an established fix. A maintained tracing runtime
+with native function interception could avoid this GDB path, but its stability
+and compatibility have not been established here.
+
 ## Why this exists
 
 The official client's renderer CDP capture exposed only two events during a
@@ -26,7 +61,7 @@ installed version and are not hardcoded into the tool. `SSL_free` removes the
 corresponding in-memory decoder state. There are no calls into the inferior to
 read server names or change verification behavior.
 
-## Running
+## Original diagnostic invocation, currently unverified after failure
 
 The user explicitly authorized gracefully restarting the official client for
 instrumentation. The tool refuses to launch if an official Spotify process is
@@ -62,8 +97,9 @@ The launched inferior's stdout and stderr go to `/dev/null`. GDB initialization
 files and auto-loading are disabled. Core dumps are disabled for the launched
 process tree. Thread messages, frame argument printing and debugger logging
 are disabled. The script captures debugger command output in memory and prints
-only its fixed summary. On the bounded deadline it stops its own child,
-removes its breakpoints and detaches, leaving Spotify running. Native child
+only its fixed summary. Its intended deadline behavior is to stop its own child, remove its breakpoints
+and detach, leaving Spotify running. The actual failed integration did not
+reach or prove this behavior. Native child
 processes are detached on fork. No attach, restart or live capture was performed
 by the implementation agent; the root integration session owns that check.
 
@@ -130,7 +166,7 @@ that the desktop client never sent that operation.
 python3 -m unittest discover -s tools -p 'spotify_native_*test.py'
 ```
 
-16 tests pass. The feature map covers endpoint and header privacy; fragmented
+20 tests pass. The feature map covers endpoint and header privacy; fragmented
 HTTP/1 headers and body skipping; fragmented HTTP/2 preface and continuation;
 stateful HPACK; server frames arriving before protocol detection; malformed and
 oversized payload rejection; unknown protocol and chunked failure behavior;
@@ -141,9 +177,11 @@ fixed summaries, child stdio suppression, breakpoint cleanup and detach. The
 launcher also has a regression test refusing an already running client without
 starting or stopping any process. Further regressions cover stripped symbols
 with no debug return type, signed native return values and both host/target
-architecture guards before output or process actions.
+architecture guards before output or process actions. Follow-up privacy tests
+cover native crash output suppression, partial-success rejection, fixed-field
+summary reconstruction, malformed summary rejection and launcher pipe wiring.
 
 The fake debugger tests perform no live process attachment, Spotify request or
-real timer delay. Actual parent launch, native HTTP protocol visibility, deadline
-detach and continued desktop playback remain integration checks for the root
-session.
+real timer delay. The actual parent launch failed before native Connect visibility or deadline
+detach was established. Continued desktop playback was restored by the root
+session after that failure, independently of this tool.

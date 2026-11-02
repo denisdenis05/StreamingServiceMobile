@@ -128,7 +128,7 @@ class DebuggerLifecycleTests(unittest.TestCase):
     def test_running_client_is_refused_without_starting_or_stopping_any_process(self):
         launcher = load_launcher()
         with mock.patch.object(launcher, 'spotify_running', return_value=True), mock.patch.object(launcher.sys, 'argv',
-                [str(MODULE_PATH), '--output', '/tmp/not-written.jsonl']), mock.patch.object(launcher.subprocess, 'call') as launch_process:
+                [str(MODULE_PATH), '--output', '/tmp/not-written.jsonl']), mock.patch.object(launcher.subprocess, 'run') as launch_process:
             with self.assertRaises(ValueError):
                 launcher.launch()
             launch_process.assert_not_called()
@@ -144,7 +144,7 @@ class NativeReturnAndArchitectureTests(unittest.TestCase):
 
     def test_unsupported_host_architecture_refuses_before_process_actions(self):
         launcher = load_launcher()
-        with mock.patch.object(launcher.platform, 'machine', return_value='aarch64'), mock.patch.object(launcher.subprocess, 'call') as launch_process:
+        with mock.patch.object(launcher.platform, 'machine', return_value='aarch64'), mock.patch.object(launcher.subprocess, 'run') as launch_process:
             with self.assertRaises(ValueError):
                 launcher.launch()
             launch_process.assert_not_called()
@@ -158,3 +158,55 @@ class NativeReturnAndArchitectureTests(unittest.TestCase):
                 launcher.run_debugger(debugger)
             open_output.assert_not_called()
         self.assertEqual(debugger.registered, [])
+
+
+class NativeDebuggerFailurePrivacyTests(unittest.TestCase):
+    def test_native_debugger_crash_discards_all_raw_diagnostics_and_partial_success_summary(self):
+        launcher = load_launcher()
+        partial_summary = {'schema': launcher.SCHEMA, 'reason': 'duration-completed', 'eventCount': ONE,
+            'errorCount': INITIAL_COUNT, 'completedTransferCount': ONE, 'discardedTransferCount': INITIAL_COUNT,
+            'outputPath': PRIVATE_VALUE, 'rawHeader': PRIVATE_VALUE}
+        completed = launcher.subprocess.CompletedProcess([], ONE, stdout=json.dumps(partial_summary), stderr=PRIVATE_VALUE)
+        projected = launcher.project_debugger_result(completed, '/tmp/safe.jsonl')
+        self.assertEqual(projected['reason'], launcher.DEBUGGER_FAILED)
+        self.assertFalse(projected['captureComplete'])
+        self.assertNotIn(PRIVATE_VALUE, json.dumps(projected))
+        self.assertNotIn('eventCount', projected)
+
+    def test_success_summary_is_rebuilt_from_fixed_fields_and_chosen_output_path(self):
+        launcher = load_launcher()
+        candidate = {'schema': launcher.SCHEMA, 'reason': 'duration-completed', 'eventCount': ONE,
+            'errorCount': INITIAL_COUNT, 'completedTransferCount': ONE, 'discardedTransferCount': INITIAL_COUNT,
+            'outputPath': PRIVATE_VALUE, 'rawHeader': PRIVATE_VALUE}
+        completed = launcher.subprocess.CompletedProcess([], INITIAL_COUNT,
+            stdout=PRIVATE_VALUE + '\n' + json.dumps(candidate), stderr=PRIVATE_VALUE)
+        projected = launcher.project_debugger_result(completed, '/tmp/safe.jsonl')
+        self.assertTrue(projected['captureComplete'])
+        self.assertEqual(projected['eventCount'], ONE)
+        self.assertNotIn(PRIVATE_VALUE, json.dumps(projected))
+
+    def test_malformed_or_sensitive_summary_fields_are_never_forwarded(self):
+        launcher = load_launcher()
+        candidate = {'schema': launcher.SCHEMA, 'reason': PRIVATE_VALUE, 'eventCount': PRIVATE_VALUE}
+        completed = launcher.subprocess.CompletedProcess([], INITIAL_COUNT, stdout=json.dumps(candidate), stderr=PRIVATE_VALUE)
+        projected = launcher.project_debugger_result(completed, '/tmp/safe.jsonl')
+        self.assertEqual(projected['reason'], launcher.SUMMARY_MISSING)
+        self.assertFalse(projected['captureComplete'])
+        self.assertNotIn(PRIVATE_VALUE, json.dumps(projected))
+
+class LauncherDiagnosticCaptureTests(unittest.TestCase):
+    def test_launcher_routes_native_stdout_and_stderr_to_memory_and_emits_fixed_failure_only(self):
+        launcher = load_launcher()
+        output = io.StringIO()
+        completed = launcher.subprocess.CompletedProcess([], ONE, stdout=PRIVATE_VALUE, stderr=PRIVATE_VALUE)
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(launcher, 'spotify_running', return_value=False), \
+                mock.patch.object(launcher.platform, 'machine', return_value='x86_64'), \
+                mock.patch.object(launcher.resource, 'setrlimit'), \
+                mock.patch.object(launcher.sys, 'argv', [str(MODULE_PATH), '--output', str(pathlib.Path(directory) / 'safe.jsonl')]), \
+                mock.patch.object(launcher.subprocess, 'run', return_value=completed) as run_debugger, contextlib.redirect_stdout(output):
+            result = launcher.launch()
+        self.assertEqual(result, ONE)
+        self.assertEqual(run_debugger.call_args.kwargs['stdout'], launcher.subprocess.PIPE)
+        self.assertEqual(run_debugger.call_args.kwargs['stderr'], launcher.subprocess.PIPE)
+        self.assertEqual(json.loads(output.getvalue())['reason'], launcher.DEBUGGER_FAILED)
+        self.assertNotIn(PRIVATE_VALUE, output.getvalue())
