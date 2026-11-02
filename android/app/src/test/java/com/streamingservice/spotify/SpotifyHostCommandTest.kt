@@ -46,16 +46,40 @@ class SpotifyHostCommandTest {
         assertEquals(FirstOccurrence, decoded.tracks.first().occurrenceIdentifier)
         assertEquals(SecondOccurrence, decoded.tracks.last().occurrenceIdentifier)
     }
-    @Test fun unresolvedContextsDirectedSkipsAndUnsupportedEndpointsAreRejected() {
+    @Test fun unresolvedContextsAndUnsupportedEndpointsAreRejected() {
         val unresolved = request(Play); command(unresolved).put(ContextField, JSONObject().put(AddressField, PlaylistAddress)); rejected(unresolved)
-        val directed = request(Next); command(directed).put(TrackField, JSONObject().put(AddressField, TrackAddress)); rejected(directed)
         listOf(Transfer, SetOptions, SetQueue).forEach { endpoint -> rejected(request(endpoint)) }
     }
     @Test fun malformedProvenanceAndNonTrackUrisNeverBecomeHostActions() {
         val value = request(Queue); command(value).put(TrackField, JSONObject().put(AddressField, PlaylistAddress)); rejected(value)
         val malformed = request(Pause); malformed.put(MessageField, MessageIdentifier.toString()); rejected(malformed)
     }
+    @Test fun officialDirectedSkipRetainsItsProvidedTrackAndOccurrence() {
+        val value = request(Next); command(value).put(TrackField, JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, SecondOccurrence))
+        assertEquals(SpotifyHostCommand.Select(SpotifyHostTrack(TrackIdentifier, SecondOccurrence)), decode(value).command)
+    }
+    @Test fun officialSetQueueRetainsPreviousAndNextOccurrencesAndThePreviousRevision() {
+        val value = request(SetQueue); command(value).put(QueueRevisionField, QueueRevision)
+            .put(PreviousTracksField, JSONArray().put(JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, FirstOccurrence)))
+            .put(NextTracksField, JSONArray().put(JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, SecondOccurrence)))
+        assertEquals(SpotifyHostCommand.SetQueue(listOf(SpotifyHostTrack(TrackIdentifier, FirstOccurrence)),
+            listOf(SpotifyHostTrack(TrackIdentifier, SecondOccurrence)), QueueRevision), decode(value).command)
+    }
+    @Test fun queueReplacementRejectsDuplicatedOccurrenceIdentitiesAcrossPreviousAndNextTracks() {
+        val value = request(SetQueue); val track = JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, FirstOccurrence)
+        command(value).put(QueueRevisionField, QueueRevision).put(PreviousTracksField, JSONArray().put(track)).put(NextTracksField, JSONArray().put(track))
+        rejected(value)
+    }
+    @Test fun providedTrackDefaultEmptyUidIsTreatedAsAnUnspecifiedOccurrence() {
+        val value = request(Next); command(value).put(TrackField, JSONObject().put(AddressField, TrackAddress).put(OccurrenceField, EmptyText))
+        assertEquals(SpotifyHostCommand.Select(SpotifyHostTrack(TrackIdentifier, null)), decode(value).command)
+    }
     companion object {
+        private const val EmptyText = ""
+        private const val QueueRevisionField = "queue_revision"
+        private const val QueueRevision = "synthetic-previous-queue-revision"
+        private const val PreviousTracksField = "prev_tracks"
+        private const val NextTracksField = "next_tracks"
         private const val Key = "synthetic-host-request"
         private const val Sender = "synthetic-command-device"
         private const val CommandIdentifier = "synthetic-session-command"

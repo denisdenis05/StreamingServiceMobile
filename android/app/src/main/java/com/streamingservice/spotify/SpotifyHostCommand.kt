@@ -7,9 +7,11 @@ sealed class SpotifyHostCommand {
     object Pause : SpotifyHostCommand()
     object Next : SpotifyHostCommand()
     object Previous : SpotifyHostCommand()
+    data class Select(val track: SpotifyHostTrack) : SpotifyHostCommand()
+    data class SetQueue(val previousTracks: List<SpotifyHostTrack>, val nextTracks: List<SpotifyHostTrack>, val queueRevision: String? = null) : SpotifyHostCommand()
     data class Seek(val positionMilliseconds: Long) : SpotifyHostCommand()
     data class AddToQueue(val track: SpotifyHostTrack) : SpotifyHostCommand()
-    data class Play(val tracks: List<SpotifyHostTrack>, val initiallyPaused: Boolean) : SpotifyHostCommand()
+    data class Play(val tracks: List<SpotifyHostTrack>, val initiallyPaused: Boolean, val selectedOccurrenceIdentifier: String? = null, val preservePosition: Boolean = false) : SpotifyHostCommand()
 }
 
 data class SpotifyHostTrack(val spotifyTrackIdentifier: String, val occurrenceIdentifier: String?)
@@ -34,13 +36,21 @@ class SpotifyHostCommandDecoder {
                 ResumeEndpoint -> SpotifyHostCommand.Resume
                 PauseEndpoint -> SpotifyHostCommand.Pause
                 NextEndpoint -> {
-                    if (command.has(TrackField) && !command.isNull(TrackField)) unsupported()
-                    SpotifyHostCommand.Next
+                    if (command.has(TrackField) && !command.isNull(TrackField)) SpotifyHostCommand.Select(track(command.getJSONObject(TrackField)))
+                    else SpotifyHostCommand.Next
                 }
                 PreviousEndpoint -> SpotifyHostCommand.Previous
                 SeekEndpoint -> SpotifyHostCommand.Seek(integer(command, ValueField, MaximumPositionMilliseconds))
                 QueueEndpoint -> SpotifyHostCommand.AddToQueue(track(command.getJSONObject(TrackField)))
                 PlayEndpoint -> play(command)
+                SetQueueEndpoint -> {
+                    val revision = text(command, QueueRevisionField)
+                    val previous = tracks(command, PreviousTracksField)
+                    val next = tracks(command, NextTracksField)
+                    val combined = previous + next
+                    if (combined.size >= MaximumQueueTracks || combined.mapNotNull { entry -> entry.occurrenceIdentifier }.let { values -> values.size != values.toSet().size }) fail()
+                    SpotifyHostCommand.SetQueue(previous, next, revision)
+                }
                 else -> unsupported()
             }
             return SpotifyHostCommandRequest(key, integer(request, MessageIdentifierField, MaximumMessageIdentifier), text(request, SenderDeviceField), sessionCommandIdentifier, action)
@@ -65,12 +75,20 @@ class SpotifyHostCommandDecoder {
         return SpotifyHostCommand.Play(selected, paused)
     }
 
+    private fun tracks(value: JSONObject, field: String): List<SpotifyHostTrack> {
+        val entries = value.getJSONArray(field)
+        if (entries.length() > MaximumQueueTracks) fail()
+        return (FirstIndex until entries.length()).map { position -> track(entries.getJSONObject(position)) }
+    }
+
     private fun track(value: JSONObject): SpotifyHostTrack {
         val address = text(value, TrackAddressField)
         if (!address.startsWith(TrackAddressPrefix)) fail()
         val identifier = address.removePrefix(TrackAddressPrefix)
         if (!TrackIdentifierPattern.matches(identifier)) fail()
-        return SpotifyHostTrack(identifier, if (value.has(OccurrenceField) && !value.isNull(OccurrenceField)) text(value, OccurrenceField) else null)
+        val occurrence = if (value.has(OccurrenceField) && !value.isNull(OccurrenceField)) value.get(OccurrenceField) as? String ?: fail() else null
+        if (occurrence != null && occurrence != EmptyText) requireIdentifier(occurrence)
+        return SpotifyHostTrack(identifier, occurrence?.takeUnless { supplied -> supplied == EmptyText })
     }
     private fun text(value: JSONObject, field: String): String = (value.get(field) as? String ?: fail()).also(::requireIdentifier)
     private fun requireIdentifier(value: String) { if (value.isBlank() || value.length > MaximumIdentifierCharacters || value.any { character -> character.isWhitespace() || character.isISOControl() }) fail() }
@@ -109,6 +127,7 @@ class SpotifyHostCommandDecoder {
         private const val InitiallyPausedField = "initially_paused"
         private const val TrackAddressField = "uri"
         private const val OccurrenceField = "uid"
+        private const val EmptyText = ""
         private const val TrackAddressPrefix = "spotify:track:"
         private const val ResumeEndpoint = "resume"
         private const val PauseEndpoint = "pause"
@@ -117,6 +136,10 @@ class SpotifyHostCommandDecoder {
         private const val SeekEndpoint = "seek_to"
         private const val QueueEndpoint = "add_to_queue"
         private const val PlayEndpoint = "play"
+        private const val SetQueueEndpoint = "set_queue"
+        private const val QueueRevisionField = "queue_revision"
+        private const val PreviousTracksField = "prev_tracks"
+        private const val NextTracksField = "next_tracks"
         private val TrackIdentifierPattern = Regex("[A-Za-z0-9]{22}")
     }
 }

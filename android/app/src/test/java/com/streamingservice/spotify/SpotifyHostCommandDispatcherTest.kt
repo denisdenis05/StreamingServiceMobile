@@ -10,7 +10,7 @@ import java.util.concurrent.CompletableFuture
 
 class SpotifyHostCommandDispatcherTest {
     private class Timer(val action: () -> Unit, var cancelled: Boolean = false)
-    private class Fixture {
+    private class Fixture(maximumJournalEntries: Int = DefaultJournalCapacity) {
         var now = ElapsedMilliseconds
         var current = true
         var failures = EmptyCount
@@ -55,7 +55,7 @@ class SpotifyHostCommandDispatcherTest {
         val clock = SpotifyNativeFollowerClock { now }
         val dispatcher = SpotifyHostCommandDispatcher(identity, player, transport, SpotifyHostCommandEventDecoder(clock), clock,
             { _, action -> val timer = Timer(action); timers.add(timer); SpotifyNativeFollowerCancellation { timer.cancelled = true } },
-            { current }, { receipt -> receipts.add(receipt) }, { failures += SingleCount })
+            { current }, { receipt -> receipts.add(receipt) }, { failures += SingleCount }, maximumJournalEntries = maximumJournalEntries)
         fun accept(key: String = Key, endpoint: String = Pause, enabled: Boolean = true) {
             if (enabled) dispatcher.setAccepting()
             val request = JSONObject().put(MessageField, MessageIdentifier).put(SenderField, Sender).put(CommandField, JSONObject().put(EndpointField, endpoint))
@@ -127,7 +127,18 @@ class SpotifyHostCommandDispatcherTest {
         fixture.current = false; fixture.sampling!!.complete(fixture.queue)
         assertTrue(fixture.operations.isEmpty()); assertTrue(fixture.replies.isEmpty())
     }
+    @Test fun completedCommandReceiptsAreBoundedWithoutPreventingLaterPlaybackControls() {
+        val fixture = Fixture(SingleCount); fixture.accept(); fixture.complete()
+        fixture.accept(OtherKey); fixture.complete(SecondIndex)
+        assertEquals(TwoCount, fixture.operations.size); assertEquals(listOf(Key to true, OtherKey to true), fixture.replies)
+    }
+    @Test fun pendingCommandsAreNotEvictedWhenTheReceiptJournalIsFull() {
+        val fixture = Fixture(SingleCount); fixture.accept(); fixture.accept(OtherKey)
+        assertEquals(SingleCount, fixture.operations.size); assertEquals(listOf(OtherKey to false), fixture.replies)
+        fixture.complete(); assertEquals(listOf(OtherKey to false, Key to true), fixture.replies)
+    }
     companion object {
+        private const val DefaultJournalCapacity = 128
         private const val Account = "synthetic-account"
         private const val SpotifyAccount = "synthetic-spotify-account"
         private const val Jam = "synthetic-jam"

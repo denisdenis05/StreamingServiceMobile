@@ -4,6 +4,7 @@ import org.json.JSONObject
 import java.util.concurrent.CompletableFuture
 
 interface SpotifyHostPlayer {
+    fun rememberMappings(mappings: List<SpotifyHostRecordingMapping>) = Unit
     fun sampleQueue(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerQueue>
     fun execute(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor, request: SpotifyHostCommandRequest,
         receivedAtElapsedMilliseconds: Long, deadlineElapsedMilliseconds: Long): SpotifyPlayerOperation<SpotifyHostPlayerAccepted>

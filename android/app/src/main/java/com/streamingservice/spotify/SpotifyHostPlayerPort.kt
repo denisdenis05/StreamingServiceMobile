@@ -60,8 +60,16 @@ class SpotifyHostPlayerPort(
     private val monitor = Any()
     private val journal = LinkedHashMap<String, Job>()
     @Volatile private var retired = false
+    private var knownMappings = emptyList<SpotifyHostRecordingMapping>()
 
     init { require(maximumJournalEntries > EmptyCount && maximumPendingCommands > EmptyCount) }
+
+    override fun rememberMappings(mappings: List<SpotifyHostRecordingMapping>) {
+        if (mappings.size > MaximumQueueTracks || mappings.map { mapping -> mapping.occurrenceIdentifier }.toSet().size != mappings.size
+            || mappings.any { mapping -> !validIdentifier(mapping.occurrenceIdentifier) || !validIdentifier(mapping.recordingIdentifier)
+                || !TrackIdentifierPattern.matches(mapping.spotifyTrackIdentifier) }) fail(SpotifyPlayerFailureReason.InvalidInput)
+        synchronized(monitor) { knownMappings = mappings.toList() }
+    }
 
     fun sample(identity: SpotifyHostIdentity): CompletableFuture<SpotifyHostPlayerSnapshot> {
         val completion = CompletableFuture<SpotifyHostPlayerSnapshot>()
@@ -126,6 +134,7 @@ class SpotifyHostPlayerPort(
                 return operation(previous)
             }
             if (retired || !isCurrent(identity) || !canExecute(identity)) return rejected(SpotifyPlayerFailureReason.Superseded)
+            if (journal.size >= maximumJournalEntries) journal.entries.firstOrNull { entry -> entry.value.completion.isDone }?.let { entry -> journal.remove(entry.key) }
             if (journal.size >= maximumJournalEntries || journal.values.count { entry -> !entry.completion.isDone } >= maximumPendingCommands) return rejected(SpotifyPlayerFailureReason.Capacity)
             val now = elapsedMilliseconds()
             if (request.key.isBlank() || receivedAtElapsedMilliseconds > now || receivedAtElapsedMilliseconds < MinimumElapsedMilliseconds
@@ -179,9 +188,21 @@ class SpotifyHostPlayerPort(
             val snapshot = coordinator.snapshot()
             requireCursor(snapshot, job)
             val action = job.request.command
+            if (action is SpotifyHostCommand.AddToQueue && integer(snapshot, ProtocolFields.QueueLength) >= MaximumQueueTracks) fail(SpotifyPlayerFailureReason.Capacity)
+            if (action is SpotifyHostCommand.SetQueue && action.queueRevision != null
+                && action.queueRevision != job.expected.queueIdentifier + QueueRevisionSeparator + job.expected.contentRevision) fail(SpotifyPlayerFailureReason.Conflict)
+            if (action is SpotifyHostCommand.Select || action is SpotifyHostCommand.SetQueue || action is SpotifyHostCommand.Play && action.preservePosition || synchronized(monitor) { knownMappings.isNotEmpty() } && (action is SpotifyHostCommand.Play || action is SpotifyHostCommand.AddToQueue)) {
+                job.queueEntries = readEntries(job)
+            }
             val requestedTracks = when (action) {
                 is SpotifyHostCommand.AddToQueue -> listOf(action.track)
                 is SpotifyHostCommand.Play -> action.tracks
+                is SpotifyHostCommand.SetQueue -> {
+                    val current = snapshot.optJSONObject(ProtocolFields.CurrentEntry)?.getString(ProtocolFields.EntryIdentifier) ?: fail(SpotifyPlayerFailureReason.Conflict)
+                    val mapping = synchronized(monitor) { knownMappings.find { known -> known.occurrenceIdentifier == current } }
+                        ?: fail(SpotifyPlayerFailureReason.Unavailable)
+                    action.previousTracks + SpotifyHostTrack(mapping.spotifyTrackIdentifier, current) + action.nextTracks
+                }
                 else -> emptyList()
             }
             val tracks = requestedTracks.map { track -> track.copy(occurrenceIdentifier = track.occurrenceIdentifier ?: identifiers.nextIdentifier()) }
@@ -195,7 +216,13 @@ class SpotifyHostPlayerPort(
             requireCurrent(job); requireCursor(coordinator.snapshot(), job)
             val track = tracks[position]
             if (!TrackIdentifierPattern.matches(track.spotifyTrackIdentifier) || track.occurrenceIdentifier?.let(::validIdentifier) != true) fail(SpotifyPlayerFailureReason.InvalidInput)
-            val operation = resolver.resolve(job.identity, track.spotifyTrackIdentifier)
+            val known = synchronized(monitor) { knownMappings.filter { mapping -> mapping.spotifyTrackIdentifier == track.spotifyTrackIdentifier } }
+            val cached = known.firstNotNullOfOrNull { mapping -> job.queueEntries.find { entry ->
+                entry.getString(ProtocolFields.EntryIdentifier) == mapping.occurrenceIdentifier && entry.getString(ProtocolFields.RecordingIdentifier) == mapping.recordingIdentifier
+            } }
+            val operation = if (cached == null) resolver.resolve(job.identity, track.spotifyTrackIdentifier) else SpotifyPlayerOperation(
+                CompletableFuture.completedFuture<SpotifyHostRecordingResolution>(SpotifyHostRecordingResolution.Matched(cached.getString(ProtocolFields.RecordingIdentifier),
+                    cached.getString(ProtocolFields.Title), cached.getString(ProtocolFields.Artist)))) {}
             synchronized(monitor) { if (job.completion.isDone) operation.cancel() else job.resolution = operation }
             operation.result.whenComplete { resolution, failure ->
                 dispatch({ dispatchFailure -> finish(job, null, safeFailure(dispatchFailure, job.dispatched)) }) {
@@ -218,6 +245,11 @@ class SpotifyHostPlayerPort(
         val before = coordinator.snapshot(); requireCursor(before, job)
         val action = job.request.command
         val current = before.optJSONObject(ProtocolFields.CurrentEntry)?.getString(ProtocolFields.EntryIdentifier)
+        if (action is SpotifyHostCommand.SetQueue || action is SpotifyHostCommand.Play && action.preservePosition
+            && recordings.any { recording -> recording.first.occurrenceIdentifier == current }) {
+            reconcileQueue(job, before, recordings)
+            return
+        }
         val operation = when (action) {
             SpotifyHostCommand.Resume -> PlayerOperation.Play
             SpotifyHostCommand.Pause -> PlayerOperation.Pause
@@ -228,6 +260,8 @@ class SpotifyHostPlayerPort(
                     || before.isNull(ProtocolFields.DurationMilliseconds) || action.positionMilliseconds >= integer(before, ProtocolFields.DurationMilliseconds)) fail(SpotifyPlayerFailureReason.InvalidInput)
                 PlayerOperation.Seek
             }
+            is SpotifyHostCommand.Select -> PlayerOperation.Select
+            is SpotifyHostCommand.SetQueue -> fail(SpotifyPlayerFailureReason.InvalidInput)
             is SpotifyHostCommand.AddToQueue -> PlayerOperation.Append
             is SpotifyHostCommand.Play -> { if (recordings.isEmpty()) fail(SpotifyPlayerFailureReason.InvalidInput); PlayerOperation.Replace }
         }
@@ -236,15 +270,21 @@ class SpotifyHostPlayerPort(
         if (!validIdentifier(requestIdentifier)) fail(SpotifyPlayerFailureReason.InvalidInput)
         val command = JSONObject().put(ProtocolFields.Operation, operation.protocolValue).put(ProtocolFields.RequestIdentifier, requestIdentifier)
             .put(ProtocolFields.EngineEpoch, job.identity.playerIdentity.engineEpoch).put(ProtocolFields.AuthenticationEpoch, job.identity.playerIdentity.authenticationEpoch)
-            .put(ProtocolFields.ExpectedQueueIdentifier, job.expected.queueIdentifier).put(ProtocolFields.ExpectedQueueRevision, job.expected.queueRevision)
-            .put(ProtocolFields.ExpectedPlaybackControlRevision, job.expected.controlRevision)
+            .put(ProtocolFields.ExpectedQueueIdentifier, job.cursor.queueIdentifier).put(ProtocolFields.ExpectedQueueRevision, job.cursor.queueRevision)
+            .put(ProtocolFields.ExpectedPlaybackControlRevision, job.cursor.controlRevision)
+        if (action is SpotifyHostCommand.Select) {
+            val selected = selectedOccurrence(job, action.track)
+            command.put(ProtocolFields.EntryIdentifier, selected).put(ProtocolFields.PlayWhenReady, before.getString(ProtocolFields.PlaybackIntent) != PauseIntent)
+        }
         if (action is SpotifyHostCommand.Seek) command.put(ProtocolFields.EntryIdentifier, current).put(ProtocolFields.PositionMilliseconds, action.positionMilliseconds)
         if (recordings.isNotEmpty()) {
             val entries = JSONArray()
             recordings.forEach { (track, recording) -> entries.put(JSONObject().put(ProtocolFields.EntryIdentifier, track.occurrenceIdentifier)
                 .put(ProtocolFields.RecordingIdentifier, recording.recordingIdentifier).put(ProtocolFields.Title, recording.title).put(ProtocolFields.Artist, recording.artist)) }
             command.put(ProtocolFields.Entries, entries)
-            if (action is SpotifyHostCommand.Play) command.put(ProtocolFields.ActiveEntryIdentifier, recordings.first().first.occurrenceIdentifier).put(ProtocolFields.PlayWhenReady, !action.initiallyPaused)
+            if (action is SpotifyHostCommand.Play && action.selectedOccurrenceIdentifier != null
+                && recordings.none { recording -> recording.first.occurrenceIdentifier == action.selectedOccurrenceIdentifier }) fail(SpotifyPlayerFailureReason.InvalidInput)
+            if (action is SpotifyHostCommand.Play) command.put(ProtocolFields.ActiveEntryIdentifier, (action.selectedOccurrenceIdentifier ?: recordings.first().first.occurrenceIdentifier)).put(ProtocolFields.PlayWhenReady, !action.initiallyPaused)
         }
         synchronized(monitor) { requireCurrent(job); job.dispatched = true }
         val receipt = JSONObject(coordinator.execute(command.toString()))
@@ -260,6 +300,101 @@ class SpotifyHostPlayerPort(
         }
     }
 
+    private fun readEntries(job: Job): List<JSONObject> {
+        requireCurrent(job)
+        val value = coordinator.snapshot()
+        requireCursor(value, job)
+        if (integer(value, ProtocolFields.QueueLength) > MaximumQueueTracks) fail(SpotifyPlayerFailureReason.Unavailable)
+        val requestIdentifier = identifiers.nextIdentifier()
+        if (!validIdentifier(requestIdentifier)) fail(SpotifyPlayerFailureReason.InvalidInput)
+        val request = JSONObject().put(ProtocolFields.Operation, PlayerOperation.Page.protocolValue)
+            .put(ProtocolFields.RequestIdentifier, requestIdentifier).put(ProtocolFields.EngineEpoch, job.identity.playerIdentity.engineEpoch)
+            .put(ProtocolFields.AuthenticationEpoch, job.identity.playerIdentity.authenticationEpoch)
+            .put(ProtocolFields.ExpectedQueueRevision, job.cursor.queueRevision).put(ProtocolFields.Offset, EmptyCount).put(ProtocolFields.Limit, MaximumQueueTracks)
+        val response = JSONObject(coordinator.execute(request.toString()))
+        if (response.get(ProtocolFields.Status) != PlayerProtocol.SuccessPageStatus) fail(SpotifyPlayerFailureReason.Conflict)
+        val page = response.getJSONObject(ProtocolFields.Page)
+        val entries = page.getJSONArray(ProtocolFields.Entries)
+        if (cursor(page) != job.cursor || integer(page, ProtocolFields.Offset) != EmptyCount.toLong()
+            || integer(page, ProtocolFields.TotalEntries) != entries.length().toLong()) fail(SpotifyPlayerFailureReason.InvalidResponse)
+        requireCurrent(job)
+        requireCursor(coordinator.snapshot(), job)
+        return (EmptyCount until entries.length()).map { position -> JSONObject(entries.getJSONObject(position).toString()) }
+    }
+
+    private fun selectedOccurrence(job: Job, track: SpotifyHostTrack): String {
+        val matches = synchronized(monitor) { knownMappings.filter { mapping -> mapping.spotifyTrackIdentifier == track.spotifyTrackIdentifier
+            && (track.occurrenceIdentifier == null || mapping.occurrenceIdentifier == track.occurrenceIdentifier) } }
+            .filter { mapping -> job.queueEntries.any { entry -> entry.getString(ProtocolFields.EntryIdentifier) == mapping.occurrenceIdentifier
+                && entry.getString(ProtocolFields.RecordingIdentifier) == mapping.recordingIdentifier } }
+        if (matches.size != SingleEntry) fail(SpotifyPlayerFailureReason.Unavailable)
+        return matches.single().occurrenceIdentifier
+    }
+
+    private fun reconcileQueue(job: Job, before: JSONObject, recordings: List<Pair<SpotifyHostTrack, SpotifyHostRecordingResolution.Matched>>) {
+        val action = job.request.command
+        val current = before.optJSONObject(ProtocolFields.CurrentEntry)?.getString(ProtocolFields.EntryIdentifier) ?: fail(SpotifyPlayerFailureReason.Conflict)
+        val selected = if (action is SpotifyHostCommand.Play) action.selectedOccurrenceIdentifier ?: recordings.firstOrNull()?.first?.occurrenceIdentifier else current
+        val desired = recordings.map { recording -> recording.first.occurrenceIdentifier ?: fail(SpotifyPlayerFailureReason.InvalidInput) }
+        if (selected !in desired || current !in desired) fail(SpotifyPlayerFailureReason.InvalidInput)
+        val existing = job.queueEntries.associateBy { entry -> entry.getString(ProtocolFields.EntryIdentifier) }
+        recordings.forEach { (track, recording) ->
+            val original = existing[requireNotNull(track.occurrenceIdentifier)]
+            if (original != null && original.getString(ProtocolFields.RecordingIdentifier) != recording.recordingIdentifier) fail(SpotifyPlayerFailureReason.InvalidInput)
+        }
+        val removed = existing.keys.filter { occurrence -> occurrence !in desired }
+        if (removed.isNotEmpty()) executeQueueStep(job, PlayerOperation.Remove) { command -> command.put(ProtocolFields.EntryIdentifiers, JSONArray(removed)) }
+        val appended = recordings.filter { recording -> recording.first.occurrenceIdentifier !in existing }
+        if (appended.isNotEmpty()) executeQueueStep(job, PlayerOperation.Append) { command ->
+            val entries = JSONArray()
+            appended.forEach { (track, recording) -> entries.put(JSONObject().put(ProtocolFields.EntryIdentifier, track.occurrenceIdentifier)
+                .put(ProtocolFields.RecordingIdentifier, recording.recordingIdentifier).put(ProtocolFields.Title, recording.title).put(ProtocolFields.Artist, recording.artist)) }
+            command.put(ProtocolFields.Entries, entries)
+        }
+        val order = job.queueEntries.map { entry -> entry.getString(ProtocolFields.EntryIdentifier) }.filter { occurrence -> occurrence !in removed }.toMutableList()
+        order.addAll(appended.map { recording -> requireNotNull(recording.first.occurrenceIdentifier) })
+        var next: String? = null
+        desired.asReversed().forEach { occurrence ->
+            val actualPosition = order.indexOf(occurrence)
+            val expectedPosition = if (next == null) order.lastIndex else order.indexOf(next) - PositionIncrement
+            if (actualPosition != expectedPosition) {
+                executeQueueStep(job, PlayerOperation.Move) { command -> command.put(ProtocolFields.EntryIdentifier, occurrence)
+                    .put(ProtocolFields.BeforeEntryIdentifier, next ?: JSONObject.NULL) }
+                order.remove(occurrence)
+                val insertionPosition = if (next == null) order.size else order.indexOf(next)
+                order.add(insertionPosition, occurrence)
+            }
+            next = occurrence
+        }
+        if (selected != current) executeQueueStep(job, PlayerOperation.Select) { command -> command.put(ProtocolFields.EntryIdentifier, selected)
+            .put(ProtocolFields.PlayWhenReady, if (action is SpotifyHostCommand.Play) !action.initiallyPaused else before.getString(ProtocolFields.PlaybackIntent) != PauseIntent) }
+        else if (action is SpotifyHostCommand.Play && action.initiallyPaused != (before.getString(ProtocolFields.PlaybackIntent) == PauseIntent)) {
+            executeQueueStep(job, if (action.initiallyPaused) PlayerOperation.Pause else PlayerOperation.Play) {}
+        }
+        requireCurrent(job)
+        finish(job, SpotifyHostPlayerAccepted(job.request, snapshot(job.identity), recordings.map { recording -> recording.first },
+            recordings.map { recording -> SpotifyHostResolvedTrack(recording.first, recording.second.recordingIdentifier) }), null)
+    }
+
+    private fun executeQueueStep(job: Job, operation: PlayerOperation, augment: (JSONObject) -> Unit) {
+        requireCurrent(job)
+        requireCursor(coordinator.snapshot(), job)
+        val identifier = identifiers.nextIdentifier()
+        if (!validIdentifier(identifier)) fail(SpotifyPlayerFailureReason.InvalidInput)
+        val command = JSONObject().put(ProtocolFields.Operation, operation.protocolValue).put(ProtocolFields.RequestIdentifier, identifier)
+            .put(ProtocolFields.EngineEpoch, job.identity.playerIdentity.engineEpoch).put(ProtocolFields.AuthenticationEpoch, job.identity.playerIdentity.authenticationEpoch)
+            .put(ProtocolFields.ExpectedQueueIdentifier, job.cursor.queueIdentifier).put(ProtocolFields.ExpectedQueueRevision, job.cursor.queueRevision)
+            .put(ProtocolFields.ExpectedPlaybackControlRevision, job.cursor.controlRevision)
+        augment(command)
+        synchronized(monitor) { requireCurrent(job); job.dispatched = true }
+        val receipt = JSONObject(coordinator.execute(command.toString()))
+        requireCurrent(job)
+        if (receipt.get(ProtocolFields.RequestIdentifier) != identifier || receipt.get(ProtocolFields.Status) != PlayerProtocol.AppliedStatus) fail(SpotifyPlayerFailureReason.UnknownOutcome)
+        val accepted = snapshot(job.identity)
+        if (cursor(receipt) != accepted.cursor) fail(SpotifyPlayerFailureReason.UnknownOutcome)
+        job.cursor = accepted.cursor
+    }
+
     private fun snapshot(identity: SpotifyHostIdentity): SpotifyHostPlayerSnapshot {
         if (!validIdentity(identity)) fail(SpotifyPlayerFailureReason.InvalidInput)
         if (retired || !isCurrent(identity)) fail(SpotifyPlayerFailureReason.Superseded)
@@ -271,7 +406,7 @@ class SpotifyHostPlayerPort(
             integer(value, ProtocolFields.PositionMilliseconds), if (value.isNull(ProtocolFields.DurationMilliseconds)) null else integer(value, ProtocolFields.DurationMilliseconds),
             integer(value, ProtocolFields.SampledAtMonotonicMilliseconds), ready, paused, state == PlayerProtocol.BufferingState || state == PlayerProtocol.ResolvingState, value.isNull(ProtocolFields.ExternalAuthorityIdentifier))
     }
-    private fun requireCursor(value: JSONObject, job: Job) { requireIdentity(value, job.identity); if (cursor(value) != job.expected) fail(SpotifyPlayerFailureReason.Conflict) }
+    private fun requireCursor(value: JSONObject, job: Job) { requireIdentity(value, job.identity); if (cursor(value) != job.cursor) fail(SpotifyPlayerFailureReason.Conflict) }
     private fun requireIdentity(value: JSONObject, identity: SpotifyHostIdentity) {
         val selected = value.getJSONObject(ProtocolFields.Cursor)
         if (selected.get(ProtocolFields.EngineEpoch) != identity.playerIdentity.engineEpoch || selected.get(ProtocolFields.AuthenticationEpoch) != identity.playerIdentity.authenticationEpoch) fail(SpotifyPlayerFailureReason.Superseded)
@@ -314,6 +449,8 @@ class SpotifyHostPlayerPort(
     private fun fail(reason: SpotifyPlayerFailureReason): Nothing = throw SpotifyPlayerFailure(reason)
     private class Job(val identity: SpotifyHostIdentity, val expected: SpotifyHostPlayerCursor, val request: SpotifyHostCommandRequest, val deadline: Long) {
         val completion = CompletableFuture<SpotifyHostPlayerAccepted>()
+        var cursor = expected
+        var queueEntries = emptyList<JSONObject>()
         @Volatile var dispatched = false
         var resolution: SpotifyPlayerOperation<SpotifyHostRecordingResolution>? = null
         var timer: SpotifyNativeFollowerCancellation? = null
@@ -330,6 +467,8 @@ class SpotifyHostPlayerPort(
         private const val MaximumCommandLifetimeMilliseconds = SpotifyHostingPolicy.MaximumIncomingCommandLifetimeMilliseconds
         private const val MinimumElapsedMilliseconds = 0L
         private const val EmptyCount = 0
+        private const val SingleEntry = 1
+        private const val QueueRevisionSeparator = ":"
         private const val PositionIncrement = 1
         private const val PauseIntent = "pause"
         private val ReadyStates = setOf(PlayerProtocol.PlayingState, PlayerProtocol.PausedState)

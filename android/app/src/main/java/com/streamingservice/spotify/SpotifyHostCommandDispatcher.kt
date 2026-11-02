@@ -36,6 +36,7 @@ class SpotifyHostCommandDispatcher(
                 if (previous.incoming.request != command.request) acknowledge(command.key, false)
                 continue
             }
+            if (jobs.size >= maximumJournalEntries) jobs.entries.firstOrNull { entry -> entry.value.done }?.let { entry -> jobs.remove(entry.key) }
             if (jobs.size >= maximumJournalEntries || pending.size + (if (active == null) EmptyCount else ActiveCount) >= maximumPendingCommands) {
                 acknowledge(command.key, false); continue
             }

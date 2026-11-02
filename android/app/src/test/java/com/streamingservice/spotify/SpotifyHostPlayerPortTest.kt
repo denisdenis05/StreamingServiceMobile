@@ -179,10 +179,10 @@ class SpotifyHostPlayerPortTest {
         assertFailure(append.result, SpotifyPlayerFailureReason.Cancelled); assertEquals(TwoEntries, fixture.queueLength())
         assertTrue(fixture.resolver.canceled)
     }
-    @Test fun boundedJournalRejectsNewRequestsWithoutEvictingExecutionHistory() {
+    @Test fun boundedJournalRetiresCompletedReceiptsSoNewCommandsContinue() {
         val fixture = Fixture(SingleExecution); fixture.play()
-        val operation = fixture.execute(SpotifyHostCommand.Pause); assertFailure(operation.result, SpotifyPlayerFailureReason.Capacity)
-        assertEquals(SingleExecution, fixture.executions.size)
+        val operation = fixture.execute(SpotifyHostCommand.Pause); fixture.main.drain(); operation.result.get()
+        assertEquals(TwoExecutions, fixture.executions.size); assertTrue(fixture.sample().paused)
     }
     @Test fun malformedReceiptsStayUnknownAndNeverAcknowledgeExecution() {
         val fixture = Fixture(); fixture.play(); fixture.receiptOverride = MalformedReceipt
