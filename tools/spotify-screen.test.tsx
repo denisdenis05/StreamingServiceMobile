@@ -26,7 +26,7 @@ import {
 import { SpotifyAuthorizationReturnStatus } from '../src/services/spotify/SpotifyLoginBrowser';
 import { SpotifyPlayerJamMode } from '../src/services/spotify/SpotifyPlayerJamController';
 import { SpotifyHostingFailureStage } from '../src/services/spotify/SpotifyHostingStore';
-import { SpotifyHostingFailureMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyHostingFailureMessages, SpotifyHostingFailureDetailMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyConnectStatus } from '../src/services/spotify/SpotifyConnectStore';
 import { SettingsRoutes } from '../src/pages/Settings/Settings.routes';
 import { SpotifySettingsCopy } from '../src/pages/Settings/SpotifySettings.copy';
@@ -60,6 +60,7 @@ const Fixture = Object.freeze({
   singleInvocationCount: 1,
 });
 const Names = Object.freeze({
+  catalogRejection: 'Jam membership catalog rejection in %s does not ask users to change developer settings',
   matchingFailure:
     'Created membership retains visible matching failure when shared hosting fails',
   membershipPreparing:
@@ -1208,3 +1209,11 @@ test(SpotifySettingsTestNames.advancedDevice, async () => {
   await act(async () => button(SpotifyJamCopy.advancedDevices).props.onPress());
   expect(input(SpotifyJamCopy.manualDevicePlaceholder)).toBeDefined();
 });
+test.each([SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation])(
+  Names.catalogRejection, async failureStage => {
+    snapshot = connection(true, true);
+    sharingSnapshot = { pending: false, mode: SpotifyPlayerJamMode.Failed, failure: IntegrationFailureCode.InvalidInput, failureStage };
+    await render(); const presentation = JSON.stringify(rendered.toJSON());
+    expect(presentation).toContain(SpotifyHostingFailureDetailMessages.catalogRequestRejected);
+    expect(presentation).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.InvalidInput]);
+  });

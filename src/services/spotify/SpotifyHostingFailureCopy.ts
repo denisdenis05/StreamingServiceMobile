@@ -1,5 +1,10 @@
 import { SpotifyHostingQueueIssue, SpotifyHostingQueuePolicy } from './SpotifyHostingQueue';
 import { SpotifyHostingFailureStage } from './SpotifyHostingStore';
+import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { SpotifyFailureMessages } from './SpotifyMobilePolicy';
+export const SpotifyHostingFailureDetailMessages = Object.freeze({
+  catalogRequestRejected: 'Spotify rejected the song catalog request. You can still play music locally in this app.',
+});
 export const SpotifyHostingFailureMessages: Readonly<Record<SpotifyHostingFailureStage, string>> = Object.freeze({
   [SpotifyHostingFailureStage.Validation]: 'Could not validate sharing for this Jam.',
   [SpotifyHostingFailureStage.Cleanup]: 'Could not stop the previous shared playback.',
@@ -22,4 +27,14 @@ export const SpotifyHostingQueueIssueMessages: Readonly<Record<SpotifyHostingQue
 });
 export function spotifyHostingQueueIssueMessage(queueIssue: SpotifyHostingQueueIssue | null | undefined): string | null {
   return queueIssue === undefined || queueIssue === null ? null : SpotifyHostingQueueIssueMessages[queueIssue] ?? null;
+}
+export function spotifyHostingFailureDetail(
+  stage: SpotifyHostingFailureStage | null | undefined,
+  failure: IntegrationFailureCode | null,
+): string | null {
+  if (failure === null) return null;
+  if (failure === IntegrationFailureCode.InvalidInput &&
+    (stage === SpotifyHostingFailureStage.CatalogMatching || stage === SpotifyHostingFailureStage.RecordingPreparation))
+    return SpotifyHostingFailureDetailMessages.catalogRequestRejected;
+  return SpotifyFailureMessages[failure];
 }

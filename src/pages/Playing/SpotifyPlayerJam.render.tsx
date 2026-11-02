@@ -14,9 +14,9 @@ import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamCon
 import { SpotifyUpcomingQueueCopy } from '../../services/spotify/SpotifyUpcomingQueueCopy';
 import {
   SpotifyHostingFailureMessages,
+  spotifyHostingFailureDetail,
   spotifyHostingQueueIssueMessage,
 } from '../../services/spotify/SpotifyHostingFailureCopy';
-import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
 import { SpotifyJamRoute } from '../SpotifyJam/SpotifyJam.copy';
 import { SettingsIcon, SettingsSymbol } from '../Settings/Settings.icons';
 export const PlayerJamCopy = Object.freeze({
@@ -293,7 +293,7 @@ export default function SpotifyPlayerJam({
               )}
               {!queueIssueMessage && snapshot.failure !== null && (
                 <Text accessibilityRole="alert" style={styles.subtitle}>
-                  {SpotifyFailureMessages[snapshot.failure]}
+                  {spotifyHostingFailureDetail(snapshot.failureStage, snapshot.failure)}
                 </Text>
               )}
               <Text style={styles.subtitle}>{PlayerJamCopy.stoppedHelp}</Text>

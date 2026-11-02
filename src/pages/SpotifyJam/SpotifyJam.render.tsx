@@ -19,6 +19,7 @@ import DefaultButton from '../../components/DefaultButton/DefaultButton.render';
 import { playerJam } from '../../services/PlayerJamRuntime';
 import {
   SpotifyHostingFailureMessages,
+  spotifyHostingFailureDetail,
   spotifyHostingQueueIssueMessage,
 } from '../../services/spotify/SpotifyHostingFailureCopy';
 import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
@@ -377,7 +378,7 @@ export default function SpotifyJam({
                   )}
                   {!queueIssueMessage && (
                     <DefaultText style={styles.error}>
-                      {SpotifyFailureMessages[sharing.failure]}
+                      {spotifyHostingFailureDetail(sharing.failureStage, sharing.failure)}
                     </DefaultText>
                   )}
                   {session &&

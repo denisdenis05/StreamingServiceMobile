@@ -6,7 +6,9 @@ import { TextInput } from 'react-native';
 import DefaultButton from '../src/components/DefaultButton/DefaultButton.render';
 import { SpotifyHostingFailureStage, SpotifyHostingStatus } from '../src/services/spotify/SpotifyHostingStore';
 import { SpotifyPlayerJamMode } from '../src/services/spotify/SpotifyPlayerJamController';
-import { SpotifyHostingFailureMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyHostingFailureMessages, SpotifyHostingFailureDetailMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyFailureMessages } from '../src/services/spotify/SpotifyMobilePolicy';
+import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
 import type { SpotifyHostingSnapshot } from '../src/services/spotify/SpotifyHostingStore';
 import { SpotifyListeningCountryStore } from '../src/services/spotify/SpotifyListeningCountryStore';
 const country = new SpotifyListeningCountryStore({ deviceRegion: () => null, read: async () => null, write: async () => undefined });
@@ -64,3 +66,10 @@ test('Available queue hosting dispatches through the guarded player controller',
   await act(async () => button(SpotifyHostingCopy.start).props.onPress());
   expect(player.startHosting).toHaveBeenCalledTimes(Fixture.single);
 });
+test.each([SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation])(
+  'Hosting catalog rejection in %s explains local playback without requesting client credentials', async failureStage => {
+    snapshot = { status: SpotifyHostingStatus.Failed, failure: IntegrationFailureCode.InvalidInput, failureStage };
+    await mount(); const presentation = JSON.stringify(rendered.toJSON());
+    expect(presentation).toContain(SpotifyHostingFailureDetailMessages.catalogRequestRejected);
+    expect(presentation).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.InvalidInput]);
+  });

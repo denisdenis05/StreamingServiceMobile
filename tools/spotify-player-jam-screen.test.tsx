@@ -1,5 +1,7 @@
 import { SpotifyHostingQueueIssue } from '../src/services/spotify/SpotifyHostingQueue';
-import { SpotifyHostingQueueIssueMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyHostingQueueIssueMessages, SpotifyHostingFailureDetailMessages } from '../src/services/spotify/SpotifyHostingFailureCopy';
+import { SpotifyHostingFailureStage } from '../src/services/spotify/SpotifyHostingStore';
+import { SpotifyFailureMessages } from '../src/services/spotify/SpotifyMobilePolicy';
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
@@ -101,3 +103,10 @@ test('Owner following offers app selection guidance without an unusable host-cur
   expect(rendered.root.findAllByType(Text).some(text => text.props.children === PlayerJamCopy.ownerSelection)).toBe(true);
   expect(store.startSharing).not.toHaveBeenCalled();
 });
+test.each([SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation])(
+  'Player catalog rejection in %s keeps correction focused on Spotify catalog access', async failureStage => {
+    snapshot = { ...snapshot, mode: SpotifyPlayerJamMode.Failed, failure: IntegrationFailureCode.InvalidInput, failureStage };
+    await mount(); const presentation = JSON.stringify(rendered.toJSON());
+    expect(presentation).toContain(SpotifyHostingFailureDetailMessages.catalogRequestRejected);
+    expect(presentation).not.toContain(SpotifyFailureMessages[IntegrationFailureCode.InvalidInput]);
+  });

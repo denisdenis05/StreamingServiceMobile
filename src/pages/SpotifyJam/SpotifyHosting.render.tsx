@@ -6,8 +6,7 @@ import { spotifyHosting, spotifyListeningCountry } from '../../services/SpotifyM
 import { playerJam } from '../../services/PlayerJamRuntime';
 import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
 import { SpotifyHostingStatus } from '../../services/spotify/SpotifyHostingStore';
-import { SpotifyHostingFailureMessages, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
-import { SpotifyFailureMessages } from '../../services/spotify/SpotifyMobilePolicy';
+import { SpotifyHostingFailureMessages, spotifyHostingFailureDetail, spotifyHostingQueueIssueMessage } from '../../services/spotify/SpotifyHostingFailureCopy';
 import { spotifyJamStyles as styles } from './SpotifyJam.style';
 export const SpotifyHostingCopy = Object.freeze({ title: 'Host from this app',
   explanation: 'Uses your current app queue and library audio. Your Spotify account must own the Jam and have a registered native connection.',
@@ -40,6 +39,6 @@ export default function SpotifyHosting() {
     {message && <DefaultText>{message}</DefaultText>}
     {queueIssueMessage && <DefaultText style={styles.error}>{queueIssueMessage}</DefaultText>}
     {!queueIssueMessage && snapshot.failureStage && <DefaultText style={styles.error}>{SpotifyHostingFailureMessages[snapshot.failureStage]}</DefaultText>}
-    {!queueIssueMessage && snapshot.failure !== null && <DefaultText style={styles.error}>{SpotifyFailureMessages[snapshot.failure]}</DefaultText>}
+    {!queueIssueMessage && snapshot.failure !== null && <DefaultText style={styles.error}>{spotifyHostingFailureDetail(snapshot.failureStage, snapshot.failure)}</DefaultText>}
   </View>;
 }

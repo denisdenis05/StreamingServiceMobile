@@ -138,3 +138,13 @@ absent player host action with owner selection guidance.
 Passed `npx tsc --project tsconfig.spotify.json` plus the controller suite (58
 cases), the four Spotify screen/hosting/player/composition Jest suites (88 cases),
 and `npx tsc --noEmit`. No device or Spotify network operation was performed.
+
+## Catalog request rejection guidance — 2026-11-02
+
+InvalidInput during catalog matching/recording preparation now explains that
+Spotify rejected the catalog request and that local playback remains available.
+The player modal, hosting panel and membership panel share one detail helper.
+Other stages and rate-limit/authentication/network guidance retain their existing
+messages. Dedicated helper matrix and each surface's UI regression pass.
+Integrated `npm run test:spotify`: 698 Node and 199 Jest passed; TypeScript passes.
+These source checks do not establish successful native host activation.

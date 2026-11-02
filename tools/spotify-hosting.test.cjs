@@ -3,6 +3,8 @@ const assertion = require('node:assert/strict');
 const { SpotifyHostingStore, SpotifyHostingStatus, SpotifyHostingFailureStage } = require('../.build/spotify/SpotifyHostingStore');
 const { SpotifyHostingQueueFailure, SpotifyHostingQueueIssue } = require('../.build/spotify/SpotifyHostingQueue');
 const { IntegrationFailureCode } = require('streaming-service-spotify-jam');
+const { SpotifyHostingFailureDetailMessages, spotifyHostingFailureDetail } = require('../.build/spotify/SpotifyHostingFailureCopy');
+const { SpotifyFailureMessages } = require('../.build/spotify/SpotifyMobilePolicy');
 const Fixture = Object.freeze({ account: 'synthetic-account', spotify: 'synthetic-spotify', jam: 'synthetic-jam', device: 'synthetic-device', previous: 'synthetic-host',
   address: 'https://synthetic.example/', token: 'synthetic-token', handle: 3, generation: 7, market: 'GB', track: '4uLU6hMCjMI75M1A2tKUQC',
   queue: 'synthetic-queue', occurrence: 'synthetic-occurrence', recording: 'synthetic-recording', engine: 'synthetic-engine', authentication: 'synthetic-authentication',
@@ -234,4 +236,23 @@ test('Untrusted queue issues and raw messages cannot enter hosting snapshots', a
   await current.store.start(Fixture.market);
   assertion.equal(current.store.getSnapshot().queueIssue, null);
   assertion.equal(JSON.stringify(current.store.getSnapshot()).includes(Fixture.privateFailure), false);
+});
+for (const stage of [SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation]) {
+  test(`Catalog rejection in ${stage} reports Spotify request failure without asking for client credentials`, () => {
+    assertion.equal(spotifyHostingFailureDetail(stage, IntegrationFailureCode.InvalidInput),
+      SpotifyHostingFailureDetailMessages.catalogRequestRejected);
+  });
+}
+for (const failure of [IntegrationFailureCode.RateLimited, IntegrationFailureCode.Unauthorized, IntegrationFailureCode.Network]) {
+  test(`Hosting detail retains actionable ${failure} guidance for catalog matching and recording preparation`, () => {
+    for (const stage of [SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation])
+      assertion.equal(spotifyHostingFailureDetail(stage, failure), SpotifyFailureMessages[failure]);
+  });
+}
+test('Noncatalog validation and absent stage retain ordinary invalid-input guidance', () => {
+  for (const stage of [SpotifyHostingFailureStage.Validation, SpotifyHostingFailureStage.NativeActivation, null, undefined])
+    assertion.equal(spotifyHostingFailureDetail(stage, IntegrationFailureCode.InvalidInput), SpotifyFailureMessages[IntegrationFailureCode.InvalidInput]);
+});
+test('Hosting detail without an actual failure is absent even when a catalog stage is retained', () => {
+  assertion.equal(spotifyHostingFailureDetail(SpotifyHostingFailureStage.CatalogMatching, null), null);
 });
