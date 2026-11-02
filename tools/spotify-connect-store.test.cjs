@@ -313,7 +313,7 @@ test(ReadFixture.names.fresh, async () => {
   const current = fixture(); await current.attach(); current.send(registration());
   const observed = await current.store.read(Fixture.account, CommandFixture.host, new AbortController().signal);
   assert.equal(observed.currentTrack.occurrenceIdentifier, ReadFixture.occurrence);
-  assert.equal(observed.playback.observedMonotonicMilliseconds, ReadFixture.received);
+  assert.equal(observed.playback.observedMonotonicMilliseconds, ReadFixture.received - (ReadFixture.nativeSample - ReadFixture.nativeEnd));
   assert.deepEqual(current.calls.reads, [{ identifier: current.calls.starts[Fixture.zero].identifier, generation: Fixture.generation }]);
   await current.store.detach();
 });
