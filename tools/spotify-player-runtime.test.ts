@@ -4,7 +4,7 @@ const Imports = Object.freeze({ runtime: '../src/services/PlayerJamRuntime', acc
   country: '../src/services/SpotifyListeningCountryPlatform', catalog: '../src/services/SpotifyRecordingCatalogPlatform', hosting: '../src/services/spotify/SpotifyHostingStore', controller: '../src/services/spotify/SpotifyPlayerJamController', lifecycle: '../src/services/player/PlaybackQueueChangeLifecycle' });
 const Fixture = Object.freeze({ account: 'application-test-account', replacementAccount: 'replacement-test-account',
   spotifyAccount: 'spotify-test-account', session: 'jam-test-session', host: 'host-test-device',
-  country: 'RO', invitation: 'synthetic-test-invitation', recording: 'synthetic-recording', openerRecording: 'synthetic-opener-recording', clear: 'clear', replace: 'replace',
+  country: 'RO', invitation: 'synthetic-test-invitation', recording: 'synthetic-recording', openerRecording: 'synthetic-opener-recording', clear: 'clear', replace: 'replace', select: 'select',
   firstGeneration: 1, handle: 1, zero: 0 });
 const { JamConnectionStatus, SharedPlaybackStatus, IntegrationFailureCode, JamJoinMode } = require('streaming-service-spotify-jam');
 const { SpotifyHostingStatus } = require(Imports.hosting);
@@ -41,7 +41,7 @@ jest.doMock(Imports.country, () => ({ spotifyListeningCountry: country }));
 jest.doMock(Imports.catalog, () => ({ spotifyObservedRecordings: { captureScope: () => null, remember: jest.fn() } }));
 jest.doMock(Imports.lifecycle, () => ({ playbackQueueChanges: { attach: (lifecycle: { prepare: typeof prepareQueueChange }) => {
   prepareQueueChange = lifecycle.prepare; return () => undefined;
-} }, PlaybackQueueChangeKind: { Clear: Fixture.clear, Replace: Fixture.replace } }));
+} }, PlaybackQueueChangeKind: { Clear: Fixture.clear, Replace: Fixture.replace, Select: Fixture.select } }));
 jest.doMock(Imports.mobile, () => ({ spotifyMobile: mobile,
   spotifyConnect: { subscribe, getPlaybackConnection: () => nativeConnection, getSnapshot: () => ({ deviceIdentifier: Fixture.host }) },
   spotifyHosting: { subscribe, getSnapshot: () => hosting, start: startHosting, stop, prepareRecordings, publishLocalChanges: stop },
@@ -143,4 +143,18 @@ test('Runtime composition passes the actual selected album recording to active-h
     selectedRecordingIdentifier: Fixture.recording, isCurrent: () => true, acknowledgeAuthorityRelease: async () => undefined });
   expect(prepareRecordings).toHaveBeenCalledWith([Fixture.recording]);
   await receipt.committed(); playerJam.dispose();
+});
+
+
+test('Actual queue selection after a failed remote match retires the old host and restarts after the real receipt', async () => {
+  session = membership(true); hosting = { status: SpotifyHostingStatus.Resolving, failure: IntegrationFailureCode.NotFound };
+  const { playerJam } = require(Imports.runtime);
+  const receipt = await prepareQueueChange({ kind: Fixture.select, tracks: [], isCurrent: () => true,
+    async acknowledgeAuthorityRelease() {} });
+  expect(stop).toHaveBeenCalledTimes(Fixture.firstGeneration);
+  expect(startHosting).not.toHaveBeenCalled();
+  await receipt.committed();
+  expect(startHosting).toHaveBeenCalledWith(Fixture.country);
+  expect(playerJam.getSnapshot().mode).toBe(SpotifyPlayerJamMode.Hosting);
+  playerJam.dispose();
 });

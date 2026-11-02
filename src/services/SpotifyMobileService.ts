@@ -1,8 +1,8 @@
 import { spotifyMatchingDiagnostic, SpotifyMatchingDiagnosticTag } from './spotify/SpotifyMatchingDiagnostic';
 import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
   SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
-  SystemScheduler } from 'streaming-service-spotify-jam';
-import type { SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
+  QueueSide, SystemScheduler } from 'streaming-service-spotify-jam';
+import type { ControllableQueueDependencies, SpotifyLoginConfiguration, SpotifyLoginCredentialStore, SpotifyLoginStage } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { createSpotifyRecordingCatalog, spotifyObservedRecordings } from './SpotifyRecordingCatalogPlatform';
 import { createSpotifyRecordingImportMatcher } from './SpotifyRecordingImportPlatform';
@@ -38,6 +38,8 @@ import { AppState, Linking } from 'react-native';
 import { SpotifyHostingStore } from './spotify/SpotifyHostingStore';
 import { captureSpotifyHostingQueue } from './spotify/SpotifyHostingQueue';
 import { spotifyHostingNative, observeSpotifyHosting } from './SpotifyHostingPlatform';
+import { SpotifyControllableQueuePort } from './spotify/SpotifyControllableQueuePort';
+import type { SpotifyControllableQueueNative } from './spotify/SpotifyControllableQueuePort';
 
 const MobileHostingEmptyHost = '';
 const MobileCompositionPolicy = Object.freeze({ identifierRadix: 36, initialSequence: 0, sequenceIncrement: 1,
@@ -78,6 +80,36 @@ export const spotifyConnect = new SpotifyConnectStore({ clock: playbackClock, na
     if (runtime) void runtime.membership.refresh().catch(() => undefined);
   },
 });
+
+function controllableQueues(applicationAccountIdentifier: string, spotifyAccountIdentifier: string): ControllableQueueDependencies | null {
+  const native = spotifyHostingNative();
+  if (!native?.getHostingQueue || !native.applyHostingQueue) return null;
+  const bridge: SpotifyControllableQueueNative = {
+    getHostingQueue: side => native.getHostingQueue!(side),
+    applyHostingQueue: (side, serialized) => native.applyHostingQueue!(side, serialized),
+  };
+  const getScope = () => {
+    const account = authenticationSession.getSnapshot();
+    const mobile = spotifyMobile.getSnapshot();
+    const session = mobile.session?.session;
+    const connection = spotifyConnect.getPlaybackConnection(spotifyAccountIdentifier);
+    if (!account.isLoggedIn || account.accountIdentifier !== applicationAccountIdentifier || !mobile.connected
+      || mobile.session?.accountIdentifier !== spotifyAccountIdentifier || !session?.active
+      || !session.ownedByCurrentAccount || !connection) return null;
+    return JSON.stringify([applicationAccountIdentifier, spotifyAccountIdentifier, session.identifier, connection]);
+  };
+  return {
+    local: new SpotifyControllableQueuePort({ native: bridge, side: QueueSide.Local, getScope }),
+    spotify: new SpotifyControllableQueuePort({ native: bridge, side: QueueSide.Spotify, getScope }),
+    mapper: { async map(entry, destination, cancellation) {
+      if (cancellation.aborted) throw new IntegrationFailure(IntegrationFailureCode.Canceled);
+      if (getScope() === null) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      return destination === QueueSide.Spotify ? entry.spotifyIdentifier === null ? null : entry
+        : entry.recordingIdentifier === null ? null : entry;
+    } },
+    operationIdentifiers: nextIdentifier,
+  };
+}
 
 export const spotifyMobile = new SpotifyMobileController({
   nativeConnection: spotifyConnect,
@@ -132,7 +164,9 @@ export const spotifyMobile = new SpotifyMobileController({
   connect(identity, credentials, selection) {
     const account = authenticationSession.getSnapshot();
     if (account.accountIdentifier === null || account.token === null) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
+    const queues = selection.useNativeConnect ? controllableQueues(account.accountIdentifier, identity.accountIdentifier) : null;
     return spotifyIntegration.connect({ accountIdentifier: identity.accountIdentifier, credentials,
+      ...(queues === null ? {} : { controllableQueues: queues }),
       endpoints: { resolveServiceOrigin: cancellation => identity.serviceOrigin === null
         ? gateway.resolveServiceOrigin(cancellation) : Promise.resolve(identity.serviceOrigin) },
       recordings: createSpotifyRecordingCatalog(TEMPORARY_API_URL, account.accountIdentifier, account.token),

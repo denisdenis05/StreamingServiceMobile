@@ -1,6 +1,7 @@
 import { IntegrationFailure, IntegrationFailureCode } from 'streaming-service-spotify-jam';
 import { SpotifyHostingQueueFailure, SpotifyHostingQueueIssue } from './SpotifyHostingQueue';
 import type { SpotifyHostingQueue } from './SpotifyHostingQueue';
+import type { SpotifyControllableQueueNative } from './SpotifyControllableQueuePort';
 
 export enum SpotifyHostingStatus { Stopped = 'Stopped', Resolving = 'Resolving', Preparing = 'Preparing', Starting = 'Starting', Hosting = 'Hosting', Stopping = 'Stopping', Failed = 'Failed' }
 export enum SpotifyHostingFailureStage { Validation = 'Validation', Cleanup = 'Cleanup', PlayerReadiness = 'PlayerReadiness', QueueCapture = 'QueueCapture', CatalogMatching = 'CatalogMatching', QueueValidation = 'QueueValidation', Authentication = 'Authentication', NativeActivation = 'NativeActivation', Observation = 'Observation', Publication = 'Publication', RecordingPreparation = 'RecordingPreparation', Stop = 'Stop' }
@@ -14,7 +15,7 @@ export interface SpotifyHostingContext {
   readonly handle: number;
   readonly generation: number;
 }
-export interface SpotifyHostingNative {
+export interface SpotifyHostingNative extends Partial<SpotifyControllableQueueNative> {
   prepareHostingRecordings?(serialized: string): Promise<void>;
   publishHostingChanges?(): Promise<void>;
   startHosting(serialized: string): Promise<string>;

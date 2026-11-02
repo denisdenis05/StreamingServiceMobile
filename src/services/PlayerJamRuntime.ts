@@ -4,6 +4,7 @@ import {
   IntegrationFailureCode,
   JamConnectionStatus,
   JamJoinMode,
+  QueueSide,
 } from 'streaming-service-spotify-jam';
 import { authenticationSession } from './AuthenticationService';
 import { spotifyIntegration } from './SpotifyIntegration';
@@ -132,6 +133,12 @@ export const playerJam = new SpotifyPlayerJamController({
   prepareRecordings: identifiers =>
     spotifyHosting.prepareRecordings(identifiers),
   publishLocalChanges: () => spotifyHosting.publishLocalChanges(),
+  synchronizeQueue: async () => {
+    const runtime = spotifyIntegration.runtime;
+    if (!runtime?.queueSynchronization) return;
+    await runtime.queueSynchronization.synchronize(QueueSide.Spotify, new AbortController().signal);
+    if (runtime !== spotifyIntegration.runtime) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+  },
   remoteControl: kind => remote(() => spotifyPlaybackCommands.execute(kind)),
   remoteSeek: seconds => remote(() => spotifyPlaybackCommands.seek(seconds)),
 });
@@ -147,6 +154,7 @@ const removeQueueLifecycle = playbackQueueChanges.attach({
         ? request.acknowledgeAuthorityRelease
         : undefined,
       request.kind === PlaybackQueueChangeKind.Replace ? request.selectedRecordingIdentifier : undefined,
+      request.kind === PlaybackQueueChangeKind.Select,
     );
     return { committed };
   },

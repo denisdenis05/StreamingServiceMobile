@@ -19,7 +19,7 @@ function fixture(additionalDependencies = {}) {
   const controller = new SpotifyPlayerJamController({ getConnection: () => state.connection, getHosting: () => state.hosting,
     getFollowing: () => state.following, remoteControlsAvailable: () => state.remoteAllowed,
     subscribe(listener) { changed = listener; return () => undefined; },
-    async startHosting(market) { calls.host.push(market); if (state.startFailure) throw state.startFailure; state.hosting.status = SpotifyHostingStatus.Hosting; },
+    async startHosting(market) { calls.host.push(market); if (state.startFailure) throw state.startFailure; state.hosting.status = SpotifyHostingStatus.Hosting; state.hosting.failure = null; },
     async startFollowing(market) { calls.follow.push(market); state.following.status = SharedPlaybackStatus.Following; },
     async stopHosting() { calls.stopHost += Fixture.single; state.hosting.status = SpotifyHostingStatus.Stopped; },
     async stopFollowing() { calls.stopFollow += Fixture.single; if (state.mutation) await state.mutation.promise; state.following.status = SharedPlaybackStatus.Detached; },
@@ -384,4 +384,80 @@ test('A selected recording outside the incoming replacement cannot trigger nativ
   await assertion.rejects(current.controller.prepareQueueChange([Fixture.recording], () => true, false, undefined, Fixture.otherRecording),
     { code: IntegrationFailureCode.InvalidInput });
   assertion.deepEqual(current.calls.prepare, []);
+});
+
+for (const status of [SpotifyHostingStatus.Resolving, SpotifyHostingStatus.Failed]) {
+  test(`Owned replacement recovers a ${status} native mapping only after a real local receipt`, async () => {
+    const current = fixture(); current.controller.setMarket(Fixture.market);
+    current.state.hosting.status = status; current.state.hosting.failure = IntegrationFailureCode.NotFound;
+    current.changed();
+    const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false,
+      async () => undefined, Fixture.recording);
+    assertion.equal(current.calls.stopHost, Fixture.single);
+    assertion.equal(current.calls.host.length, Fixture.initial);
+    assertion.deepEqual(current.calls.prepare, []);
+    await current.local(); await committed(); await committed();
+    assertion.equal(current.calls.host.length, Fixture.single);
+    assertion.equal(current.controller.getSnapshot().mode, SpotifyPlayerJamMode.Hosting);
+    assertion.equal(current.controller.getSnapshot().failure, null);
+  });
+  test(`Selecting an existing queue occurrence recovers ${status} without replacing the local queue`, async () => {
+    const current = fixture(); current.controller.setMarket(Fixture.market); current.state.hosting.status = status; current.changed();
+    const committed = await current.controller.prepareQueueChange([], () => true, false, undefined, undefined, true);
+    assertion.equal(current.calls.stopHost, Fixture.single);
+    assertion.equal(current.calls.host.length, Fixture.initial);
+    await current.local(); await committed(); await committed();
+    assertion.equal(current.calls.host.length, Fixture.single);
+    assertion.equal(current.calls.stopFollow, Fixture.initial);
+    assertion.deepEqual(current.calls.prepare, []);
+  });
+}
+test('A canceled resolving queue selection cannot reactivate a retired account', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market); current.state.hosting.status = SpotifyHostingStatus.Resolving;
+  const committed = await current.controller.prepareQueueChange([], () => true, false, undefined, undefined, true);
+  current.state.connection.scopeIdentifier = Fixture.replacement; current.changed(); await committed();
+  assertion.equal(current.calls.host.length, Fixture.initial);
+});
+test('Resolving guests cannot recover host ownership through a local selection', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market); current.state.hosting.status = SpotifyHostingStatus.Resolving;
+  current.state.connection.owned = false; current.changed();
+  await assertion.rejects(current.controller.prepareQueueChange([], () => true, false, undefined, undefined, true),
+    { code: IntegrationFailureCode.Backpressure });
+  assertion.equal(current.calls.stopHost, Fixture.initial);
+  assertion.equal(current.calls.host.length, Fixture.initial);
+});
+test('Resolving future appends do not restart a host before a selected occurrence exists', async () => {
+  const current = fixture(); current.controller.setMarket(Fixture.market); current.state.hosting.status = SpotifyHostingStatus.Resolving;
+  await assertion.rejects(current.controller.prepareQueueChange([Fixture.otherRecording], () => true, false),
+    { code: IntegrationFailureCode.Backpressure });
+  assertion.equal(current.calls.stopHost, Fixture.initial);
+});
+
+test('Actual local queue receipt reaches the package queue port before native playback publication', async () => {
+  const order = [];
+  const current = fixture({ async synchronizeQueue() { order.push(Fixture.recording); },
+    async publishLocalChanges() { order.push(Fixture.otherRecording); } });
+  current.state.hosting.status = SpotifyHostingStatus.Hosting;
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false);
+  assertion.deepEqual(order, []);
+  await current.local(); await committed();
+  assertion.deepEqual(order, [Fixture.recording, Fixture.otherRecording]);
+});
+test('A changed Jam during package queue synchronization cannot publish the retired queue', async () => {
+  const synchronization = deferred(); const current = fixture({ synchronizeQueue: () => synchronization.promise });
+  current.state.hosting.status = SpotifyHostingStatus.Hosting;
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false);
+  const pending = committed(); current.state.connection.scopeIdentifier = Fixture.replacement; current.changed();
+  synchronization.resolve(); await pending;
+  assertion.equal(current.calls.publications, Fixture.initial);
+});
+test('A package queue write failure reports its code without replaying the actual player mutation', async () => {
+  const current = fixture({ async synchronizeQueue() { throw new IntegrationFailure(IntegrationFailureCode.UnknownOutcome); } });
+  current.state.hosting.status = SpotifyHostingStatus.Hosting;
+  const committed = await current.controller.prepareQueueChange([Fixture.recording], () => true, false);
+  await current.local();
+  await assertion.rejects(committed(), { code: IntegrationFailureCode.UnknownOutcome });
+  assertion.equal(current.calls.local, Fixture.single);
+  assertion.equal(current.calls.publications, Fixture.initial);
+  assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.UnknownOutcome);
 });

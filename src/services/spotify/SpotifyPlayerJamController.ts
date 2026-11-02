@@ -64,6 +64,7 @@ export interface SpotifyPlayerJamDependencies {
     recordingIdentifiers: readonly string[],
   ) => Promise<void>;
   readonly publishLocalChanges: () => Promise<void>;
+  readonly synchronizeQueue?: () => Promise<void>;
   readonly remoteControl: (
     kind: Exclude<HostedPlaybackCommandKind, HostedPlaybackCommandKind.Seek>,
   ) => Promise<void>;
@@ -206,6 +207,7 @@ export class SpotifyPlayerJamController {
     clearQueue: boolean,
     acknowledgeAuthorityRelease?: () => Promise<void>,
     selectedRecordingIdentifier?: string,
+    selectionChange = false,
   ): Promise<() => Promise<void>> {
     const connection = this.dependencies.getConnection();
     const scope = connection?.scopeIdentifier ?? null;
@@ -223,6 +225,12 @@ export class SpotifyPlayerJamController {
       );
     }
     if (hosting !== SpotifyHostingStatus.Hosting) {
+      if (connection?.owned && connection.native && connection.nativeReady && !clearQueue
+        && (hosting === SpotifyHostingStatus.Resolving || hosting === SpotifyHostingStatus.Failed)) {
+        if (acknowledgeAuthorityRelease)
+          return this.prepareOwnerQueueHandoff(recordingIdentifiers, connection.scopeIdentifier, isCurrent, acknowledgeAuthorityRelease);
+        if (selectionChange) return this.prepareOwnerSelectionRecovery(connection.scopeIdentifier, isCurrent);
+      }
       if (
         hosting === SpotifyHostingStatus.Preparing ||
         hosting === SpotifyHostingStatus.Starting ||
@@ -273,7 +281,10 @@ export class SpotifyPlayerJamController {
         if (!current()) return;
         try {
           if (clearQueue) await this.dependencies.stopHosting();
-          else await this.dependencies.publishLocalChanges();
+          else {
+            if (this.dependencies.synchronizeQueue) await this.dependencies.synchronizeQueue();
+            if (current()) await this.dependencies.publishLocalChanges();
+          }
         } catch (failure) {
           if (current()) this.reject(this.safeCode(failure));
           throw failure;
@@ -315,6 +326,10 @@ export class SpotifyPlayerJamController {
     try {
       await this.dependencies.stopFollowing();
       if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      if (this.dependencies.getHosting().status !== SpotifyHostingStatus.Stopped) {
+        await this.dependencies.stopHosting();
+        if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      }
       await acknowledgeAuthorityRelease();
       if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
       this.pending = false;
@@ -343,6 +358,46 @@ export class SpotifyPlayerJamController {
     } catch (failure) {
       if (this.intent === intent) {
         this.queueHandoffScope = null;
+        this.pending = false;
+        this.failure = this.safeCode(failure);
+        this.publish();
+      }
+      throw failure;
+    }
+  }
+  private async prepareOwnerSelectionRecovery(scope: string, isCurrent: () => boolean): Promise<() => Promise<void>> {
+    this.requireMarket();
+    const intent = {};
+    this.intent = intent;
+    this.pending = true;
+    this.failure = null;
+    this.publish();
+    const current = () => !this.disposed && this.intent === intent && isCurrent()
+      && this.dependencies.getConnection()?.scopeIdentifier === scope
+      && this.dependencies.getConnection()?.owned === true
+      && this.dependencies.getConnection()?.nativeReady === true;
+    try {
+      await this.dependencies.stopHosting();
+      if (!current()) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+      this.pending = false;
+      this.publish();
+      let committed = false;
+      return async () => {
+        if (committed || !current()) return;
+        committed = true;
+        try {
+          await this.dependencies.startHosting(this.currentMarket());
+          if (!current()) return;
+          const hosting = this.dependencies.getHosting();
+          if (hosting.status !== SpotifyHostingStatus.Hosting)
+            throw new IntegrationFailure(hosting.failure ?? IntegrationFailureCode.Network);
+        } catch (failure) {
+          if (current()) this.reject(this.safeCode(failure));
+          throw failure;
+        }
+      };
+    } catch (failure) {
+      if (this.intent === intent) {
         this.pending = false;
         this.failure = this.safeCode(failure);
         this.publish();
