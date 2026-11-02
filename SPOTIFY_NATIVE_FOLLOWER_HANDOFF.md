@@ -1,3 +1,37 @@
+# Active track-matching repair — 2026-11-02
+
+The latest user scope is reliable Jam track matching. Packaging architecture work
+was explicitly stopped; root reverted its build-tool/configuration changes.
+
+SpotifyJam `46f1585` and `56d9356` remove duration and standalone version acceptance
+gates. Exact title and complete artist matches can succeed without duration.
+Actual exact import mappings corroborate featured-title annotations and expanded
+artist credits. Equivalent candidates mapped to the same source recording no
+longer become ambiguous solely because extra artist credits differ. Availability,
+unrelated title/artist and conflicting recording-code guards remain.
+
+Mobile `688f2b1` supplies the existing read-only playlist import preview matcher to
+foreground and both headless translation paths. No server mutation or extra
+Spotify search is introduced by the fallback. See RECORDING_IMPORT_MATCHING_PROGRESS.md.
+
+The previous installed current-first candidate did not match the user's Raid:
+Partner search returned HTTP200 and one candidate, but title/artist evidence did
+not pass. Duration matched; no activation was reached. This failure is not a
+successful hosting test. Android is paused and its current media metadata no
+longer identifies Raid. After installing the integrated matching candidate, ask
+the user to select downloaded Raid again; root must not choose another track.
+
+Library checks pass 718 cases, including 47 dedicated matching regressions.
+Player/mobile checks pass 385 cases. Final integrated 742 Node/206 Jest and full TypeScript checks pass. The x86_64
+matching candidate is built with signature/alignment checks; artifact details are
+in RECORDING_IMPORT_MATCHING_PROGRESS.md. In-place installation is currently blocked
+on sleeping dex2oat32 with zero CPU ticks (tool session 41825). No restart or data
+clear was performed; await actual install success before a playback cue. These fixtures do not establish actual
+Spotify metadata or live import matching. Real Raid sharing, subsequent user-led
+track changes and second-account playback remain open.
+
+---
+
 # Active cooperative Jam verification — 2026-11-02
 
 Read `JAM_EMULATOR_REPAIR_PROGRESS.md`, `JAM_HOST_PUBLICATION_PACING_PROGRESS.md`,
