@@ -3,6 +3,7 @@ import { SpotifyHostingFailureStage } from './SpotifyHostingStore';
 import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
 import { SpotifyFailureMessages } from './SpotifyMobilePolicy';
 export const SpotifyHostingFailureDetailMessages = Object.freeze({
+  catalogNoMatch: 'No Spotify recording matched this song closely enough. You can still play music locally in this app.',
   catalogRequestRejected: 'Spotify rejected the song catalog request. You can still play music locally in this app.',
 });
 export const SpotifyHostingFailureMessages: Readonly<Record<SpotifyHostingFailureStage, string>> = Object.freeze({
@@ -33,6 +34,9 @@ export function spotifyHostingFailureDetail(
   failure: IntegrationFailureCode | null,
 ): string | null {
   if (failure === null) return null;
+  if (failure === IntegrationFailureCode.NotFound &&
+    (stage === SpotifyHostingFailureStage.CatalogMatching || stage === SpotifyHostingFailureStage.RecordingPreparation))
+    return SpotifyHostingFailureDetailMessages.catalogNoMatch;
   if (failure === IntegrationFailureCode.InvalidInput &&
     (stage === SpotifyHostingFailureStage.CatalogMatching || stage === SpotifyHostingFailureStage.RecordingPreparation))
     return SpotifyHostingFailureDetailMessages.catalogRequestRejected;

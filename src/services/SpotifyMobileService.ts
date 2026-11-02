@@ -1,3 +1,4 @@
+import { spotifyMatchingDiagnostic, SpotifyMatchingDiagnosticTag } from './spotify/SpotifyMatchingDiagnostic';
 import { MatchStatus, FetchHttpExecutor, IntegrationFailure, IntegrationFailureCode, MemoryAssociationStore, LibrespotDeviceAuthorization, JamJoinMode,
   SpotifyLoginSession, SpotifyConnectPlaybackCommandProtocol, SpotifyConnectSharedStateVerifier, SpotifyConnectQueueProtocol, SpotifyConnectPlaybackReader, SpotifyConnectHostedQueueReader,
   SystemScheduler } from 'streaming-service-spotify-jam';
@@ -249,6 +250,7 @@ export const spotifyHosting: SpotifyHostingStore = new SpotifyHostingStore({
     if (!runtime) throw new IntegrationFailure(IntegrationFailureCode.Unauthorized);
     const result = await runtime.translateToSpotify(identifier, market, cancellation);
     if (runtime !== spotifyIntegration.runtime) throw new IntegrationFailure(IntegrationFailureCode.Superseded);
+    console.info(SpotifyMatchingDiagnosticTag, JSON.stringify(spotifyMatchingDiagnostic(result)));
     if (result.status !== MatchStatus.Matched || !result.selected) throw new IntegrationFailure(result.failure ?? IntegrationFailureCode.NotFound);
     return result.selected.identifier;
   },

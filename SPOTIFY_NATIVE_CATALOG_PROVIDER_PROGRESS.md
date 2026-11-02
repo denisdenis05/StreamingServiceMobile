@@ -130,3 +130,21 @@ New tests in `connect_client_platform.rs` cover actual field capture/serializati
 immutable capture, each failed read and invalid build data. Client-token tests
 cover distinct session/platform client roles, preserved device identity and cache
 rejection when either client scope changes. Live acceptance remains pending.
+
+## First corrected Android catalog acceptance — 2026-11-02
+
+Installed the corrected x86_64 candidate without clearing app data or restarting
+the emulator. Saved native sign-in restored. A deliberate host action completed
+the bounded client-token challenge exchange (HTTP200 receipts), then one Partner
+search returned HTTP200 and decoded successfully. No rate limit was returned.
+Activation was not reached because matching remained ambiguous. A subsequent
+metadata-free diagnostic attempt confirmed five candidates, three acceptable,
+four title and duration matches and five artist matches. Raw metadata and
+identities were not logged. Search attempts were minutes apart.
+
+`SpotifyMatchingDiagnostic.ts` projects only a validated status and numeric
+candidate/evidence counts, with a dedicated privacy regression in
+`tools/spotify-hosting.test.cjs`. Catalog NotFound now describes a missing recording
+match instead of a missing Jam/device. Targeted hosting checks pass 73 cases;
+TypeScript passes. Library chapter `3c7a771` handles strictly equivalent duplicate
+recordings; its effect on this live selection remains pending.

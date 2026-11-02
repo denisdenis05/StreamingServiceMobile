@@ -256,3 +256,24 @@ test('Noncatalog validation and absent stage retain ordinary invalid-input guida
 test('Hosting detail without an actual failure is absent even when a catalog stage is retained', () => {
   assertion.equal(spotifyHostingFailureDetail(SpotifyHostingFailureStage.CatalogMatching, null), null);
 });
+
+const MatchingDiagnosticModule = '../.build/spotify/SpotifyMatchingDiagnostic';
+const { spotifyMatchingDiagnostic } = require(MatchingDiagnosticModule);
+const { MatchStatus, MatchEvidence } = require('streaming-service-spotify-jam');
+test('Matching diagnostics contain only status and evidence counts without recording identities or metadata', () => {
+  const result = { status: MatchStatus.NotFound, selected: null, failure: null, candidates: [
+    { song: { identifier: Fixture.recording, title: Fixture.privateFailure, author: Fixture.spotify }, score: Fixture.singleCount,
+      acceptable: false, evidence: [MatchEvidence.Title, MatchEvidence.Artist] },
+  ] };
+  assertion.deepEqual(spotifyMatchingDiagnostic(result), { status: MatchStatus.NotFound, candidateCount: Fixture.singleCount,
+    acceptableCount: Fixture.emptyCount, titleMatchCount: Fixture.singleCount, artistMatchCount: Fixture.singleCount,
+    durationMatchCount: Fixture.emptyCount, versionConflictCount: Fixture.emptyCount });
+  assertion.equal(JSON.stringify(spotifyMatchingDiagnostic(result)).includes(Fixture.privateFailure), false);
+});
+
+test('Catalog no-match guidance describes the recording rather than a missing Jam or device', () => {
+  for (const stage of [SpotifyHostingFailureStage.CatalogMatching, SpotifyHostingFailureStage.RecordingPreparation])
+    assertion.equal(spotifyHostingFailureDetail(stage, IntegrationFailureCode.NotFound), SpotifyHostingFailureDetailMessages.catalogNoMatch);
+  assertion.equal(spotifyHostingFailureDetail(SpotifyHostingFailureStage.NativeActivation, IntegrationFailureCode.NotFound),
+    SpotifyFailureMessages[IntegrationFailureCode.NotFound]);
+});
