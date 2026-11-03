@@ -1,3 +1,12 @@
+# README integration guide — 2026-11-03
+
+Refreshed the root README through the Sol planning/review and Codex Luna writing
+workflow. It now describes sibling package setup, the selected native player,
+actual settings and Jam entry points, contextual recent history, native build
+requirements, source checks and remaining device gates. Relative file links and
+whitespace checks pass; no em dashes occur in the README. No source changes or
+additional source tests belong to this documentation chapter.
+
 # Commit authorization restored — 2026-11-03
 
 The user authorized commits again at the current time, with no backdating.
