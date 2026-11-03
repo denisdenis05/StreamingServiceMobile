@@ -109,3 +109,50 @@ they are not reset or replayed as if they were harmless matching errors.
 
 These are source checks. Build, installation and live queue/recovery verification
 are separate gates recorded after source integration.
+
+## Emulator candidate — 2026-11-03
+
+Mobile source 0199a38 is integrated with SDK e8baa2b. x86_64 release assembly
+passed in 46 seconds. Artifact:
+`build/spotify-jam/StreamingService-Jam-Queue-Recovery-0199a38-x86_64.apk`.
+Size 37,350,305 bytes; SHA256
+`290f134ca67c650dc63037cd93e8bfadcb5ecaf0ae2a86aafec355d0dbad54f5`.
+Signature and 16 KiB ZIP alignment checks passed. In-place adb installation reported
+Success and StreamingService reopened. Native observation requests returned 200.
+Linux Spotify was started with its existing profile and its MPRIS control is
+available. No new pairing or credential extraction was performed.
+
+The user has been asked to select downloaded Raid and reply playing. New queue,
+remote selection, participant additions and current-song recovery have not yet
+passed a live check. Source tests and installation do not establish these results.
+
+## Live queue gap and contained artist integration — 2026-11-03
+
+The user selected downloaded Raid. Android and official Linux Spotify agreed on
+the current track and StreamingService was visible. A Linux Spotify pause was
+reflected in Android playback state. Private MediaSession/official queue reads
+found 22 local entries, current index 4, and only 14 of the expected 17 upcoming
+Spotify entries. The 14 visible entries retained local order; local positions
+5, 7 and 11 were omitted. This is a failing queue parity check, not acceptance.
+Catalog responses observed during that check returned 200, with no observed 429.
+No raw queue, account metadata or credentials were written into this report.
+
+SDK 5dc54be introduces recording-evidence-v4: exact normalized base titles and
+symmetric complete artist-set containment, with release-only, availability,
+recording-code and unrelated collaborator safeguards. Its three public
+Madvillainy fixtures reproduce the missing credit shapes. All 751 SDK tests
+passed. These fixtures are source checks, not proof that the three live entries
+now resolve. The mobile headless test now separately covers strict expanded
+credits without importing and release-only credits requiring the actual importer.
+
+On resuming, Linux Spotify remains running and the Android control sheet reports
+an unconfirmed host with uncertain action state. The user explicitly postponed
+the initial confirmation issue. Queue parity, cooperative local/remote selections,
+recovery after matching errors and participant additions remain live gates.
+The new APK must contain policy v4; force JavaScript bundling because sibling SDK
+changes alone may not invalidate Gradle bundle inputs. No second account exists.
+
+Mobile integration verification: `npm run test:spotify` passed 768 Node and
+208 Jest tests (`/tmp/jam-contained-mobile-tests.log`); `npx tsc --noEmit` passed
+(`/tmp/jam-contained-mobile-types.log`). Android 550 and Rust 280 are the earlier
+0199a38 source results; native code was not modified in this SDK integration.

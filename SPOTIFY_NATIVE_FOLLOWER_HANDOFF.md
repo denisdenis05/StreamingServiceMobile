@@ -8,8 +8,16 @@ SDK commits 6526067/e8baa2b supply controllable queue ports, revision-checked wr
 current-first mapping, failed-match recovery and complete replacement semantics.
 Mobile dbfa8c4/efdae36/5ef2c35 compose the ports and handle official targeted skips,
 participant set_queue edits and supported Play selection. Root's native bridge,
-publication receipts and per-occurrence matching recovery are the final source
-integration chapter. No package publishing/build-tool architecture work was added.
+publication receipts and per-occurrence matching recovery are committed as 0199a38.
+550 Android cases pass. The verified x86_64 candidate installed successfully and
+reopened; artifact details are in JAM_QUEUE_RECOVERY_PROGRESS.md. The user played
+Raid. Current track and remote pause were observed, but only 14 of 17 upcoming
+tracks reached Spotify, in the correct order. SDK 5dc54be supplies policy v4 for
+canonical versus expanded artist credits; its 751 tests pass. Mobile integration
+passes 768 Node tests, 208 Jest tests and full TypeScript. Force Metro bundling
+and verify the v4 marker in the next APK before retesting queue parity. The
+initial host confirmation issue is explicitly postponed by the user. No package
+publishing/build-tool architecture work was added.
 
 The previous matching APK installed after the user's emulator restart. Raid then
 matched successfully; Android and official Linux Spotify both reported Raid, and

@@ -1,5 +1,5 @@
 export {};
-import { IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { ArtistCreditSource, IntegrationFailureCode } from 'streaming-service-spotify-jam';
 const Imports = Object.freeze({ native: 'react-native', authentication: '../src/services/AuthenticationService',
   network: '../src/services/ApplicationNetworkClient', addresses: '../src/constants/placeholders', task: '../src/services/SpotifyBackgroundHostingHeadless' });
 const Fixture = Object.freeze({ request: 'synthetic-request', account: 'synthetic-account', otherAccount: 'synthetic-other-account', token: 'synthetic-token',
@@ -50,13 +50,14 @@ test('Native backpressure remains typed when headless matching fails', async () 
   expect(native.completeHostingRecording).not.toHaveBeenCalled();
 });
 
-test('Headless hosting uses the existing importer when Spotify has additional artist credits', async () => {
+test('Headless hosting uses the existing importer to corroborate release-only artist credits', async () => {
   const recording = Fixture.importRecording;
   const guestArtist = Fixture.guestArtist;
   const featureTitle = Fixture.title + Fixture.featureOpening + guestArtist + Fixture.featureClosing;
   const job = JSON.parse(await native.claimHostingRecording()); job.recordingIdentifier = recording;
   native.claimHostingRecording.mockResolvedValue(JSON.stringify(job));
-  client.get.mockResolvedValue({ data: { identifier: recording, title: Fixture.title, author: Fixture.artist } });
+  client.get.mockResolvedValue({ data: { identifier: recording, title: Fixture.title, author: Fixture.artist,
+    artistCreditSource: ArtistCreditSource.Release } });
   native.searchHostingRecording.mockResolvedValue(JSON.stringify({ handle: Fixture.handle, generation: Fixture.generation,
     tracks: [{ spotifyTrackIdentifier: Fixture.track, title: featureTitle, artistNames: [Fixture.artist, guestArtist],
       durationMilliseconds: Fixture.durationMilliseconds, recordingCodes: [], playable: true }] }));
@@ -64,6 +65,17 @@ test('Headless hosting uses the existing importer when Spotify has additional ar
     matchedRecordingId: recording, isAvailable: true, isExactMatch: true, isSuggested: false }] });
   await require(Imports.task).executeSpotifyBackgroundHosting(Fixture.request);
   expect(client.post).toHaveBeenCalled();
+  expect(native.completeHostingRecording).toHaveBeenCalledWith(Fixture.request, Fixture.track);
+  expect(native.failHostingRecording).not.toHaveBeenCalled();
+});
+
+test('Headless hosting matches canonical recording credits against expanded Spotify credits without an import request', async () => {
+  const featureTitle = Fixture.title + Fixture.featureOpening + Fixture.guestArtist + Fixture.featureClosing;
+  native.searchHostingRecording.mockResolvedValue(JSON.stringify({ handle: Fixture.handle, generation: Fixture.generation,
+    tracks: [{ spotifyTrackIdentifier: Fixture.track, title: featureTitle, artistNames: [Fixture.artist, Fixture.guestArtist],
+      durationMilliseconds: Fixture.durationMilliseconds, recordingCodes: [], playable: true }] }));
+  await require(Imports.task).executeSpotifyBackgroundHosting(Fixture.request);
+  expect(client.post).not.toHaveBeenCalled();
   expect(native.completeHostingRecording).toHaveBeenCalledWith(Fixture.request, Fixture.track);
   expect(native.failHostingRecording).not.toHaveBeenCalled();
 });
