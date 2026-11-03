@@ -5,6 +5,8 @@ import java.util.concurrent.CompletableFuture
 interface SpotifyHostSessionCoordinator {
     fun start(previousHostDeviceIdentifier: String, expectedCursor: SpotifyHostPlayerCursor, initialMappings: List<SpotifyHostRecordingMapping>): CompletableFuture<SpotifyHostSnapshot>
     fun stop(): CompletableFuture<Unit>
+    fun readQueue(side: String): CompletableFuture<String> = CompletableFuture<String>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
+    fun applyQueue(side: String, serialized: String): CompletableFuture<String> = CompletableFuture<String>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun publishLocalChanges(): CompletableFuture<Unit> = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun snapshot(): SpotifyHostSnapshot
     fun accept(batch: SpotifyConnectBatch)
@@ -111,6 +113,10 @@ class SpotifyHostNativeSession(
     }
     fun commandHandlingReady(identity: SpotifyHostIdentity): Boolean = !retired && observation != null && currentIdentity(identity) && canExecute(identity)
         && coordinator?.commandHandlingReady(identity) == true
+    @Synchronized override fun readQueue(side: String): CompletableFuture<String> =
+        if (retired || !current()) failed(Superseded) else coordinator?.readQueue(side) ?: failed(Superseded)
+    @Synchronized override fun applyQueue(side: String, serialized: String): CompletableFuture<String> =
+        if (retired || !current()) failed(Superseded) else coordinator?.applyQueue(side, serialized) ?: failed(Superseded)
     @Synchronized override fun publishLocalChanges(): CompletableFuture<Unit> =
         if (retired || !current()) failed(Superseded) else coordinator?.publishLocalChanges() ?: failed(Superseded)
     @Synchronized fun snapshot(): SpotifyHostSnapshot? = coordinator?.snapshot()

@@ -16,6 +16,10 @@ class SpotifyHostRuntimeTest {
         var publications = EmptyCount
         var releases = EmptyCount
         val tokens = mutableListOf<String>()
+        val queueReads = mutableListOf<String>()
+        val queueWrites = mutableListOf<Pair<String, String>>()
+        override fun readQueue(side: String): CompletableFuture<String> { queueReads.add(side); return CompletableFuture.completedFuture(QueueReceipt) }
+        override fun applyQueue(side: String, serialized: String): CompletableFuture<String> { queueWrites.add(side to serialized); return CompletableFuture.completedFuture(QueueReceipt) }
         override fun publishLocalChanges(): CompletableFuture<Unit> { publications += SingleCount; return CompletableFuture.completedFuture(Unit) }
         override fun start() = started
         override fun stop(): CompletableFuture<Unit> { stops += SingleCount; return cleanup }
@@ -53,6 +57,27 @@ class SpotifyHostRuntimeTest {
             val result = runtime.start(selected, configuration(device).toString()); drain(); return result
         }
         fun start() { begin(); sessions.single().ready(); drain() }
+    }
+    @Test fun queueBridgeUsesTheRetainedActiveHostForReadsAndWrites() {
+        val fixture = Fixture(); fixture.start()
+        val read = fixture.runtime.readQueue(fixture.attachment, SpotifyControllableQueueProtocol.LocalSide)
+        val write = fixture.runtime.applyQueue(fixture.attachment, SpotifyControllableQueueProtocol.SpotifySide, QueueChange)
+        fixture.drain()
+        assertEquals(QueueReceipt, read.get()); assertEquals(QueueReceipt, write.get())
+        assertEquals(listOf(SpotifyControllableQueueProtocol.LocalSide), fixture.sessions.single().queueReads)
+        assertEquals(listOf(SpotifyControllableQueueProtocol.SpotifySide to QueueChange), fixture.sessions.single().queueWrites)
+    }
+    @Test fun retiredAccountAndDetachedViewsCannotControlTheOldQueue() {
+        val fixture = Fixture(); fixture.start()
+        fixture.runtime.updateAccount(fixture.attachment, OtherAccount, null); fixture.drain()
+        val read = fixture.runtime.readQueue(fixture.attachment, SpotifyControllableQueueProtocol.LocalSide)
+        val write = fixture.runtime.applyQueue(fixture.attachment, SpotifyControllableQueueProtocol.SpotifySide, QueueChange)
+        fixture.drain()
+        assertTrue(read.isCompletedExceptionally); assertTrue(write.isCompletedExceptionally)
+        assertTrue(fixture.sessions.single().queueReads.isEmpty()); assertTrue(fixture.sessions.single().queueWrites.isEmpty())
+        fixture.runtime.attach {}
+        val detached = fixture.runtime.readQueue(fixture.attachment, SpotifyControllableQueueProtocol.LocalSide); fixture.drain()
+        assertTrue(detached.isCompletedExceptionally)
     }
     @Test fun activePreparationWaitsForScopedMatchingAndPublicationUsesTheRetainedSession() {
         val fixture = Fixture(true); fixture.start()
@@ -162,6 +187,8 @@ class SpotifyHostRuntimeTest {
         assertEquals(StartupFailed, fixture.runtime.snapshot(fixture.attachment)?.failure)
     }
     companion object {
+        private const val QueueReceipt = "queue-receipt"
+        private const val QueueChange = "queue-change"
         private const val Recording = "synthetic-recording"
         private const val Track = "4uLU6hMCjMI75M1A2tKUQC"
         private const val PreparationPrefix = "synthetic-preparation-"

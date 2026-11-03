@@ -11,6 +11,7 @@ use crate::model::{bounded_text, Failure};
 const MAXIMUM_IDENTIFIER_CHARACTERS: usize = 512;
 pub const MAXIMUM_PUBLICATION_QUEUE_TRACKS: usize = 80;
 const TRACK_URI_PREFIX: &str = "spotify:track:";
+const CONTEXT_PROVIDER: &str = "context";
 const TRACK_IDENTIFIER_CHARACTERS: usize = 22;
 const NORMAL_PLAYBACK_SPEED: f64 = 1.0;
 const PAUSED_PLAYBACK_SPEED: f64 = 0.0;
@@ -76,7 +77,7 @@ fn provided_track(track: &ConnectPublicationTrack) -> Result<ProvidedTrack, Fail
         || !track.spotify_track_identifier.bytes().all(|character| character.is_ascii_alphanumeric())
         || SpotifyId::from_base62(&track.spotify_track_identifier).is_err() { return Err(Failure::InvalidInput); }
     Ok(ProvidedTrack { uri: TRACK_URI_PREFIX.to_owned() + &track.spotify_track_identifier,
-        uid: track.occurrence_identifier.clone(), ..Default::default() })
+        uid: track.occurrence_identifier.clone(), provider: CONTEXT_PROVIDER.to_owned(), ..Default::default() })
 }
 
 pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPublicationSnapshot,
@@ -209,6 +210,8 @@ pub fn verify_publication_response(publication: &PutStateRequest, observed: &cra
             || !player.queue_revision.is_empty() && player.queue_revision != expected_player.queue_revision {
             return Err(Failure::UnknownOutcome);
         }
+        if !same_queue(&player.next_tracks, &expected_player.next_tracks)
+            || !same_queue(&player.previous_tracks, &expected_player.prev_tracks) { return Err(Failure::UnknownOutcome); }
         if let Some(track) = &player.track {
             if track.uri != expected_player.track.uri || track.occurrence_identifier.as_ref().is_some_and(|occurrence| *occurrence != expected_player.track.uid) {
                 return Err(Failure::UnknownOutcome);
@@ -216,4 +219,12 @@ pub fn verify_publication_response(publication: &PutStateRequest, observed: &cra
         }
     }
     Ok(())
+}
+
+fn same_queue(observed: &[crate::connect_wire::ConnectTrack], expected: &[ProvidedTrack]) -> bool {
+    observed.len() == expected.len() && observed.iter().zip(expected).all(|(actual, published)| {
+        actual.uri == published.uri
+            && actual.occurrence_identifier.as_ref().is_none_or(|occurrence| *occurrence == published.uid)
+            && (actual.provider.is_empty() || actual.provider == published.provider)
+    })
 }

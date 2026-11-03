@@ -1,3 +1,34 @@
+# Active queue and current-song recovery checkpoint — 2026-11-03
+
+Read JAM_QUEUE_RECOVERY_PROGRESS.md, CONTROLLABLE_JAM_QUEUE_PROGRESS.md and
+JAM_INCOMING_QUEUE_COMMAND_PROGRESS.md first. These supersede the historical
+matching-only and stalled-install checkpoints below.
+
+SDK commits 6526067/e8baa2b supply controllable queue ports, revision-checked writes,
+current-first mapping, failed-match recovery and complete replacement semantics.
+Mobile dbfa8c4/efdae36/5ef2c35 compose the ports and handle official targeted skips,
+participant set_queue edits and supported Play selection. Root's native bridge,
+publication receipts and per-occurrence matching recovery are the final source
+integration chapter. No package publishing/build-tool architecture work was added.
+
+The previous matching APK installed after the user's emulator restart. Raid then
+matched successfully; Android and official Linux Spotify both reported Raid, and
+Spotify displayed StreamingService. The user subsequently reported different
+queues and failure after a Spotify selection. Later diagnostics still said
+Matched. The current chapter addresses actual queue/lifecycle defects; its new
+live acceptance has not yet run.
+
+The user chooses every test song, from downloaded Madvillainy only. Root may
+play/pause but must not choose another track. After the integrated candidate is
+installed, cue the user for Raid, then a user-chosen second track. Verify both
+queues/selection and returning to Raid; don't infer success from HTTP200 alone.
+Second-account playback is unavailable. Preserve Desktop Spotify and account data;
+no new probe or pairing is needed while the app's retained connection is usable.
+
+Server's preexisting appsettings changes and .idea remain unrelated and untouched.
+
+---
+
 # Active track-matching repair — 2026-11-02
 
 The latest user scope is reliable Jam track matching. Packaging architecture work

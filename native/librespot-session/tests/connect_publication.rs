@@ -250,3 +250,27 @@ fn publication_acknowledgement_tolerates_omitted_optional_device_and_player_deta
     observed.devices.clear(); observed.playback = None;
     streaming_spotify_session::connect_publication::verify_publication_response(&publication, &observed).unwrap();
 }
+
+#[test]
+fn local_queue_tracks_declare_the_spotify_context_provider() {
+    const CONTEXT_PROVIDER: &str = "context";
+    let publication = build_publication(&registration(), &snapshot(), PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    let player = &publication.device.player_state;
+    assert_eq!(player.track.provider, CONTEXT_PROVIDER);
+    assert!(player.prev_tracks.iter().chain(player.next_tracks.iter()).all(|track| track.provider == CONTEXT_PROVIDER));
+}
+
+#[test]
+fn publication_receipt_rejects_missing_or_wrong_upcoming_occurrences_and_order() {
+    let publication = build_publication(&registration(), &snapshot(), PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    let observed = acknowledged_publication(&publication);
+    let mut missing = observed.clone(); missing.playback.as_mut().unwrap().next_tracks.clear();
+    let mut replaced = observed.clone(); replaced.playback.as_mut().unwrap().next_tracks.first_mut().unwrap().uri = FOREIGN_IDENTIFIER.to_owned();
+    let mut occurrence = observed.clone(); occurrence.playback.as_mut().unwrap().next_tracks.first_mut().unwrap().occurrence_identifier = Some(FOREIGN_IDENTIFIER.to_owned());
+    let mut duplicate = observed.clone();
+    let extra = duplicate.playback.as_ref().unwrap().next_tracks.first().unwrap().clone();
+    duplicate.playback.as_mut().unwrap().next_tracks.push(extra);
+    for invalid in [missing, replaced, occurrence, duplicate] {
+        assert!(matches!(streaming_spotify_session::connect_publication::verify_publication_response(&publication, &invalid), Err(Failure::UnknownOutcome)));
+    }
+}

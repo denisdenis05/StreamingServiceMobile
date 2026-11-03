@@ -89,12 +89,9 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
     }
     private fun track(entry: SpotifyHostQueueEntry, mappings: List<SpotifyHostRecordingMapping>): JSONObject? {
         if (!identifier(entry.occurrenceIdentifier) || !identifier(entry.recordingIdentifier)) unavailable()
-        val exact = mappings.filter { mapping -> mapping.occurrenceIdentifier == entry.occurrenceIdentifier && mapping.recordingIdentifier == entry.recordingIdentifier }
-        val selected = if (exact.isNotEmpty()) exact else mappings.filter { mapping -> mapping.recordingIdentifier == entry.recordingIdentifier }
-        if (selected.isEmpty()) return null
-        val identifiers = selected.map { mapping -> mapping.spotifyTrackIdentifier }.distinct()
-        if (identifiers.size != SingleTrack || !TrackPattern.matches(identifiers.single())) unavailable()
-        return JSONObject().put(SpotifyTrackField, identifiers.single()).put(OccurrenceField, entry.occurrenceIdentifier)
+        val selected = SpotifyHostRecordingMappings.select(entry, mappings) ?: return null
+        if (!TrackPattern.matches(selected)) unavailable()
+        return JSONObject().put(SpotifyTrackField, selected).put(OccurrenceField, entry.occurrenceIdentifier)
     }
     private fun identifier(value: String): Boolean = value.isNotBlank() && value.length <= MaximumIdentifierCharacters
         && value.none { character -> character.isWhitespace() || character.isISOControl() }
@@ -104,7 +101,6 @@ class SpotifyHostPublicationProjector(private val clock: SpotifyNativeFollowerCl
         const val MaximumQueueTracks = SpotifyHostingPolicy.MaximumQueueTracks
         private const val FirstIndex = 0
         private const val PositionIncrement = 1
-        private const val SingleTrack = 1
         private const val FirstSequence = 1L
         private const val MinimumMilliseconds = 0L
         private const val MinimumDurationMilliseconds = 1L

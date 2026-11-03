@@ -17,7 +17,7 @@ class SpotifyHostCoordinatorTest {
     private class Timer(val action: () -> Unit, var cancelled: Boolean = false)
     private class Fixture(mappingEnabled: Boolean = false) {
         var cachedTrack: String? = null
-        val mapping = CompletableFuture<String>()
+        var mapping = CompletableFuture<String>()
         var mappingCancellations = EmptyCount
         val decisions = Decisions()
         val timers = mutableListOf<Timer>()
@@ -28,6 +28,8 @@ class SpotifyHostCoordinatorTest {
         var onSnapshot: (SpotifyHostSnapshot) -> Unit = {}
         var nextSequence = FirstSequence
         var pauseCount = EmptyCount
+        var acceptLocalQueueWrites = false
+        var localQueueWriteFailure: SpotifyPlayerFailureReason? = null
         var retired = false
         var buffering = false
         var paused = false
@@ -36,6 +38,7 @@ class SpotifyHostCoordinatorTest {
         var durationMilliseconds: Long? = DurationMilliseconds
         var externalAuthorityAbsent = true
         var publicationFailure: String? = null
+        var publicationCompletion = CompletableFuture.completedFuture(Unit)
         var demotionFailure: String? = null
         var activationCompletion = CompletableFuture.completedFuture(Unit)
         var sampleCompletion: CompletableFuture<SpotifyHostPlayerQueue>? = null
@@ -61,7 +64,11 @@ class SpotifyHostCoordinatorTest {
             }
             override fun retire() { retired = true }
             override fun execute(identity: SpotifyHostIdentity, expected: SpotifyHostPlayerCursor, request: SpotifyHostCommandRequest,
-                receivedAtElapsedMilliseconds: Long, deadlineElapsedMilliseconds: Long): SpotifyPlayerOperation<SpotifyHostPlayerAccepted> = throw UnsupportedOperationException()
+                receivedAtElapsedMilliseconds: Long, deadlineElapsedMilliseconds: Long): SpotifyPlayerOperation<SpotifyHostPlayerAccepted> {
+                if (!acceptLocalQueueWrites) throw UnsupportedOperationException()
+                localQueueWriteFailure?.let { reason -> return SpotifyPlayerOperation(failed(SpotifyPlayerFailure(reason))) {} }
+                return operation(SpotifyHostPlayerAccepted(request, queue().snapshot, emptyList(), emptyList()))
+            }
         }
         val transport = object : SpotifyHostControlTransport {
             override fun registration(identity: SpotifyHostIdentity) = operation(SpotifyHostNativeRegistration(SpotifyHostPublicationIdentity(Device, NativeSession), nextSequence))
@@ -75,7 +82,7 @@ class SpotifyHostCoordinatorTest {
             }
             override fun publish(identity: SpotifyHostIdentity, snapshot: JSONObject): SpotifyPlayerOperation<Unit> {
                 publications.add(snapshot); nextSequence = snapshot.getLong(SequenceField) + SequenceIncrement
-                return publicationFailure?.let { failure -> SpotifyPlayerOperation(failed<Unit>(SpotifyConnectFailure(failure))) {} } ?: operation(Unit)
+                return publicationFailure?.let { failure -> SpotifyPlayerOperation(failed<Unit>(SpotifyConnectFailure(failure))) {} } ?: SpotifyPlayerOperation(publicationCompletion) {}
             }
             override fun withdraw(identity: SpotifyHostIdentity, registration: SpotifyHostNativeRegistration): SpotifyPlayerOperation<Unit> {
                 deactivations.add(JSONObject().put(SequenceField, registration.nextPublicationSequence))
@@ -95,8 +102,9 @@ class SpotifyHostCoordinatorTest {
                 override fun cached(identity: SpotifyHostIdentity, recordingIdentifier: String): String? = cachedTrack
                 override fun resolve(identity: SpotifyHostIdentity, recordingIdentifier: String): SpotifyPlayerOperation<String> {
                     requestedRecordings.add(recordingIdentifier)
-                    return SpotifyPlayerOperation(mapping) {
-                        mappingCancellations += SingleCount; mapping.completeExceptionally(SpotifyConnectFailure(Superseded))
+                    val selected = mapping
+                    return SpotifyPlayerOperation(selected) {
+                        mappingCancellations += SingleCount; selected.completeExceptionally(SpotifyConnectFailure(Superseded))
                     }
                 }
             })
@@ -181,9 +189,192 @@ class SpotifyHostCoordinatorTest {
         fixture.start().get(); fixture.tick(BackgroundCatalogIntervalMilliseconds)
         fixture.mapping.completeExceptionally(SpotifyConnectFailure(NotFound)); fixture.decisions.drain()
         fixture.currentOccurrence = UpcomingOccurrence; fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SpotifyHostStatus.Resolving, fixture.coordinator.snapshot().status)
+        assertEquals(NotFound, fixture.coordinator.snapshot().failure)
+        assertTrue(fixture.publications.isEmpty())
+        assertTrue(fixture.deactivations.isEmpty())
+    }
+    @Test fun failedCurrentMatchingDoesNotPoisonReturningToKnownRecording() {
+        val fixture = Fixture(true); fixture.start().get()
+        fixture.recording = OtherRecording; fixture.tick(PublishIntervalMilliseconds)
+        fixture.mapping.completeExceptionally(SpotifyConnectFailure(NotFound)); fixture.decisions.drain()
+        assertEquals(SpotifyHostStatus.Resolving, fixture.coordinator.snapshot().status)
+        fixture.recording = Recording; fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status)
+        assertEquals(null, fixture.coordinator.snapshot().failure)
+        assertEquals(Track, fixture.publications.last().getJSONObject(TrackField).getString(SpotifyTrackField))
+        assertTrue(fixture.deactivations.isEmpty())
+    }
+    @Test fun newCurrentRecordingGetsFreshMatchingAfterPreviousFailure() {
+        val fixture = Fixture(true); fixture.start().get()
+        fixture.recording = OtherRecording; fixture.tick(PublishIntervalMilliseconds)
+        fixture.mapping.completeExceptionally(SpotifyConnectFailure(NotFound)); fixture.decisions.drain()
+        fixture.mapping = CompletableFuture()
+        fixture.recording = PreviousRecording; fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(null, fixture.coordinator.snapshot().failure)
+        fixture.mapping.complete(OtherTrack); fixture.decisions.drain()
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status)
+        assertEquals(OtherTrack, fixture.publications.last().getJSONObject(TrackField).getString(SpotifyTrackField))
+        assertEquals(DoubleCount, fixture.requestedRecordings.size)
+    }
+    @Test fun matchingCompletionWaitsForAnExistingPlayerSampleBeforePublishing() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.recording = OtherRecording; fixture.tick(PublishIntervalMilliseconds)
+        val sampling = CompletableFuture<SpotifyHostPlayerQueue>(); fixture.sampleCompletion = sampling
+        fixture.tick(PublishIntervalMilliseconds)
+        fixture.mapping.complete(OtherTrack); fixture.decisions.drain()
+        assertTrue(fixture.publications.isEmpty())
+        fixture.sampleCompletion = null; sampling.complete(fixture.queue()); fixture.decisions.drain()
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status)
+        assertEquals(OtherTrack, fixture.publications.single().getJSONObject(TrackField).getString(SpotifyTrackField))
+    }
+    @Test fun pendingCurrentMatchingIsCanceledOnCurrentChangeWithoutWaitingForItsDeadline() {
+        val fixture = Fixture(true); fixture.start().get()
+        fixture.recording = OtherRecording; fixture.tick(PublishIntervalMilliseconds)
+        val previous = fixture.mapping
+        fixture.recording = Recording; fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SingleCount, fixture.mappingCancellations)
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status)
+        previous.complete(OtherTrack); fixture.decisions.drain()
+        assertTrue(fixture.publications.none { publication -> publication.getJSONObject(TrackField).getString(SpotifyTrackField) == OtherTrack })
+    }
+    @Test fun failedCurrentDoesNotRepeatSearchUntilTheCurrentSongChanges() {
+        val fixture = Fixture(true); fixture.start().get()
+        fixture.recording = OtherRecording; fixture.tick(PublishIntervalMilliseconds)
+        fixture.mapping.completeExceptionally(SpotifyConnectFailure(NotFound)); fixture.decisions.drain()
+        fixture.tick(PublishIntervalMilliseconds); fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SingleCount, fixture.requestedRecordings.size)
+        assertTrue(fixture.deactivations.isEmpty())
+    }
+    @Test fun queueSamplingConflictDuringTrackChangeDoesNotRetireTheHost() {
+        val fixture = Fixture(); fixture.start().get()
+        fixture.sampleCompletion = fixture.failed(java.util.concurrent.CompletionException(SpotifyPlayerFailure(SpotifyPlayerFailureReason.Conflict)))
+        fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SpotifyHostStatus.Hosting, fixture.coordinator.snapshot().status)
+        assertTrue(fixture.deactivations.isEmpty())
+        fixture.sampleCompletion = null; fixture.paused = true; fixture.tick(PublishIntervalMilliseconds)
+        assertEquals(SingleCount, fixture.publications.size)
+    }
+    @Test fun publicationCompletionWaitsForActualNativeAcknowledgement() {
+        val fixture = Fixture(); fixture.start().get(); fixture.paused = true
+        fixture.publicationCompletion = CompletableFuture()
+        val completion = fixture.coordinator.publishLocalChanges(); fixture.decisions.drain()
+        assertFalse(completion.isDone)
+        fixture.publicationCompletion.complete(Unit); fixture.decisions.drain()
+        assertTrue(completion.isDone)
+        assertFalse(completion.isCompletedExceptionally)
+    }
+    @Test fun stoppingFailsPendingPublicationWaiters() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.recording = OtherRecording
+        val completion = fixture.coordinator.publishLocalChanges(); fixture.decisions.drain()
+        assertFalse(completion.isDone)
+        fixture.stop(); fixture.decisions.drain()
+        assertTrue(completion.isCompletedExceptionally)
+    }
+    @Test fun preparedCurrentMappingIsAvailableToThePackageBeforePublication() {
+        val fixture = Fixture(true); fixture.start().get(); fixture.cachedTrack = OtherTrack; fixture.recording = OtherRecording
+        val local = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.LocalSide); fixture.decisions.drain()
+        val entriesField = "entries"
+        val spotifyField = "spotifyIdentifier"
+        assertEquals(OtherTrack, JSONObject(local.get()).getJSONArray(entriesField).getJSONObject(EmptyCount).getString(spotifyField))
+        assertTrue(fixture.publications.isEmpty())
+    }
+    @Test fun controllableQueueReadsExposeOnlyActualAcknowledgedSpotifyTracks() {
+        val fixture = Fixture(true)
+        fixture.upcomingEntries = listOf(SpotifyHostQueueEntry(UpcomingOccurrence, OtherRecording))
+        fixture.start().get()
+        val local = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.LocalSide); fixture.decisions.drain()
+        val spotify = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.SpotifySide); fixture.decisions.drain()
+        val entriesField = "entries"
+        val completeField = "complete"
+        assertEquals(DoubleCount, JSONObject(local.get()).getJSONArray(entriesField).length())
+        assertEquals(SingleCount, JSONObject(spotify.get()).getJSONArray(entriesField).length())
+        assertTrue(JSONObject(local.get()).getBoolean(completeField))
+        assertFalse(JSONObject(spotify.get()).getBoolean(completeField))
+    }
+    @Test fun packageQueueWriteWaitsForFullActualQueuePublicationAndReturnsItsReceipt() {
+        val fixture = Fixture(true); fixture.start().get()
+        val remote = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.SpotifySide); fixture.decisions.drain()
+        fixture.cachedTrack = OtherTrack
+        fixture.upcomingEntries = listOf(SpotifyHostQueueEntry(UpcomingOccurrence, OtherRecording))
+        fixture.cursor = fixture.cursor.copy(queueRevision = fixture.cursor.queueRevision + SingleCount, contentRevision = fixture.cursor.contentRevision + SingleCount)
+        val local = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.LocalSide); fixture.decisions.drain()
+        val localSnapshot = JSONObject(local.get())
+        val remoteSnapshot = JSONObject(remote.get())
+        val scopeField = "scopeIdentifier"
+        val revisionField = "revision"
+        val entriesField = "entries"
+        val currentField = "currentOccurrenceIdentifier"
+        val expectedScopeField = "expectedScopeIdentifier"
+        val expectedRevisionField = "expectedRevision"
+        val operationField = "operationIdentifier"
+        val lastOperationField = "lastOperationIdentifier"
+        val operation = "actual-queue-publication"
+        val change = JSONObject().put(expectedScopeField, remoteSnapshot.get(scopeField)).put(expectedRevisionField, remoteSnapshot.get(revisionField))
+            .put(operationField, operation).put(entriesField, localSnapshot.getJSONArray(entriesField)).put(currentField, Occurrence)
+        fixture.publicationCompletion = CompletableFuture()
+        val applied = fixture.coordinator.applyQueue(SpotifyControllableQueueProtocol.SpotifySide, change.toString()); fixture.decisions.drain()
+        assertFalse(applied.isDone)
+        val pendingRemote = fixture.coordinator.readQueue(SpotifyControllableQueueProtocol.SpotifySide); fixture.decisions.drain()
+        assertEquals(SingleCount, JSONObject(pendingRemote.get()).getJSONArray(entriesField).length())
+        assertEquals(OtherTrack, fixture.publications.single().getJSONArray(NextField).getJSONObject(EmptyCount).getString(SpotifyTrackField))
+        fixture.publicationCompletion.complete(Unit); fixture.decisions.drain()
+        val receipt = JSONObject(applied.get())
+        assertEquals(DoubleCount, receipt.getJSONArray(entriesField).length())
+        assertEquals(operation, receipt.getString(lastOperationField))
+    }
+    @Test fun localPackageQueueWriteDoesNotFabricateADealerCommandAcknowledgement() {
+        val fixture = Fixture(); fixture.start().get(); fixture.acceptLocalQueueWrites = true; fixture.paused = true
+        val snapshot = JSONObject(SpotifyControllableQueueProtocol.encode(fixture.queue(), fixture.mappings, null))
+        val expectedScopeField = "expectedScopeIdentifier"
+        val expectedRevisionField = "expectedRevision"
+        val scopeField = "scopeIdentifier"
+        val revisionField = "revision"
+        val entriesField = "entries"
+        val operationField = "operationIdentifier"
+        val currentField = "currentOccurrenceIdentifier"
+        val acceptedField = "acceptedCommand"
+        val operation = "local-package-queue-operation"
+        val change = JSONObject().put(expectedScopeField, snapshot.get(scopeField)).put(expectedRevisionField, snapshot.get(revisionField))
+            .put(operationField, operation).put(entriesField, snapshot.getJSONArray(entriesField)).put(currentField, Occurrence)
+        val applied = fixture.coordinator.applyQueue(SpotifyControllableQueueProtocol.LocalSide, change.toString()); fixture.decisions.drain()
+        assertFalse(applied.isCompletedExceptionally)
+        assertTrue(fixture.publications.single().isNull(acceptedField))
+    }
+    @Test fun uncertainLocalPackageQueueWriteRetiresTheHostWithoutReplaying() {
+        val fixture = Fixture(); fixture.start().get(); fixture.acceptLocalQueueWrites = true; fixture.paused = true; fixture.localQueueWriteFailure = SpotifyPlayerFailureReason.UnknownOutcome
+        val snapshot = JSONObject(SpotifyControllableQueueProtocol.encode(fixture.queue(), fixture.mappings, null))
+        val expectedScopeField = "expectedScopeIdentifier"
+        val expectedRevisionField = "expectedRevision"
+        val scopeField = "scopeIdentifier"
+        val revisionField = "revision"
+        val entriesField = "entries"
+        val operationField = "operationIdentifier"
+        val currentField = "currentOccurrenceIdentifier"
+        val operation = "local-package-queue-operation"
+        val change = JSONObject().put(expectedScopeField, snapshot.get(scopeField)).put(expectedRevisionField, snapshot.get(revisionField))
+            .put(operationField, operation).put(entriesField, snapshot.getJSONArray(entriesField)).put(currentField, Occurrence)
+        val applied = fixture.coordinator.applyQueue(SpotifyControllableQueueProtocol.LocalSide, change.toString()); fixture.decisions.drain()
+        assertTrue(applied.isCompletedExceptionally)
         assertEquals(SpotifyHostStatus.Failed, fixture.coordinator.snapshot().status)
         assertTrue(fixture.publications.isEmpty())
         assertEquals(SingleCount, fixture.deactivations.size)
+    }
+    @Test fun controllableQueueRejectsWrongRevisionBeforePublication() {
+        val fixture = Fixture(); fixture.start().get()
+        val expectedScopeField = "expectedScopeIdentifier"
+        val expectedRevisionField = "expectedRevision"
+        val operationField = "operationIdentifier"
+        val entriesField = "entries"
+        val currentField = "currentOccurrenceIdentifier"
+        val operation = "queue-operation"
+        val foreignRevision = "foreign-revision"
+        val snapshot = JSONObject(SpotifyControllableQueueProtocol.encode(fixture.queue(), fixture.mappings, null))
+        val scopeField = "scopeIdentifier"
+        val change = JSONObject().put(expectedScopeField, snapshot.get(scopeField)).put(expectedRevisionField, foreignRevision)
+            .put(operationField, operation).put(entriesField, snapshot.getJSONArray(entriesField)).put(currentField, Occurrence)
+        val result = fixture.coordinator.applyQueue(SpotifyControllableQueueProtocol.SpotifySide, change.toString()); fixture.decisions.drain()
+        assertTrue(result.isCompletedExceptionally)
+        assertTrue(fixture.publications.isEmpty())
     }
     @Test fun staleAccountBackgroundCompletionCannotPublishOrRestoreHosting() {
         val fixture = Fixture(true); fixture.paused = true
@@ -418,6 +609,7 @@ class SpotifyHostCoordinatorTest {
         assertEquals(SingleCount, fixture.publications.size)
     }
     companion object {
+        private const val DoubleCount = 2
         private const val Account = "synthetic-account"
         private const val SpotifyAccount = "synthetic-spotify-account"
         private const val Jam = "synthetic-jam"

@@ -4,6 +4,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
 interface SpotifyHostRuntimeSession {
+    fun readQueue(side: String): CompletableFuture<String> = CompletableFuture<String>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
+    fun applyQueue(side: String, serialized: String): CompletableFuture<String> = CompletableFuture<String>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun publishLocalChanges(): CompletableFuture<Unit> = CompletableFuture<Unit>().also { completion -> completion.completeExceptionally(SpotifyConnectFailure(SpotifyConnectFailureCode.Unsupported.wireValue)) }
     fun start(): CompletableFuture<SpotifyHostSnapshot>
     fun stop(): CompletableFuture<Unit>
@@ -101,6 +103,16 @@ class SpotifyHostRuntime(
             requireAttachment(selected)
             active(current) && lifetime === current
         }
+    }
+    fun readQueue(selected: Attachment, side: String): CompletableFuture<String> = request {
+        requireAttachment(selected)
+        val current = lifetime?.takeIf { current -> active(current) } ?: throw SpotifyConnectFailure(Superseded)
+        current.resources?.session?.readQueue(side) ?: throw SpotifyConnectFailure(Superseded)
+    }
+    fun applyQueue(selected: Attachment, side: String, serialized: String): CompletableFuture<String> = request {
+        requireAttachment(selected)
+        val current = lifetime?.takeIf { current -> active(current) } ?: throw SpotifyConnectFailure(Superseded)
+        current.resources?.session?.applyQueue(side, serialized) ?: throw SpotifyConnectFailure(Superseded)
     }
     fun publishLocalChanges(selected: Attachment): CompletableFuture<Unit> = request {
         requireAttachment(selected)

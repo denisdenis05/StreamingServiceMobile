@@ -87,9 +87,21 @@ class SpotifyHostPublicationProjectorTest {
     }
     @Test fun missingOrAmbiguousRecordingMappingsNeverInventSpotifyTrackIdentifiers() {
         val fixture = Fixture(); unavailable { fixture.project(mappings = emptyList()) }
-        unavailable { fixture.project(mappings = fixture.mappings + fixture.mappings.first().copy(spotifyTrackIdentifier = OtherTrack)) }
+        unavailable { fixture.project(mappings = fixture.mappings + fixture.mappings.last().copy(spotifyTrackIdentifier = OtherTrack)) }
         val copiedRecording = fixture.queue.copy(entries = fixture.queue.entries.map { entry -> entry.copy(recordingIdentifier = OtherRecording) })
         unavailable { fixture.project(queue = copiedRecording) }
+    }
+    @Test fun ambiguousPreviousMappingIsOmittedWhileTheExactCurrentStillPublishes() {
+        val fixture = Fixture()
+        val projected = fixture.project(mappings = fixture.mappings + fixture.mappings.first().copy(spotifyTrackIdentifier = OtherTrack))
+        assertEquals(Track, projected.getJSONObject(TrackField).getString(SpotifyTrackField))
+        assertEquals(EmptyCount, projected.getJSONArray(PreviousField).length())
+    }
+    @Test fun separateOccurrencesMayUseDifferentSpotifyReleasesOfTheSameRecording() {
+        val fixture = Fixture()
+        val projected = fixture.project(mappings = listOf(fixture.mappings.first().copy(spotifyTrackIdentifier = OtherTrack), fixture.mappings.last()))
+        assertEquals(Track, projected.getJSONObject(TrackField).getString(SpotifyTrackField))
+        assertEquals(OtherTrack, projected.getJSONArray(PreviousField).getJSONObject(FirstIndex).getString(SpotifyTrackField))
     }
     @Test fun duplicateOccurrencesAndUnsupportedOptionsCannotPublishAContradictoryQueue() {
         val fixture = Fixture()
@@ -124,6 +136,7 @@ class SpotifyHostPublicationProjectorTest {
         catch (failure: SpotifyPlayerFailure) { assertEquals(SpotifyPlayerFailureReason.Unavailable, failure.reason) }
     }
     companion object {
+        private const val SpotifyTrackField = "spotifyTrackIdentifier"
         private const val EmptyHost = ""
         private const val EmptyCount = 0
         private const val FirstIndex = 0
