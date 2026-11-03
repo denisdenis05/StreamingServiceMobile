@@ -16,6 +16,7 @@ const Fixture = Object.freeze({ emptyCountry: '', recordingIdentifier: 'recordin
 const Names = Object.freeze({ explicit: 'App recording matching and submission require separate presses',
   guest: 'Native admitted guests can enqueue while unsupported guests and removed participants cannot',
   country: 'Changing the country after matching disables the previous selection',
+  independent: 'Connected accounts without a Jam can find recordings while queue actions remain disabled',
   unavailable: 'Contradictory and unavailable candidates cannot be queued',
   account: 'A route from another app account cannot start matching',
   matching: 'Pending matching disables additional source selections',
@@ -58,6 +59,17 @@ test(Names.explicit, async () => { await render(); expect(workflow.prepare).not.
   await act(async () => button(candidateTitle()).props.onPress()); expect(workflow.enqueue).toHaveBeenCalledWith(Fixture.spotifyIdentifier); });
 test(Names.country, async () => { snapshot = matched(); await render(); await country(); expect(button(candidateTitle()).props.disabled).toBe(false);
   await country(Fixture.otherMarket); expect(button(candidateTitle()).props.disabled).toBe(true); });
+test(Names.independent, async () => {
+  mobileSnapshot.session = { ...membership(), session: null };
+  snapshot = matched();
+  await render(); await country();
+  expect(button(sourceTitle()).props.disabled).toBe(false);
+  expect(button(candidateTitle()).props.disabled).toBe(true);
+  expect(JSON.stringify(rendered.toJSON()).includes(Copy.needsJam)).toBe(true);
+  await act(async () => button(sourceTitle()).props.onPress());
+  expect(workflow.prepare).toHaveBeenCalledWith(Fixture.recordingIdentifier, Fixture.market);
+  expect(workflow.enqueue).not.toHaveBeenCalled();
+});
 test(Names.unavailable, async () => { snapshot = matched(); snapshot = { ...snapshot, match: { ...snapshot.match!, candidates: snapshot.match!.candidates.map(candidate =>
   ({ ...candidate, evidence: [MatchEvidence.VersionConflict] })) } }; await render(); await country(); expect(button(candidateTitle()).props.disabled).toBe(true); });
 test(Names.account, async () => { currentAccount = false; await render(); await country(); expect(button(sourceTitle()).props.disabled).toBe(true); });

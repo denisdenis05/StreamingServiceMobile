@@ -78,3 +78,16 @@ actual Login5 session cannot use the public endpoint, derive and verify the
 private persisted-query request against that same independent native session
 before enabling it in production. Do not add automatic public/private fallback or
 advertise native search from static strings.
+
+## Empty filtered retrieval — 2026-11-03
+
+The actual Android session returned HTTP200 with zero candidates for an omitted
+Madvillainy entry. This precedes ranking and cannot be repaired by artist scoring.
+The partner search request now supplies natural title and artist text as searchTerm,
+matching the general search input shape, rather than mandatory quoted field
+filters. There is one bounded request per lookup, no parallel variant/fallback
+requests, and the existing exact title/artist/code/availability matcher still
+owns selection. Native cache keys, pacing, cooldown and account-country handling
+remain unchanged. Dedicated request tests verify natural text, punctuation and
+maximum combined bounds. Live Android retrieval remains to be checked in the
+rebuilt candidate. User override prohibits commits today.

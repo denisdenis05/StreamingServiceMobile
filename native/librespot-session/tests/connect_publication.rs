@@ -188,10 +188,23 @@ fn incoming_controls_are_advertised_only_with_explicit_handler_readiness_and_dem
     let published = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
     assert!(published.device.device_info.capabilities.is_controllable);
     assert!(published.device.device_info.capabilities.supports_command_request);
+    assert!(published.device.device_info.capabilities.supports_playlist_v2);
     assert!(!published.device.device_info.capabilities.supports_transfer_command);
     let inactive = streaming_spotify_session::connect_publication::build_deactivation(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
     assert!(!inactive.device.device_info.capabilities.is_controllable);
     assert!(!inactive.device.device_info.capabilities.supports_command_request);
+    assert!(!inactive.device.device_info.capabilities.supports_playlist_v2);
+}
+
+#[test]
+fn queue_capability_tracks_current_handler_readiness_on_each_publication() {
+    let mut sample = snapshot(); sample.command_handling_ready = true;
+    let active = build_publication(&registration(), &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(active.device.device_info.capabilities.supports_playlist_v2);
+    sample.command_handling_ready = false;
+    let unavailable = build_publication(&active, &sample, PUBLICATION_TIMESTAMP_MILLISECONDS).unwrap();
+    assert!(!unavailable.device.device_info.capabilities.supports_playlist_v2);
+    assert!(!unavailable.device.device_info.capabilities.supports_command_request);
 }
 
 #[test]

@@ -103,7 +103,7 @@ pub fn build_publication(registration: &PutStateRequest, snapshot: &ConnectPubli
     let capabilities = publication.device.mut_or_insert_default().device_info.mut_or_insert_default().capabilities.mut_or_insert_default();
     capabilities.supports_transfer_command = false;
     capabilities.supports_set_options_command = false;
-    capabilities.supports_playlist_v2 = false;
+    capabilities.supports_playlist_v2 = snapshot.command_handling_ready;
     capabilities.supports_command_request = snapshot.command_handling_ready;
     capabilities.is_controllable = snapshot.command_handling_ready;
     publication.put_state_reason = EnumOrUnknown::new(PutStateReason::PLAYER_STATE_CHANGED);
@@ -156,6 +156,7 @@ pub fn build_deactivation(registration: &PutStateRequest, snapshot: &ConnectPubl
     capabilities.can_be_player = false;
     capabilities.is_controllable = false;
     capabilities.supports_command_request = false;
+    capabilities.supports_playlist_v2 = false;
     capabilities.hidden = true;
     Ok(publication)
 }

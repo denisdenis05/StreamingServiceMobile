@@ -1,3 +1,29 @@
+# Current uncommitted candidates — 2026-11-03
+
+User override: no commits. Source changes are integrated locally. These candidates
+include natural catalog search, contained artist matching, actual importer-record
+equivalence, queue capability readiness and read-only matching without a loaded
+Jam. Canonical server artist projection is a separate undeployed source change.
+
+- [ARM64 phone candidate](build/spotify-jam/StreamingService-Jam-Independent-Matching-uncommitted-arm64.apk)
+- [x86_64 emulator candidate](build/spotify-jam/StreamingService-Jam-Independent-Matching-uncommitted-x86_64.apk)
+
+Both release builds, signatures, ZIP 16 KiB and native ELF LOAD alignment checks
+passed. SDK 783 tests, mobile 769 Node and 209 Jest tests and full TypeScript pass.
+Hashes and exact logs are in [queue recovery progress](JAM_QUEUE_RECOVERY_PROGRESS.md).
+
+The x86_64 in-place installation returned Success after the compiler wait.
+No restart or app-data clear was performed. The app was reopened. Installation
+is separate from queue acceptance. A subsequent no-Jam Find presented candidates
+without an authorization error and kept queue writes disabled; automatic match
+status and full parity were not established by that screen check. Phone verification is postponed. Full queue
+parity, real participant edits and cross-account audible synchronization remain
+open; initial host confirmation is explicitly deferred by the user. Earlier
+emulator checks verified official remote selections and explicit background Play
+on a preceding candidate, with one future queue recording still omitted.
+
+---
+
 # Latest catalog pacing checkpoint — 2026-11-01
 
 Read [SPOTIFY_RATE_LIMIT_PROGRESS.md](SPOTIFY_RATE_LIMIT_PROGRESS.md) first.

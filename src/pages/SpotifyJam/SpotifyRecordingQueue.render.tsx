@@ -11,6 +11,7 @@ import { spotifyJamStyles as styles } from './SpotifyJam.style';
 export const RecordingQueueCopy = Object.freeze({ heading: 'Share a song from your library',
   marketLabel: 'Matches for country: ', market: 'Spotify country code, for example US', find: 'Find a Spotify recording',
   choose: 'Choose the matching recording to add it to the host queue.', noMatch: 'No matching Spotify recording was found.',
+  needsJam: 'You can find recordings now. Start or join a Jam before adding them to its queue.',
   matching: 'Finding Spotify recordings…', submitting: 'Submitting to Spotify…', accepted: 'Spotify accepted the queue request.',
   changedAccount: 'This selection belongs to a different app account. Select the song again.',
   separator: ' · ', selected: 'Selected song: ', candidate: 'Add recording: ', blocked: 'Different version, conflicting recording or unavailable',
@@ -46,7 +47,7 @@ export default function SpotifyRecordingQueue({ selection }: { readonly selectio
     {snapshot.match?.status === MatchStatus.NotFound && <DefaultText>{RecordingQueueCopy.noMatch}</DefaultText>}
     {source && snapshot.match !== null && snapshot.match.status !== MatchStatus.NotFound && <>
       <DefaultText>{RecordingQueueCopy.marketLabel + snapshot.market}</DefaultText>
-      <DefaultText>{RecordingQueueCopy.choose}</DefaultText>
+      <DefaultText>{session ? RecordingQueueCopy.choose : RecordingQueueCopy.needsJam}</DefaultText>
       {snapshot.match.candidates.map(candidate => {
         const blocked = candidate.song.playable === false || candidate.evidence.includes(MatchEvidence.VersionConflict)
           || candidate.evidence.includes(MatchEvidence.RecordingCodeConflict) || candidate.evidence.includes(MatchEvidence.Unavailable);

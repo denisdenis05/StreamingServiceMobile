@@ -259,7 +259,8 @@ test('Hosting detail without an actual failure is absent even when a catalog sta
 
 const MatchingDiagnosticModule = '../.build/spotify/SpotifyMatchingDiagnostic';
 const { spotifyMatchingDiagnostic } = require(MatchingDiagnosticModule);
-const { MatchStatus, MatchEvidence } = require('streaming-service-spotify-jam');
+const { ArtistCreditSource, MatchStatus, MatchEvidence } = require('streaming-service-spotify-jam');
+const JoinedCreditSeparator = ' feat. ';
 test('Matching diagnostics contain only status and evidence counts without recording identities or metadata', () => {
   const result = { status: MatchStatus.NotFound, selected: null, failure: null, candidates: [
     { song: { identifier: Fixture.recording, title: Fixture.privateFailure, author: Fixture.spotify }, score: Fixture.singleCount,
@@ -269,6 +270,24 @@ test('Matching diagnostics contain only status and evidence counts without recor
     acceptableCount: Fixture.emptyCount, titleMatchCount: Fixture.singleCount, artistMatchCount: Fixture.singleCount,
     durationMatchCount: Fixture.emptyCount, versionConflictCount: Fixture.emptyCount });
   assertion.equal(JSON.stringify(spotifyMatchingDiagnostic(result)).includes(Fixture.privateFailure), false);
+});
+
+test('Source matching diagnostics report shared credit counts and provenance without artist or song text', () => {
+  const source = { identifier: Fixture.recording, title: Fixture.privateFailure, author: Fixture.spotify,
+    artistNames: [Fixture.spotify, Fixture.device], artistCreditSource: ArtistCreditSource.Release };
+  const candidate = { identifier: Fixture.track, title: Fixture.privateFailure, author: Fixture.spotify, artistNames: [Fixture.spotify] };
+  const result = { status: MatchStatus.NotFound, selected: null, failure: null,
+    candidates: [{ song: candidate, score: Fixture.emptyCount, acceptable: false, evidence: [MatchEvidence.Title] }] };
+  const diagnostic = spotifyMatchingDiagnostic(result, source);
+  assertion.equal(diagnostic.releaseCreditOnly, true);
+  assertion.equal(diagnostic.sourceArtistCount, source.artistNames.length);
+  assertion.equal(diagnostic.sourceHasJoinedArtistCredits, false);
+  assertion.deepEqual(diagnostic.titleCandidateArtistCounts, [Fixture.singleCount]);
+  assertion.deepEqual(diagnostic.titleCandidateSharedArtistCounts, [Fixture.singleCount]);
+  for (const privateValue of [Fixture.recording, Fixture.track, Fixture.privateFailure, Fixture.spotify, Fixture.device])
+    assertion.equal(JSON.stringify(diagnostic).includes(privateValue), false);
+  assertion.equal(spotifyMatchingDiagnostic(result, { ...source,
+    artistNames: [Fixture.spotify + JoinedCreditSeparator + Fixture.device] }).sourceHasJoinedArtistCredits, true);
 });
 
 test('Catalog no-match guidance describes the recording rather than a missing Jam or device', () => {

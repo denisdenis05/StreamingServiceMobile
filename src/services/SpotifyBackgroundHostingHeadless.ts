@@ -5,6 +5,7 @@ import { createSpotifyRecordingImportMatcher } from './SpotifyRecordingImportPla
 import { createSpotifyRecordingCatalog } from './SpotifyRecordingCatalogPlatform';
 import { SpotifyBackgroundHostingTask } from './spotify/SpotifyBackgroundHostingTask';
 import type { SpotifyBackgroundHostingJob } from './spotify/SpotifyBackgroundHostingTask';
+import { spotifyMatchingDiagnostic, SpotifyMatchingDiagnosticTag } from './spotify/SpotifyMatchingDiagnostic';
 interface HostingNative {
   claimHostingRecording(identifier: string): Promise<string | null>;
   isHostingRecordingPending(identifier: string): Promise<boolean>;
@@ -56,6 +57,7 @@ export async function executeSpotifyBackgroundHosting(identifier: string): Promi
       }, ranker, new MemoryAssociationStore(),
       createSpotifyRecordingImportMatcher(job.baseAddress, account.accountIdentifier, account.token));
       const result = await translator.toSpotify(job.recordingIdentifier, job.market, cancellation);
+      console.info(SpotifyMatchingDiagnosticTag, JSON.stringify(spotifyMatchingDiagnostic(result, source)));
       if (result.status === MatchStatus.Failed) throw new IntegrationFailure(result.failure ?? IntegrationFailureCode.Network);
       return result.status === MatchStatus.Matched ? result.selected?.identifier ?? null : null;
     }, scheduler: new SystemScheduler(),

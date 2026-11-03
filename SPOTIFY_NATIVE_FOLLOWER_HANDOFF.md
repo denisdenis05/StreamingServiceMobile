@@ -1,3 +1,37 @@
+# Current continuation — 2026-11-03
+
+The user authorizes autonomous selections limited to downloaded Madvillainy and
+requires no commits today. Older user-led song cue and commit instructions below
+are superseded. Linux Spotify and the emulator native account remain retained.
+The initial shared-host confirmation issue is explicitly deferred by the user.
+
+Read JAM_QUEUE_RECOVERY_PROGRESS.md for actual live checks. Before the final
+candidate, official Linux selection changed the local album queue in foreground
+and background, retaining all 22 local entries and the remaining matched order;
+explicit remote Play also reached background Android. The queue still omitted
+one upcoming recording. Full parity, participant additions, physical-device audio
+synchronization, process death and second-account playback remain unverified.
+
+Current uncommitted source adds natural native catalog queries, safe count-only
+matching diagnostics, actual importer-record equivalence in the SDK, canonical
+recording artist projection/search on Server and readiness-gated playlist-v2
+publication. Server canonical changes are not deployed. The latest source repair
+allows read-only matching without a loaded Jam and retains all session/write
+fences. SDK 783 cases, mobile 769 Node and 209 Jest cases and full TypeScript pass.
+Rust 283 and Server 16 catalog cases including three PostgreSQL cases passed in
+the preceding continuation. These results are not live queue acceptance.
+
+Both Independent-Matching-uncommitted APKs are built and verified; artifact hashes
+are in JAM_QUEUE_RECOVERY_PROGRESS.md. Emulator install tool session 97033 returned Success after the compiler wait;
+the app was reopened without restart or data clear. One no-Jam Find completed
+with candidates, no authorization error and disabled queue actions. The UI does
+not expose Matched versus Ambiguous, so automatic match/full parity remain open. No new pairing, extra diagnostic
+catalog requests or host mutation retries were sent. Preserve
+unrelated Server appsettings/.idea changes. A separate Sol planner owns README
+planning and a user-approved GPT-6 Luna writer will edit README files only.
+
+---
+
 # Active queue and current-song recovery checkpoint — 2026-11-03
 
 Read JAM_QUEUE_RECOVERY_PROGRESS.md, CONTROLLABLE_JAM_QUEUE_PROGRESS.md and

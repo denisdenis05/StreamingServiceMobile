@@ -1,5 +1,5 @@
 export {};
-import { ArtistCreditSource, IntegrationFailureCode } from 'streaming-service-spotify-jam';
+import { ArtistCreditSource, IntegrationFailureCode, MatchStatus } from 'streaming-service-spotify-jam';
 const Imports = Object.freeze({ native: 'react-native', authentication: '../src/services/AuthenticationService',
   network: '../src/services/ApplicationNetworkClient', addresses: '../src/constants/placeholders', task: '../src/services/SpotifyBackgroundHostingHeadless' });
 const Fixture = Object.freeze({ request: 'synthetic-request', account: 'synthetic-account', otherAccount: 'synthetic-other-account', token: 'synthetic-token',
@@ -7,6 +7,7 @@ const Fixture = Object.freeze({ request: 'synthetic-request', account: 'syntheti
   android: 'android', platformVersion: 35, recording: 'synthetic-recording', track: '4uLU6hMCjMI75M1A2tKUQC', title: 'Synthetic title', artist: 'Synthetic artist', durationMilliseconds: 180000,
   handle: 3, generation: 7, otherGeneration: 8, importRecording: '11111111-2222-3333-4444-555555555555', guestArtist: 'Synthetic guest',
   featureOpening: ' (feat. ', featureClosing: ')', emptyText: '' });
+const Diagnostic = Object.freeze({ tag: 'SpotifyMatch', firstPosition: 0, messagePosition: 1, singleCandidate: 1 });
 let account: string = Fixture.account;
 const authentication = { subscribe: () => () => undefined, restore: jest.fn(), getSnapshot: () => ({ isLoggedIn: true, accountIdentifier: account, token: Fixture.token }) };
 const client = { get: jest.fn(), post: jest.fn() };
@@ -20,6 +21,7 @@ function response(generation: number = Fixture.generation) { return JSON.stringi
   title: Fixture.title, artistNames: [Fixture.artist], durationMilliseconds: Fixture.durationMilliseconds, recordingCodes: [], playable: true }] }); }
 beforeEach(() => {
   jest.resetModules(); jest.clearAllMocks(); account = Fixture.account;
+  jest.spyOn(console, 'info').mockImplementation(() => undefined);
   native.claimHostingRecording.mockResolvedValue(JSON.stringify({ requestIdentifier: Fixture.request, streamingServiceAccountIdentifier: Fixture.account,
     spotifyAccountIdentifier: Fixture.spotify, jamSessionIdentifier: Fixture.jam, hostDeviceIdentifier: Fixture.host, baseAddress: Fixture.address,
     market: Fixture.market, recordingIdentifier: Fixture.recording, handle: Fixture.handle, generation: Fixture.generation }));
@@ -27,6 +29,7 @@ beforeEach(() => {
   native.completeHostingRecording.mockResolvedValue(undefined); native.failHostingRecording.mockResolvedValue(undefined);
   client.get.mockResolvedValue({ data: { identifier: Fixture.recording, title: Fixture.title, author: Fixture.artist, durationMilliseconds: Fixture.durationMilliseconds } });
 });
+afterEach(() => jest.restoreAllMocks());
 test('Headless hosting matches actual app metadata against the job-bound native catalog response', async () => {
   await require(Imports.task).executeSpotifyBackgroundHosting(Fixture.request);
   expect(native.searchHostingRecording).toHaveBeenCalled(); expect(native.completeHostingRecording).toHaveBeenCalledWith(Fixture.request, Fixture.track);
@@ -78,4 +81,11 @@ test('Headless hosting matches canonical recording credits against expanded Spot
   expect(client.post).not.toHaveBeenCalled();
   expect(native.completeHostingRecording).toHaveBeenCalledWith(Fixture.request, Fixture.track);
   expect(native.failHostingRecording).not.toHaveBeenCalled();
+  expect(console.info).toHaveBeenCalledWith(Diagnostic.tag, expect.any(String));
+  const diagnostic = (console.info as jest.Mock).mock.calls[Diagnostic.firstPosition][Diagnostic.messagePosition];
+  expect(JSON.parse(diagnostic)).toMatchObject({ status: MatchStatus.Matched, candidateCount: Diagnostic.singleCandidate,
+    acceptableCount: Diagnostic.singleCandidate, releaseCreditOnly: false });
+  for (const privateValue of [Fixture.title, Fixture.artist, Fixture.guestArtist, Fixture.account, Fixture.recording, Fixture.track, Fixture.token]) {
+    expect(diagnostic).not.toContain(privateValue);
+  }
 });

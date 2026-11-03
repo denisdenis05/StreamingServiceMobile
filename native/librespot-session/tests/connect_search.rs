@@ -29,7 +29,10 @@ const NO_RESULTS: usize = 0;
 const MAXIMUM_ARTISTS: usize = 32;
 const EXCESSIVE_RESPONSE_BYTES: usize = 1048577;
 const PADDING_BYTE: u8 = 0;
-const QUERY: &str = "track:\"Synthetic \\\"mix\\\" \\\\ title\" artist:\"Synthetic artist\"";
+const QUERY: &str = "Synthetic \"mix\" \\ title Synthetic artist";
+const FEATURED_TRACK_TITLE: &str = "America's Most Blunted";
+const FEATURED_TRACK_ARTIST: &str = "Madvillain";
+const FEATURED_TRACK_QUERY: &str = "America's Most Blunted Madvillain";
 const LIMIT_PARAMETER: &str = "limit";
 const ORIGIN: &str = "https://api-partner.spotify.com";
 const SEARCH_PATH: &str = "/pathfinder/v2/query";
@@ -77,7 +80,7 @@ fn response(tracks: Vec<Value>) -> Vec<u8> {
 }
 
 #[test]
-fn search_builds_only_fixed_partner_track_reads_with_quoted_escaped_metadata() {
+fn search_builds_only_fixed_partner_track_reads_with_natural_metadata_terms() {
     let request = search_request(&input()).unwrap(); let address = search_address(&request).unwrap();
     assert_eq!(request.method, Method::POST);
     assert_eq!(address.origin().ascii_serialization(), ORIGIN); assert_eq!(address.path(), SEARCH_PATH);
@@ -86,6 +89,25 @@ fn search_builds_only_fixed_partner_track_reads_with_quoted_escaped_metadata() {
     assert_eq!(body[VARIABLES_FIELD][SEARCH_TERM_FIELD], QUERY);
     assert_eq!(body[VARIABLES_FIELD][LIMIT_PARAMETER], LIMIT);
     assert!(address.query().is_none());
+}
+
+#[test]
+fn featured_recording_retrieval_does_not_require_catalog_field_filter_equivalence() {
+    let supplied = ConnectSearchInput { title: FEATURED_TRACK_TITLE.to_owned(), author: FEATURED_TRACK_ARTIST.to_owned(), ..input() };
+    let request = search_request(&supplied).unwrap();
+    let body: Value = serde_json::from_slice(&request.body).unwrap();
+    assert_eq!(body[VARIABLES_FIELD][SEARCH_TERM_FIELD], FEATURED_TRACK_QUERY);
+    assert!(search_address(&request).is_ok());
+}
+
+#[test]
+fn natural_search_trims_outer_metadata_whitespace_and_preserves_the_full_text_boundary() {
+    let supplied = ConnectSearchInput { title: format!("{BLANK_TEXT}{TITLE}{BLANK_TEXT}"), author: format!("{BLANK_TEXT}{AUTHOR}{BLANK_TEXT}"), ..input() };
+    let body: Value = serde_json::from_slice(&search_request(&supplied).unwrap().body).unwrap();
+    assert_eq!(body[VARIABLES_FIELD][SEARCH_TERM_FIELD], QUERY);
+    let boundary = ConnectSearchInput { title: PADDING_CHARACTER.to_string().repeat(MAXIMUM_TEXT_CHARACTERS),
+        author: PADDING_CHARACTER.to_string().repeat(MAXIMUM_TEXT_CHARACTERS), ..input() };
+    assert!(search_address(&search_request(&boundary).unwrap()).is_ok());
 }
 
 #[test]

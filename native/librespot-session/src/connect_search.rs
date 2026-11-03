@@ -20,10 +20,8 @@ const PERSISTED_QUERY_NOT_FOUND: &str = "PERSISTED_QUERY_NOT_FOUND";
 const TRACK_RESPONSE_KIND: &str = "Track";
 const JSON_MEDIA_TYPE: &str = "application/json";
 const TRACK_URI_PREFIX: &str = "spotify:track:";
-const TRACK_FILTER_PREFIX: &str = "track:";
-const ARTIST_FILTER_PREFIX: &str = " artist:";
-const QUOTE: char = '"';
-const ESCAPE: char = '\\';
+const QUERY_TERM_SEPARATOR: &str = " ";
+const QUERY_TERM_COUNT: usize = 2;
 const MINIMUM_RESULTS: usize = 1;
 const MAXIMUM_RESULTS: usize = 10;
 const MAXIMUM_RESPONSE_BYTES: usize = 1048576;
@@ -34,9 +32,7 @@ const MARKET_CHARACTERS: usize = 2;
 const EMPTY_COUNT: usize = 0;
 const MINIMUM_DURATION_MILLISECONDS: u64 = 1;
 const MAXIMUM_SAFE_INTEGER: u64 = 9007199254740991;
-const MAXIMUM_ESCAPED_TEXT_EXPANSION: usize = 4;
-const QUERY_FILTER_OVERHEAD_CHARACTERS: usize = 32;
-const MAXIMUM_QUERY_CHARACTERS: usize = MAXIMUM_TEXT_CHARACTERS * MAXIMUM_ESCAPED_TEXT_EXPANSION + QUERY_FILTER_OVERHEAD_CHARACTERS;
+const MAXIMUM_QUERY_CHARACTERS: usize = MAXIMUM_TEXT_CHARACTERS * QUERY_TERM_COUNT + QUERY_TERM_SEPARATOR.len();
 
 #[derive(Clone, Deserialize, Serialize, PartialEq, Debug)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -75,15 +71,6 @@ impl ConnectSearchInput {
     }
 }
 
-fn quoted(value: &str) -> String {
-    let mut result = String::new(); result.push(QUOTE);
-    for character in value.chars() {
-        if matches!(character, QUOTE | ESCAPE) { result.push(ESCAPE); }
-        result.push(character);
-    }
-    result.push(QUOTE); result
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PartnerSearchVariables {
@@ -103,7 +90,7 @@ struct PartnerRequest { operation_name: String, variables: PartnerSearchVariable
 
 pub fn search_request(input: &ConnectSearchInput) -> Result<ConnectHttpRequest, Failure> {
     input.validate()?;
-    let query = TRACK_FILTER_PREFIX.to_owned() + &quoted(&input.title) + ARTIST_FILTER_PREFIX + &quoted(&input.author);
+    let query = input.title.trim().to_owned() + QUERY_TERM_SEPARATOR + input.author.trim();
     let body = PartnerRequest { operation_name: SEARCH_OPERATION.to_owned(), variables: PartnerSearchVariables {
         search_term: query, offset: EMPTY_COUNT, limit: input.limit, number_of_top_results: input.limit,
         include_pre_releases: true, include_artist_has_concerts_field: false, include_audiobooks: false,
