@@ -25,7 +25,8 @@
     "test:spotify-probes": "node --test tools/spotify-device-probe.test.cjs tools/spotify-jam-probe.test.cjs tools/spotify-connect-probe.test.cjs tools/spotify-native-search-probe.test.cjs",
     "test:spotify-ios": "python3 tools/spotify-ios-proof-check.py",
     "test:settings": "tsc --project tsconfig.settings.json && node --test tools/settings-services.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/profile-settings-lastfm.test.ts tools/profile-settings-screen.test.tsx tools/profile-settings-deeplink.test.ts tools/lastfm-settings-screen.test.tsx tools/liked-songs-settings-service.test.ts tools/liked-songs-settings-platform.test.ts tools/liked-songs-settings-screen.test.tsx tools/recording-like.test.ts tools/recording-like-platform.test.tsx tools/library-heart-refresh.test.tsx tools/library-heart-ui.test.tsx",
-    "test:home": "node --test tools/query-lifecycle.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/home-recommendations-screen.test.tsx tools/library-heart-refresh.test.tsx"
+    "test:home": "node --test tools/query-lifecycle.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/home-recommendations-screen.test.tsx tools/library-heart-refresh.test.tsx",
+    "test:recommendations": "tsc --project tsconfig.recommendations.json && tsc --project tsconfig.audio-migration.json && node --test tools/recommendation-playback.test.cjs tools/player-runtime.test.cjs tools/player-queue-rewrite.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/recommendations-screen.test.tsx tools/home-recommendations-screen.test.tsx"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

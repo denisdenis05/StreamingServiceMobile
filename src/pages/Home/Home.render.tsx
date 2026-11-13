@@ -1,3 +1,4 @@
+import { RecommendationRoutes } from '../../services/recommendations/RecommendationContracts';
 import React, { useCallback } from 'react';
 import { AppState, Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -139,6 +140,12 @@ export default function Home({ navigation, route }: { navigation: any; route: an
         <HeaderTitle>{HOME_HEADER_TEXT}{PLACEHOLDER_USERNAME}</HeaderTitle>
       </HeaderContainer>
       <RecentQuickGrid navigation={navigation} />
+      <View><SectionTitle>Recommendations</SectionTitle>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open recommendations" style={[styles.card, { width: '100%' }]}
+          onPress={() => navigation.navigate(RecommendationRoutes.screen, {})}>
+          <DefaultText style={styles.title}>Daily mixes, radio and Smart shuffle</DefaultText>
+        </Pressable>
+      </View>
       {error && <HomeQueryFeedback message={HomeCopy.sectionsFailure} retry={refreshHomeRecommendations} />}
       {loading && sectionSkeletons.map((_, index) => <HorizontalCardCarousel key={index}
         navigation={navigation} sectionTitle={index === HomePolicy.firstSkeletonIndex ? HomeCopy.loading : HomeCopy.noHeading} content={[]} isLoading />)}

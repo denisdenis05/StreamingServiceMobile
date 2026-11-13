@@ -1,3 +1,4 @@
+import { recommendationSuggestionGate } from './recommendations/RecommendationSuggestionGate';
 import { retireLegacyImageCache } from './cache/ImageDownloadService';
 import Toast from 'react-native-toast-message';
 import { PlaybackApplicationLifecycle, PlaybackApplicationPolicy } from './player/PlaybackApplicationLifecycle';
@@ -66,6 +67,7 @@ export const audioRuntime = new PlaybackRuntime({
     }, client, reports);
   } }),
   async fetchSuggestions() {
+    if (recommendationSuggestionGate.suppressFallback()) return [];
     const account = authenticationSession.getSnapshot();
     if (account.accountIdentifier === null || account.token === null) return [];
     const client = createApplicationNetworkClient({ accountIdentifier: account.accountIdentifier, token: account.token });

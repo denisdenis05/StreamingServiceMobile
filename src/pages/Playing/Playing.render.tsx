@@ -49,6 +49,7 @@ import { RepeatingType } from '../../constants/types.tsx';
 import ContextMenu from '../../components/ContextMenu/ContextMenu.render.tsx';
 import { menuOptions } from '../../constants/navigation.tsx';
 import SpotifyPlayerJam from './SpotifyPlayerJam.render';
+import RecommendationPlaybackStatus from './RecommendationPlaybackStatus';
 import { playerJam } from '../../services/PlayerJamRuntime';
 import { SpotifyPlayerJamMode } from '../../services/spotify/SpotifyPlayerJamController';
 
@@ -296,6 +297,7 @@ const Playing = ({ navigation }: any) => {
               />
             )}
           </AllPlayingControlsContainer>
+          <RecommendationPlaybackStatus />
           <SpotifyPlayerJam navigation={navigation} />
         </ContentContainer>
       </Animated.View>

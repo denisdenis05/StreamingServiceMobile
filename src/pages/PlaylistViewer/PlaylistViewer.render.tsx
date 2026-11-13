@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from 'react';
+import { RecommendationModes, RecommendationRoutes } from '../../services/recommendations/RecommendationContracts';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useApi } from '../../hooks/useApi.ts';
 import { useMusicQueue } from '../../../MusicProvider.tsx';
 import { Recording } from '../../constants/types.tsx';
@@ -16,6 +17,14 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   );
   const { playPlaylist } = useMusicQueue();
   const api = useApi();
+  const [currentCover, setCurrentCover] = useState(playlistCover);
+  useEffect(() => {
+    const controller = new AbortController();
+    setCurrentCover(playlistCover);
+    void api.get<{ cover: string }>('Library/playlists/' + encodeURIComponent(playlistId) + '/artwork', { signal: controller.signal })
+      .then(response => { if (!controller.signal.aborted && response.data.cover) setCurrentCover(response.data.cover); }).catch(() => undefined);
+    return () => controller.abort();
+  }, [api, playlistId, playlistCover, recordings]);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ x: 0, y: 0 });
@@ -33,13 +42,15 @@ const PlaylistViewer = ({ navigation, route }: any) => {
   const handlePlayPlaylist = useCallback(() => handlePlayFromRecording(FirstPlaylistEntryIndex), [handlePlayFromRecording]);
 
   const handlePlaylistMore = useCallback((event: any) => {
-    if (!isOwner) return;
     setMenuPosition({ x: event.nativeEvent.pageX, y: event.nativeEvent.pageY });
-    setContextMenuOptions([{
+    setContextMenuOptions([
+      { label: 'Smart shuffle', icon: () => null, onClick: () => navigation.navigate(RecommendationRoutes.screen, { mode: RecommendationModes.smartShuffle, playlistId }) },
+      { label: 'Playlist radio', icon: () => null, onClick: () => navigation.navigate(RecommendationRoutes.screen, { mode: RecommendationModes.playlistRadio, playlistId }) },
+      ...(isOwner ? [{
       label: 'Edit Playlist',
       icon: () => null,
       onClick: () => navigation.navigate('CreatePlaylist', { playlistId, initialName: playlistTitle }),
-    }] as any);
+    }] : [])] as any);
     setMenuVisible(true);
   }, [isOwner, navigation, playlistId, playlistTitle]);
 
@@ -82,10 +93,10 @@ const PlaylistViewer = ({ navigation, route }: any) => {
         navigation={navigation}
         title={playlistTitle}
         subtitle={playlistOwner}
-        cover={playlistCover}
+        cover={currentCover}
         songs={recordings}
         onPlay={handlePlayPlaylist}
-        onMorePress={isOwner ? handlePlaylistMore : undefined}
+        onMorePress={handlePlaylistMore}
         onSongPlay={handlePlayFromRecording}
         onSongMorePress={handleSongMorePress}
         isLoading={loading}
