@@ -1,3 +1,4 @@
+import { ArtistRoutes, artistMenuDestination } from '../pages/Artist/ArtistNavigation';
 import { RecommendationModes, RecommendationRoutes } from '../services/recommendations/RecommendationContracts';
 import HomeIcon from '../../assets/icons/homeIcon.tsx';
 import SearchIcon from '../../assets/icons/searchIcon.tsx';
@@ -54,6 +55,14 @@ export const menuOptions: ActionItem[] = [
         recordingIds: params?.recordingIds || [],
         songs: params?.songs || []
       });
+    },
+  },
+  {
+    label: 'Go to artist',
+    icon: MusicNoteIcon,
+    onClick: (navigation, parameters) => {
+      const destination = artistMenuDestination(parameters);
+      if (destination) navigation.navigate(ArtistRoutes.screen, destination);
     },
   },
   {

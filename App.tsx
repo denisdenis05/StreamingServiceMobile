@@ -1,3 +1,5 @@
+import ArtistPage from './src/pages/Artist/Artist.render';
+import { ArtistRoutes } from './src/pages/Artist/ArtistNavigation';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -130,6 +132,7 @@ const InnerApp = () => {
       <Stack.Screen name="Home" component={Home} />
       <Stack.Screen name={RecommendationRoutes.screen} component={Recommendations} />
       <Stack.Screen name="Search" component={Search} />
+      <Stack.Screen name={ArtistRoutes.screen} component={ArtistPage} />
       <Stack.Screen
         name="Playing"
         component={Playing}

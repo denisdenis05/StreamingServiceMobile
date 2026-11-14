@@ -1,3 +1,4 @@
+import { ArtistRoutes } from '../Artist/ArtistNavigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, View, ActivityIndicator } from 'react-native';
 import PageContainer from '../../components/PageContainer';
@@ -323,12 +324,16 @@ const Search = ({ navigation, route }: { navigation: any; route: any }) => {
               songTitle={item.data.name}
               songAuthor="Artist"
               albumCover={item.data.image || ''}
-              onPressAction={() => {}}
+              onPressAction={() => navigation.navigate(ArtistRoutes.screen, {
+                artistId: item.data.id,
+                artistName: item.data.name,
+                artistImage: item.data.image,
+              })}
             />
           );
       }
     },
-    [playTrack, handleMorePress, handleAlbumPress],
+    [playTrack, handleMorePress, handleAlbumPress, navigation],
   );
 
   const listHeader = useMemo(() => <ListHeader loading={loading} />, [loading]);
