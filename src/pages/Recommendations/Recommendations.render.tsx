@@ -28,7 +28,6 @@ import {
 } from '../../services/recommendations/RecommendationContracts';
 import type {
   DailyRecommendationMix,
-  RecommendationOverview,
   RecommendationPage,
   RecommendationRequest,
 } from '../../services/recommendations/RecommendationContracts';
@@ -49,7 +48,6 @@ const Policy = Object.freeze({
   screen: 'PlaylistViewer',
   owner: true,
   dailyName: "Today's playlist",
-  pageTitle: 'Recommendations',
   loadFailure: 'Recommendations could not be loaded. Try again.',
   saveFailure: 'The playlist could not be saved. Your selection is still here.',
   playbackFailure: 'This selection could not start. Please try again.',
@@ -78,7 +76,12 @@ const styles = StyleSheet.create({
     padding: Policy.buttonPadding,
     borderRadius: Policy.radius,
   },
-  active: { borderColor: colors.accentPrimary, borderWidth: 1 },
+  cover: {
+    width: 180,
+    height: 180,
+    borderRadius: Policy.radius,
+    alignSelf: 'center',
+  },
   artwork: {
     width: Policy.cover,
     height: Policy.cover,
@@ -94,17 +97,37 @@ const styles = StyleSheet.create({
     borderRadius: Policy.radius,
   },
 });
+const playlistTitles: Record<string, string> = {
+  [RecommendationModes.daily]: Policy.dailyName,
+  [RecommendationModes.calm]: 'Take it easy',
+  [RecommendationModes.energy]: 'Pick up the pace',
+  [RecommendationModes.instrumental]: 'Mostly instrumental',
+  [RecommendationModes.smartShuffle]: 'Smart shuffle',
+  [RecommendationModes.songRadio]: 'Song radio',
+  [RecommendationModes.artistRadio]: 'Artist radio',
+  [RecommendationModes.playlistRadio]: 'Playlist radio',
+};
+type PlaylistParameters = RecommendationRequest & { playlistTitle?: string };
+function playlistRequest(
+  parameters: object | undefined,
+): RecommendationRequest {
+  const selection = { ...parameters } as PlaylistParameters;
+  delete selection.playlistTitle;
+  return selection.mode ? selection : { mode: RecommendationModes.daily };
+}
 export default function Recommendations({
   navigation,
   route,
 }: NativeStackScreenProps<ParamListBase, 'Recommendations'>) {
   const network = useApi();
   const { accountIdentifier } = useAuth();
-  const [overview, setOverview] = useState<RecommendationOverview | null>(null);
+  const parameters = route.params as PlaylistParameters | undefined;
+  const title =
+    parameters?.playlistTitle ??
+    playlistTitles[parameters?.mode ?? RecommendationModes.daily] ??
+    'Recommended playlist';
   const [request, setRequest] = useState<RecommendationRequest>(
-    (route.params as RecommendationRequest | undefined)?.mode
-      ? (route.params as RecommendationRequest)
-      : { mode: RecommendationModes.daily },
+    playlistRequest(route.params),
   );
   const [page, setPage] = useState<RecommendationPage | null>(null);
   const [dailyVersion, setDailyVersion] = useState<string | null>(null);
@@ -182,11 +205,7 @@ export default function Recommendations({
         setPage(result);
         setDailyVersion(daily?.version ?? null);
         setSavedId(daily?.savedPlaylistId ?? null);
-        setName(
-          selection.mode === RecommendationModes.daily
-            ? Policy.dailyName
-            : selection.mode.replace(/-/g, ' '),
-        );
+        setName(title);
       } catch (failure: any) {
         if (
           !controller.signal.aborted &&
@@ -202,28 +221,15 @@ export default function Recommendations({
         if (operationGeneration === generation.current) setLoading(false);
       }
     },
-    [network],
+    [network, title],
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    void network
-      .get<RecommendationOverview>(RecommendationRoutes.overview, {
-        signal: controller.signal,
-      })
-      .then(response => {
-        if (!controller.signal.aborted) setOverview(response.data);
-      })
-      .catch(() => undefined);
-    void load(
-      (route.params as RecommendationRequest | undefined)?.mode
-        ? (route.params as RecommendationRequest)
-        : { mode: RecommendationModes.daily },
-    );
+    const requestGeneration = generation;
+    void load(playlistRequest(route.params));
     return () => {
-      controller.abort();
       pending.current?.abort();
-      generation.current++;
+      requestGeneration.current++;
     };
   }, [accountIdentifier, load, network, route.params]);
 
@@ -284,38 +290,36 @@ export default function Recommendations({
       setSaving(false);
     }
   };
-  const button = (title: string, action: () => void, disabled = false) => (
+  const button = (label: string, action: () => void, disabled = false) => (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={title}
+      accessibilityLabel={label}
       disabled={disabled}
       onPress={action}
       style={styles.button}
     >
-      <DefaultText>{title}</DefaultText>
+      <DefaultText>{label}</DefaultText>
     </Pressable>
   );
   return (
     <PageContainer>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         {button('Back', () => navigation.goBack())}
-        <DefaultText style={styles.title}>{Policy.pageTitle}</DefaultText>
+        {page?.tracks[0] && (
+          <CachedImage
+            cover={page.tracks[0].cover}
+            smallCover={page.tracks[0].smallCover}
+            verySmallCover={page.tracks[0].verySmallCover}
+            releaseId={page.tracks[0].releaseId}
+            tier="full"
+            style={styles.cover}
+            resizeMode="cover"
+          />
+        )}
+        <DefaultText style={styles.title}>{title}</DefaultText>
         <DefaultText style={styles.muted}>
-          Radio, daily selections and a smarter shuffle from your available
-          music.
+          Recommended playlist · Listen now or save it to your library.
         </DefaultText>
-        {overview?.cards.map(card => (
-          <Pressable
-            key={card.mode}
-            accessibilityRole="button"
-            accessibilityLabel={card.title}
-            style={[styles.card, request.mode === card.mode && styles.active]}
-            onPress={() => void load({ mode: card.mode })}
-          >
-            <DefaultText style={styles.trackTitle}>{card.title}</DefaultText>
-            <DefaultText style={styles.muted}>{card.description}</DefaultText>
-          </Pressable>
-        ))}
         {loading && (
           <ActivityIndicator
             accessibilityLabel="Loading recommendations"
@@ -331,6 +335,9 @@ export default function Recommendations({
         {page && (
           <View style={styles.card}>
             <DefaultText>{page.explanation}</DefaultText>
+            <DefaultText style={styles.muted}>
+              {page.tracks.length} tracks
+            </DefaultText>
             <View style={styles.wrap}>
               {button(
                 'Play selection',

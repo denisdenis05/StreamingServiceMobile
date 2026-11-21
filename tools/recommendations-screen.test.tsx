@@ -119,14 +119,36 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
 });
 
-test('empty navigation parameters load the stable daily mix and expose recommendation modes', async () => {
+test('empty navigation parameters open the daily playlist without a recommendation chooser', async () => {
   await render();
   expect(mockNetwork.get).toHaveBeenCalledWith(
     RecommendationRoutes.daily,
     expect.anything(),
   );
   expect(text()).toContain(Fixture.title);
+  expect(text()).toContain("Today's playlist");
+  expect(button('Take it easy')).toBeUndefined();
+  expect(mockNetwork.get).not.toHaveBeenCalledWith(RecommendationRoutes.overview, expect.anything());
+  expect(mockNetwork.post).not.toHaveBeenCalled();
+});
+
+test('a Home card opens its named playlist and plays a track without saving', async () => {
+  await render({ mode: RecommendationModes.calm, playlistTitle: 'Take it easy' });
   expect(text()).toContain('Take it easy');
+  expect(mockNetwork.post).toHaveBeenCalledWith(RecommendationRoutes.generate,
+    { mode: RecommendationModes.calm }, expect.anything());
+  await act(async () => button('Play ' + Fixture.title).props.onPress());
+  expect(mockStart).toHaveBeenCalledWith({ mode: RecommendationModes.calm }, page, 0);
+  expect(mockNetwork.post).not.toHaveBeenCalledWith(RecommendationRoutes.playlists, expect.anything());
+  expect(mockNotify).not.toHaveBeenCalled();
+});
+
+test('an already saved daily mix can still play without creating another playlist', async () => {
+  mockNetwork.get.mockResolvedValue({ data: { ...daily, savedPlaylistId: Fixture.playlist } });
+  await render();
+  expect(button('Playlist saved').props.disabled).toBe(true);
+  await act(async () => button('Play selection').props.onPress());
+  expect(mockStart).toHaveBeenCalled();
   expect(mockNetwork.post).not.toHaveBeenCalled();
 });
 
