@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
@@ -41,6 +42,8 @@ interface LineLayout {
 }
 function LyricsPanelContent(properties: LyricsPanelProps) {
   const { document, expanded } = properties;
+  const { width } = useWindowDimensions();
+  const compactPhone = !expanded && width < LyricsPanelPolicy.phoneWidthLimit;
   const activeIndex = activeLyricsLine(
     document,
     properties.positionMilliseconds,
@@ -137,16 +140,23 @@ function LyricsPanelContent(properties: LyricsPanelProps) {
       style={[
         styles.panel,
         expanded ? styles.expanded : styles.compact,
+        compactPhone && styles.compactPhone,
         { backgroundColor: properties.backgroundColor },
       ]}
     >
       <Pressable
         testID={LyricsPanelPolicy.headerTestIdentifier}
-        style={[styles.header, expanded && styles.expandedHeader]}
+        style={[
+          styles.header,
+          expanded && styles.expandedHeader,
+          compactPhone && styles.phoneHeader,
+        ]}
         accessible={false}
         onPress={expanded ? undefined : properties.onExpand}
       >
-        <Text style={styles.title}>{LyricsPanelPolicy.title}</Text>
+        <Text style={[styles.title, compactPhone && styles.phoneTitle]}>
+          {LyricsPanelPolicy.title}
+        </Text>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
@@ -186,9 +196,11 @@ function LyricsPanelContent(properties: LyricsPanelProps) {
             accessibilityLabel={LyricsPanelPolicy.retryLabel}
             disabled={!properties.retryable}
             onPress={properties.onRetry}
-            style={styles.empty}
+            style={[styles.empty, compactPhone && styles.phoneEmpty]}
           >
-            <Text style={styles.message}>{properties.message}</Text>
+            <Text style={[styles.message, compactPhone && styles.phoneMessage]}>
+              {properties.message}
+            </Text>
           </Pressable>
         ) : (
           <ScrollView
@@ -209,6 +221,7 @@ function LyricsPanelContent(properties: LyricsPanelProps) {
             onContentSizeChange={(_width, height) => setContentHeight(height)}
             contentContainerStyle={[
               styles.lines,
+              compactPhone && styles.phoneLines,
               !expanded && {
                 paddingBottom: Math.max(
                   LyricsPanelPolicy.textInset,
@@ -229,6 +242,7 @@ function LyricsPanelContent(properties: LyricsPanelProps) {
                 onPress={() => seek(index)}
                 onLayout={event => lineLayout(index, event)}
                 index={index}
+                compactPhone={compactPhone}
               />
             ))}
           </ScrollView>
@@ -258,6 +272,7 @@ function LyricRow({
   onPress,
   onLayout,
   index,
+  compactPhone,
 }: {
   readonly text: string;
   readonly active: boolean;
@@ -265,6 +280,7 @@ function LyricRow({
   readonly onPress: () => void;
   readonly onLayout: (event: LayoutChangeEvent) => void;
   readonly index: number;
+  readonly compactPhone: boolean;
 }) {
   const emphasis = useRef(
     new Animated.Value(
@@ -297,6 +313,7 @@ function LyricRow({
       <Animated.Text
         style={[
           styles.line,
+          compactPhone && styles.phoneLine,
           {
             color: emphasis.interpolate({
               inputRange: [
@@ -316,8 +333,11 @@ function LyricRow({
                     LyricsPanelPolicy.activeProgress,
                   ],
                   outputRange: [
-                    LyricsPanelPolicy.normalFontSize /
-                      LyricsPanelPolicy.activeFontSize,
+                    compactPhone
+                      ? LyricsPanelPolicy.phoneNormalFontSize /
+                        LyricsPanelPolicy.phoneActiveFontSize
+                      : LyricsPanelPolicy.normalFontSize /
+                        LyricsPanelPolicy.activeFontSize,
                     LyricsPanelPolicy.activeProgress,
                   ],
                 }),
@@ -345,6 +365,23 @@ const styles = StyleSheet.create({
     paddingTop: LyricsPanelPolicy.expandedInset,
     paddingHorizontal: LyricsPanelPolicy.expandedInset,
     paddingBottom: LyricsPanelPolicy.expandedInset,
+  },
+  compactPhone: { paddingTop: LyricsPanelPolicy.phoneTopInset },
+  phoneHeader: {
+    height: LyricsPanelPolicy.phoneHeaderHeight,
+    paddingHorizontal: LyricsPanelPolicy.phoneTextInset,
+  },
+  phoneTitle: {
+    fontSize: moderateScale(LyricsPanelPolicy.phoneHeaderFontSize),
+  },
+  phoneLines: { paddingHorizontal: LyricsPanelPolicy.phoneTextInset },
+  phoneLine: {
+    fontSize: moderateScale(LyricsPanelPolicy.phoneActiveFontSize),
+    lineHeight: moderateScale(LyricsPanelPolicy.phoneLineHeight),
+  },
+  phoneEmpty: { padding: LyricsPanelPolicy.phoneTextInset },
+  phoneMessage: {
+    fontSize: moderateScale(LyricsPanelPolicy.phoneNormalFontSize),
   },
   header: {
     height: LyricsPanelPolicy.headerHeight,
