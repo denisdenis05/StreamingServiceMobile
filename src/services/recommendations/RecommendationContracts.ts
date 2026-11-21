@@ -14,6 +14,8 @@ export const RecommendationRoutes = Object.freeze({
   screen: 'Recommendations',
   base: 'api/recommendations',
   overview: 'api/recommendations/overview',
+  collections: 'api/recommendations/collections',
+  preview: 'api/recommendations/preview',
   daily: 'api/recommendations/daily',
   regenerate: 'api/recommendations/daily/regenerate',
   generate: 'api/recommendations/generate',
@@ -34,6 +36,13 @@ export interface RecommendationPage {
   readonly explanation: string;
   readonly featureGeneration: string;
   readonly mode: string;
+}
+export interface RecommendationPlaylistPreview {
+  readonly request: RecommendationRequest;
+  readonly page: RecommendationPage;
+  readonly cover: string;
+  readonly dailyVersion: string | null;
+  readonly savedPlaylistId: string | null;
 }
 export interface DailyRecommendationMix {
   readonly version: string;

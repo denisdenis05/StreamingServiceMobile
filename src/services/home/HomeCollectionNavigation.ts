@@ -1,4 +1,6 @@
-export enum HomeCollectionType { Album = 'Album', Playlist = 'Playlist' }
+import type { RecommendationPlaylistPreview } from '../recommendations/RecommendationContracts';
+
+export enum HomeCollectionType { Album = 'Album', Playlist = 'Playlist', Recommendation = 'Recommendation' }
 export interface HomeCollectionCard {
   readonly id: string;
   readonly title: string;
@@ -8,9 +10,17 @@ export interface HomeCollectionCard {
   readonly verySmallCover?: string;
   readonly type?: string;
   readonly canEdit?: boolean;
+  readonly recommendation?: RecommendationPlaylistPreview;
 }
 export const HomeCollectionRoutes = Object.freeze({ album: 'AlbumViewer', playlist: 'PlaylistViewer' });
 export function homeCollectionDestination(card: HomeCollectionCard) {
+  if (card.type === HomeCollectionType.Recommendation && card.recommendation) return {
+    route: HomeCollectionRoutes.playlist,
+    parameters: {
+      playlistTitle: card.title, playlistOwner: card.artistName, playlistCover: card.cover,
+      recommendation: card.recommendation,
+    },
+  };
   if (card.type === HomeCollectionType.Playlist) return {
     route: HomeCollectionRoutes.playlist,
     parameters: {

@@ -17,7 +17,7 @@ import SectionTitle from '../../components/SectionTitle';
 import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader';
 import { HomeRecommendationQueries, homeSectionQuery } from '../../services/home/HomeRecommendationQueries';
 import { HomeCollectionCard, HomeCollectionType, homeCollectionDestination } from '../../services/home/HomeCollectionNavigation';
-import RecommendationPlaylists from './RecommendationPlaylists';
+import { RecommendationRoutes } from '../../services/recommendations/RecommendationContracts';
 
 const HomePolicy = Object.freeze({
   columnGap: 8, horizontalPadding: 20, columnCount: 2, coverSize: 52,
@@ -120,6 +120,18 @@ function HomeSection({ section, navigation }: { section: RecommendationSection; 
   return <HorizontalCardCarousel navigation={navigation} sectionTitle={section.title} content={albums ?? []} isLoading={loading} />;
 }
 
+function RecommendedPlaylists({ navigation }: { navigation: HomeNavigation }) {
+  const network = useApi();
+  const { data, loading, error } = useData<HomeCollectionCard[]>(HomeRecommendationQueries.playlists,
+    async signal => (await network.get<HomeCollectionCard[]>(RecommendationRoutes.collections, { signal })).data);
+  if (error) return <View>
+    <SectionTitle>Recommendations</SectionTitle>
+    <HomeQueryFeedback message={HomeCopy.sectionFailure} retry={() => invalidateCache(HomeRecommendationQueries.playlists)} />
+  </View>;
+  if (!loading && !data?.length) return null;
+  return <HorizontalCardCarousel navigation={navigation} sectionTitle="Recommendations" content={data ?? []} isLoading={loading} />;
+}
+
 export default function Home({ navigation, route }: { navigation: any; route: any }) {
   const network = useApi();
   const fetchSections = async (signal: AbortSignal) =>
@@ -140,7 +152,7 @@ export default function Home({ navigation, route }: { navigation: any; route: an
         <HeaderTitle>{HOME_HEADER_TEXT}{PLACEHOLDER_USERNAME}</HeaderTitle>
       </HeaderContainer>
       <RecentQuickGrid navigation={navigation} />
-      <RecommendationPlaylists navigation={navigation} />
+      <RecommendedPlaylists navigation={navigation} />
       {error && <HomeQueryFeedback message={HomeCopy.sectionsFailure} retry={refreshHomeRecommendations} />}
       {loading && sectionSkeletons.map((_, index) => <HorizontalCardCarousel key={index}
         navigation={navigation} sectionTitle={index === HomePolicy.firstSkeletonIndex ? HomeCopy.loading : HomeCopy.noHeading} content={[]} isLoading />)}

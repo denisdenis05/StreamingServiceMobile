@@ -6,7 +6,7 @@ import { HomeCollectionRoutes, HomeCollectionType, homeCollectionDestination } f
 import { HomeRecommendationQueries, homeSectionQuery } from '../src/services/home/HomeRecommendationQueries';
 import HorizontalCardCarousel from '../src/components/HorizontalCardCarousel/HorizontalCardCarousel.render';
 import CachedImage from '../src/components/CachedImage';
-import { RecommendationModes, RecommendationRoutes } from '../src/services/recommendations/RecommendationContracts';
+import { RecommendationModes } from '../src/services/recommendations/RecommendationContracts';
 
 const mockQuerySnapshots = new Map<string, { data: unknown; loading: boolean; error: Error | null }>();
 const mockInvalidate = jest.fn();
@@ -84,20 +84,30 @@ test('does not duplicate the recently played grid as a carousel', async () => {
   expect(carousels[Fixture.firstCall].props.sectionTitle).toBe(Fixture.artistsTitle);
 });
 
-test('recommendations are individual playlists that open directly without saving', async () => {
+test('recommendations reuse the album carousel and open the existing playlist view with the generated collage', async () => {
   const cards = [
     { mode: RecommendationModes.daily, title: "Today's playlist", description: 'Daily tracks' },
     { mode: RecommendationModes.calm, title: 'Take it easy', description: 'Calmer tracks' },
     { mode: RecommendationModes.smartShuffle, title: 'Smart shuffle', description: 'A varied flow' },
-  ];
-  mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: { analyzedTracks: 100, cards }, loading: false, error: null });
+  ].map(card => ({ id: card.mode, title: card.title, artistName: card.description, cover: 'playlist-collage',
+    type: HomeCollectionType.Recommendation,
+    recommendation: { request: { mode: card.mode }, page: { tracks: [], mode: card.mode, continuationToken: null, explanation: card.description, featureGeneration: 'fixture' },
+      cover: 'playlist-collage', dailyVersion: null, savedPlaylistId: null } }));
+  mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: cards, loading: false, error: null });
   await renderHome();
+  const carousel = renderer.root.findByType(HorizontalCardCarousel);
+  expect(carousel.props.sectionTitle).toBe('Recommendations');
+  expect(carousel.props.content).toEqual(cards);
   expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open recommendations' })).toHaveLength(0);
-  for (const card of cards) {
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: card.title }).props.onPress());
-    expect(navigation.navigate).toHaveBeenLastCalledWith(RecommendationRoutes.screen, {
-      mode: card.mode, playlistTitle: card.title,
-    });
+  const clickables = carousel.findAll(element => typeof element.props.onPress === 'function');
+  await act(async () => clickables[0].props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith(HomeCollectionRoutes.playlist, {
+    playlistTitle: cards[0].title, playlistOwner: cards[0].artistName,
+    playlistCover: cards[0].cover, recommendation: cards[0].recommendation,
+  });
+  for (const image of carousel.findAllByType(CachedImage)) {
+    expect(image.props.releaseId).toBeUndefined();
+    expect(image.props.cover).toBe('playlist-collage');
   }
   expect(mockNetwork.get).not.toHaveBeenCalled();
 });
@@ -105,8 +115,9 @@ test('recommendations are individual playlists that open directly without saving
 test('recommended playlist failures retry their own query', async () => {
   mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: null, loading: false, error: new Error(Fixture.failure) });
   await renderHome();
-  expect(texts()).toContain('Recommended playlists could not be loaded.');
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: 'Retry recommended playlists' }).props.onPress());
+  expect(texts()).toContain('These recommendations could not be loaded.');
+  const retry = renderer.root.findAllByType(Pressable).find(element => element.findAllByType(Text).some(label => label.props.children === Fixture.retry));
+  await act(async () => retry?.props.onPress());
   expect(mockInvalidate).toHaveBeenCalledWith(HomeRecommendationQueries.playlists);
 });
 

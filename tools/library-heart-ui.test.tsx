@@ -11,6 +11,7 @@ import { getLibraryRevision } from '../src/services/LibraryChanges';
 import { Recording } from '../src/constants/types';
 
 jest.mock('../src/constants/navigation', () => ({ menuOptions: [] }));
+jest.mock('../src/hooks/useRecommendationPlaylist', () => ({ useRecommendationPlaylist: () => ({ preview: null }) }));
 jest.mock('../src/hooks/useCollectionRecordings', () => ({
   CollectionRecordingPolicy: { playlist: 'playlist' },
   useCollectionRecordings: () => ({ recordings: [mockSong], loading: false, error: null, loadMore: jest.fn(), retry: jest.fn() }),
