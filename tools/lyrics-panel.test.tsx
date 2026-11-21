@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
-import { Animated, StyleSheet } from 'react-native';
+import { Animated, StyleSheet, Text } from 'react-native';
+import { moderateScale } from '../src/utils/scaling';
 import { LyricsPanel } from '../src/components/LyricsPanel/LyricsPanel';
 import { LyricsPanelPolicy } from '../src/components/LyricsPanel/LyricsPanelPolicy';
 import {
@@ -15,6 +16,7 @@ jest.mock('react-native-svg', () => ({
 }));
 const mockScrollTo = jest.fn();
 const mockViewportRender = jest.fn();
+let mockWindowWidth: number = LyricsFixture.wideWindowWidth;
 jest.mock('react-native', () => {
   const native = jest.requireActual('react-native');
   const react = require('react');
@@ -26,6 +28,7 @@ jest.mock('react-native', () => {
     StyleSheet: native.StyleSheet,
     Text: native.Text,
     View: native.View,
+    useWindowDimensions: () => ({ width: mockWindowWidth }),
     ScrollView: react.forwardRef((properties: object, reference: unknown) => {
       mockViewportRender();
       react.useImperativeHandle(reference, () => ({ scrollTo: mockScrollTo }));
@@ -54,6 +57,7 @@ const properties = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
+  mockWindowWidth = LyricsFixture.wideWindowWidth;
   jest.spyOn(Animated, 'timing').mockImplementation((value, configuration) => ({
     start: callback => {
       (value as Animated.Value).setValue(configuration.toValue as number);
@@ -288,5 +292,86 @@ test('Compact lyrics reserve enough trailing space to keep the final current lin
   update({ expanded: true });
   expect(
     StyleSheet.flatten(viewport().props.contentContainerStyle).paddingBottom,
+  ).toBe(LyricsPanelPolicy.textInset);
+});
+
+test('Phone compact lyrics use smaller typography and reduced heading and icon insets', () => {
+  mockWindowWidth = LyricsFixture.phoneWidth;
+  render();
+  const panel = renderer.root.findByProps({
+    testID: LyricsPanelPolicy.panelTestIdentifier,
+  });
+  const header = renderer.root.findByProps({
+    testID: LyricsPanelPolicy.headerTestIdentifier,
+  });
+  expect(StyleSheet.flatten(panel.props.style).paddingTop).toBe(
+    LyricsFixture.expectedPhoneTopInset,
+  );
+  expect(StyleSheet.flatten(header.props.style).paddingHorizontal).toBe(
+    LyricsFixture.expectedPhoneHorizontalInset,
+  );
+  expect(
+    StyleSheet.flatten(viewport().props.contentContainerStyle)
+      .paddingHorizontal,
+  ).toBe(LyricsFixture.expectedPhoneHorizontalInset);
+  expect(
+    StyleSheet.flatten(
+      row(LyricsFixture.first).findByType(Animated.Text).props.style,
+    ).fontSize,
+  ).toBe(moderateScale(LyricsFixture.expectedPhoneActiveFontSize));
+  expect(viewport().props.scrollEnabled).toBe(false);
+  expect(
+    StyleSheet.flatten(
+      header.findByProps({ accessibilityLabel: LyricsPanelPolicy.expandLabel })
+        .props.style,
+    ).width,
+  ).toBe(LyricsPanelPolicy.touchSize);
+});
+
+test('Phone expanded lyrics retain their original typography and padding', () => {
+  mockWindowWidth = LyricsFixture.phoneWidth;
+  render({ expanded: true });
+  const header = renderer.root.findByProps({
+    testID: LyricsPanelPolicy.headerTestIdentifier,
+  });
+  expect(StyleSheet.flatten(header.props.style).paddingHorizontal).toBe(
+    LyricsPanelPolicy.textInset,
+  );
+  expect(StyleSheet.flatten(header.findByType(Text).props.style).fontSize).toBe(
+    moderateScale(LyricsPanelPolicy.headerFontSize),
+  );
+  expect(
+    StyleSheet.flatten(
+      row(LyricsFixture.first).findByType(Animated.Text).props.style,
+    ).fontSize,
+  ).toBe(moderateScale(LyricsPanelPolicy.activeFontSize));
+});
+
+test('Wide compact layouts retain the accepted emulator typography and padding', () => {
+  render();
+  expect(
+    StyleSheet.flatten(viewport().props.contentContainerStyle)
+      .paddingHorizontal,
+  ).toBe(LyricsPanelPolicy.textInset);
+  expect(
+    StyleSheet.flatten(
+      row(LyricsFixture.first).findByType(Animated.Text).props.style,
+    ).fontSize,
+  ).toBe(moderateScale(LyricsPanelPolicy.activeFontSize));
+});
+
+test('Resizing a compact panel switches phone styling at the width boundary', () => {
+  mockWindowWidth =
+    LyricsPanelPolicy.phoneWidthLimit - LyricsFixture.singleCall;
+  render();
+  expect(
+    StyleSheet.flatten(viewport().props.contentContainerStyle)
+      .paddingHorizontal,
+  ).toBe(LyricsPanelPolicy.phoneTextInset);
+  mockWindowWidth = LyricsPanelPolicy.phoneWidthLimit;
+  update({ positionMilliseconds: LyricsFixture.secondTimestamp });
+  expect(
+    StyleSheet.flatten(viewport().props.contentContainerStyle)
+      .paddingHorizontal,
   ).toBe(LyricsPanelPolicy.textInset);
 });

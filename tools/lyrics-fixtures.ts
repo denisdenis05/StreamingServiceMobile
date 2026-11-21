@@ -52,6 +52,11 @@ export const LyricsFixture = Object.freeze({
   fractionalResult: 1100,
   flushTurns: 12,
   fontSizeValue: 'fontSize',
+  phoneWidth: 360,
+  wideWindowWidth: 960,
+  expectedPhoneActiveFontSize: 22,
+  expectedPhoneHorizontalInset: 16,
+  expectedPhoneTopInset: 12,
 });
 export const lyricsResponse = (overrides = {}) => ({
   recordingIdentifier: LyricsFixture.recording,

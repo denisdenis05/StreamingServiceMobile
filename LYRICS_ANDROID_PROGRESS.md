@@ -1,5 +1,15 @@
 # Android lyrics integration
 
+## Compact lyrics on smaller phones
+
+Follow-up branch: `fix/compact-lyrics-phone-layout`, based on the integration branch after PR #2 merged. No master branch exists. Existing Home/recommendation working-tree changes are unrelated to this chapter and remain unstaged.
+
+On windows narrower than 600 dp, only compact lyrics use smaller base typography (active 22, inactive 18, line height 30), 16 dp side padding, 12 dp top padding, a 56 dp header and base heading size 18. Existing responsive font scaling still applies. The expand button retains its 48 dp touch target; reducing the header inset moves it closer to the card edge. Expanded mode and compact mode at wider widths retain their accepted styling. Window dimensions update through React Native's dimension hook.
+
+Dedicated regression tests in `tools/lyrics-panel.test.tsx` cover phone compact text/padding and touch target, unchanged phone expanded styling, unchanged wide compact styling, and the width boundary. `npm run test:lyrics`: 51 tests passed in 7 suites. `npx tsc --noEmit --pretty false` and `git diff --check` passed. An attempted narrow emulator screenshot caught Metro bundling rather than lyrics, so it is not claimed as visual verification. Emulator dimensions were restored to their original 1080x1920 at density 180. The user requested an APK for phone testing instead of further device checks.
+
+Built `build/lyrics/StreamingService-Lyrics-Phone.apk` using the release command documented below with unchanged cached Spotify native libraries. Build succeeded in 31 seconds. Signature and bundled JavaScript/ARM64/x86_64 native libraries verified. The APK was built from the current workspace, including the pre-existing Home/recommendation edits. The user approved the candidate after requesting the APK. The approved compact layout is ready for PR publication; no merge or deployment was requested. The APK is 60,591,587 bytes with SHA256 `abb92517f2a52f454595adb4b4aed3bc7e0a4c429aa44de7e9df9cf6cf691bd6`. The 51 lyrics tests passed again during publication preparation.
+
 ## Current chapter
 
 Implemented account-scoped lyrics loading and local caching, synchronized and plain lyrics parsing, compact and expanded panels, timed seeking, animated highlighting, automatic scrolling with manual-scroll suspension, and cover-derived background color. Playing artwork, progress, controls, Lyrics and Jam cards share the same width. Control glyph bounds compensate for SVG whitespace.
