@@ -27,7 +27,7 @@ const initialState = (): CollectionState => ({
   page: CollectionRecordingPolicy.firstPage, hasMore: false,
 });
 
-export function useCollectionRecordings(identifier: string, kind: CollectionKind) {
+export function useCollectionRecordings(identifier: string, kind: CollectionKind, enabled = true) {
   const network = useApi();
   const scope = useDataScope();
   const revision = useSyncExternalStore(subscribeLibraryChanges, getLibraryRevision);
@@ -46,7 +46,7 @@ export function useCollectionRecordings(identifier: string, kind: CollectionKind
   stateReference.current = state;
 
   const load = useCallback(async (page: number) => {
-    if (activeRequest.current !== null) return;
+    if (!enabled || activeRequest.current !== null) return;
     const cancellation = new AbortController();
     const capturedScope = scope;
     activeRequest.current = cancellation;
@@ -71,7 +71,7 @@ export function useCollectionRecordings(identifier: string, kind: CollectionKind
     } finally {
       if (activeRequest.current === cancellation) activeRequest.current = null;
     }
-  }, [identifier, kind, network, scope, revision]);
+  }, [enabled, identifier, kind, network, scope, revision]);
 
   useEffect(() => {
     activeRequest.current?.abort();

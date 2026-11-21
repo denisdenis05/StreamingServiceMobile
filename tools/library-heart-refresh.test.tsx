@@ -29,10 +29,10 @@ type RecordingState = ReturnType<typeof useCollectionRecordings>;
 let snapshot: RecordingState;
 let renderer: ReactTestRenderer;
 const requests: Array<{ resolve: (response: { data: unknown[] }) => void; reject: (failure: Error) => void }> = [];
-function Probe({ identifier = Fixture.playlist, kind = CollectionRecordingPolicy.playlist }: {
-  identifier?: string; kind?: typeof CollectionRecordingPolicy.playlist | typeof CollectionRecordingPolicy.album;
+function Probe({ identifier = Fixture.playlist, kind = CollectionRecordingPolicy.playlist, enabled = true }: {
+  identifier?: string; kind?: typeof CollectionRecordingPolicy.playlist | typeof CollectionRecordingPolicy.album; enabled?: boolean;
 }) {
-  snapshot = useCollectionRecordings(identifier, kind);
+  snapshot = useCollectionRecordings(identifier, kind, enabled);
   return <View />;
 }
 const recording = (isLiked: boolean) => ({ id: Fixture.recording, title: Fixture.title, isLiked });
@@ -47,6 +47,13 @@ beforeEach(() => {
   mockNetwork.get.mockReset().mockImplementation(() => new Promise((resolve, reject) => requests.push({ resolve, reject })));
 });
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); });
+
+test('unsaved recommendation views skip the saved playlist loader until a saved playlist is opened', async () => {
+  await act(async () => { renderer = create(<Probe enabled={false} />); });
+  expect(mockNetwork.get).not.toHaveBeenCalled();
+  await act(async () => renderer.update(<Probe enabled />));
+  expect(mockNetwork.get).toHaveBeenCalledTimes(1);
+});
 
 test('publishes stable revisions and supports unsubscribe', () => {
   const changes = new LibraryChangeStore();

@@ -45,7 +45,7 @@ const HorizontalCardCarousel = ({
             onPress={() => handleCardClick(card)}
           >
             <CardImage
-              releaseId={card.type === HomeCollectionType.Playlist ? undefined : card.id}
+              releaseId={card.type === HomeCollectionType.Playlist || card.type === HomeCollectionType.Recommendation ? undefined : card.id}
               cover={card.cover}
               smallCover={card.smallCover}
               verySmallCover={card.verySmallCover}
