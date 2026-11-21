@@ -1,3 +1,4 @@
+import { PlayingCardLayout } from '../../constants/playingLayout';
 import React, { useState, useSyncExternalStore } from 'react';
 import {
   Modal,
@@ -293,7 +294,10 @@ export default function SpotifyPlayerJam({
               )}
               {!queueIssueMessage && snapshot.failure !== null && (
                 <Text accessibilityRole="alert" style={styles.subtitle}>
-                  {spotifyHostingFailureDetail(snapshot.failureStage, snapshot.failure)}
+                  {spotifyHostingFailureDetail(
+                    snapshot.failureStage,
+                    snapshot.failure,
+                  )}
                 </Text>
               )}
               <Text style={styles.subtitle}>{PlayerJamCopy.stoppedHelp}</Text>
@@ -307,7 +311,7 @@ export default function SpotifyPlayerJam({
 }
 const styles = StyleSheet.create({
   strip: {
-    width: Presentation.pagePercent,
+    width: PlayingCardLayout.width,
     padding: Presentation.spacing,
     backgroundColor: colors.surfaceCard,
     borderRadius: Presentation.radius,

@@ -1,6 +1,13 @@
+import {
+  PlayingControlButton,
+  PlayingControlButtonPolicy,
+} from './PlayingControlButton';
 import { useRecordingLike } from '../../services/RecordingLikePlatform';
 import { colors, iconSizes } from '../../constants/styling.tsx';
 import HeartEmptyIcon from '../../../assets/icons/heartEmptyIcon.tsx';
+import { useLyrics } from '../../services/lyrics/LyricsPlatform';
+import { useLyricsCoverColor } from '../../services/lyrics/LyricsCoverColor';
+import { PlayingLyrics } from '../../components/LyricsPanel/PlayingLyrics';
 
 import React, {
   useCallback,
@@ -34,13 +41,6 @@ import {
 import ArrowDownIcon from '../../../assets/icons/arrowDownIcon.tsx';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import HeartIcon from '../../../assets/icons/heartIcon.tsx';
-import ShufflIcon from '../../../assets/icons/shuffleIcon.tsx';
-import RepeatIcon from '../../../assets/icons/repeatIcon.tsx';
-import RepeatOnceIcon from '../../../assets/icons/repeatOnceIcon.tsx';
-import BackwardIcon from '../../../assets/icons/backwardIcon.tsx';
-import PlayIcon from '../../../assets/icons/playIcon.tsx';
-import PauseIcon from '../../../assets/icons/pauseIcon.tsx';
-import ForwardIcon from '../../../assets/icons/forwardIcon.tsx';
 import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
 
@@ -67,10 +67,19 @@ const Playing = ({ navigation }: any) => {
     repeatingState,
     setRepeatingState,
     seekToPosition,
+    canSeek,
     isShuffled,
     toggleShuffle,
   } = useMusicQueue();
 
+  const [lyricsExpanded, setLyricsExpanded] = useState(false);
+  const { state: lyricsState, refresh: refreshLyrics } = useLyrics(
+    currentTrack?.recordingIdentifier,
+  );
+  const lyricsColor = useLyricsCoverColor(currentTrack);
+  useEffect(() => {
+    setLyricsExpanded(false);
+  }, [currentTrack?.entryIdentifier]);
   const jam = useSyncExternalStore(playerJam.subscribe, playerJam.getSnapshot);
   const sharing =
     jam.mode === SpotifyPlayerJamMode.Hosting ||
@@ -151,13 +160,31 @@ const Playing = ({ navigation }: any) => {
     }).start();
   }, [translateY]);
 
+  const lyricsPanel =
+    currentTrack === null ? null : (
+      <PlayingLyrics
+        key={currentTrack.entryIdentifier}
+        state={lyricsState}
+        entryIdentifier={currentTrack.entryIdentifier}
+        backgroundColor={lyricsColor}
+        expanded={lyricsExpanded}
+        onExpand={() => setLyricsExpanded(true)}
+        onMinimize={() => setLyricsExpanded(false)}
+        onSeek={seekToPosition}
+        seekEnabled={!controlsDisabled && canSeek && !isLoading}
+        onRetry={() => {
+          void refreshLyrics();
+        }}
+      />
+    );
   return (
     <BackdropContainer>
       <Animated.View
         style={[styles.container, { transform: [{ translateY }] }]}
-        {...panResponder.panHandlers}
+        {...(lyricsExpanded ? {} : panResponder.panHandlers)}
       >
         <ContentContainer
+          disabled={lyricsExpanded}
           onScroll={event => {
             contentScrollOffset.current = event.nativeEvent.contentOffset.y;
           }}
@@ -249,57 +276,59 @@ const Playing = ({ navigation }: any) => {
             containerStyle={{ padding: 30 }}
           />
           <AllPlayingControlsContainer disabled={controlsDisabled}>
-            <ShufflIcon
-              height={iconSizes.lg}
-              fill={isShuffled ? colors.accentPrimary : colors.normalText}
-              onPress={sharing ? undefined : toggleShuffle}
+            <PlayingControlButton
+              glyph="shuffle"
+              label={PlayingControlButtonPolicy.shuffle}
+              color={isShuffled ? colors.accentPrimary : colors.normalText}
+              onPress={toggleShuffle}
+              disabled={controlsDisabled || sharing}
+              selected={isShuffled}
             />
-            <BackwardIcon
-              height={iconSizes.lg}
+            <PlayingControlButton
+              glyph="previous"
+              label={PlayingControlButtonPolicy.previous}
+              color={colors.normalText}
               onPress={playPrevious}
-              fill={colors.normalText}
+              disabled={controlsDisabled}
             />
-            {isPlaying ? (
-              <PauseIcon
-                height={iconSizes.lg}
-                onPress={pause}
-                fill={colors.normalText}
-              />
-            ) : (
-              <PlayIcon
-                height={iconSizes.lg}
-                onPress={play}
-                fill={colors.normalText}
-              />
-            )}
-            <ForwardIcon
-              height={iconSizes.lg}
+            <PlayingControlButton
+              glyph={isPlaying ? 'pause' : 'play'}
+              label={
+                isPlaying
+                  ? PlayingControlButtonPolicy.pause
+                  : PlayingControlButtonPolicy.play
+              }
+              color={colors.normalText}
+              onPress={isPlaying ? pause : play}
+              disabled={controlsDisabled}
+            />
+            <PlayingControlButton
+              glyph="next"
+              label={PlayingControlButtonPolicy.next}
+              color={colors.normalText}
               onPress={playNext}
-              fill={colors.normalText}
+              disabled={controlsDisabled}
             />
-            {repeatingState === RepeatingType.None ? (
-              <RepeatIcon
-                height={iconSizes.lg}
-                fill={colors.normalText}
-                onPress={sharing ? undefined : handleRepeatCycle}
-              />
-            ) : repeatingState === RepeatingType.Song ? (
-              <RepeatOnceIcon
-                height={iconSizes.lg}
-                fill={colors.accentPrimary}
-                onPress={sharing ? undefined : handleRepeatCycle}
-              />
-            ) : (
-              <RepeatIcon
-                height={iconSizes.lg}
-                fill={colors.accentPrimary}
-                onPress={sharing ? undefined : handleRepeatCycle}
-              />
-            )}
+            <PlayingControlButton
+              glyph={
+                repeatingState === RepeatingType.Song ? 'repeatOnce' : 'repeat'
+              }
+              label={PlayingControlButtonPolicy.repeat}
+              color={
+                repeatingState === RepeatingType.None
+                  ? colors.normalText
+                  : colors.accentPrimary
+              }
+              onPress={handleRepeatCycle}
+              disabled={controlsDisabled || sharing}
+              selected={repeatingState !== RepeatingType.None}
+            />
           </AllPlayingControlsContainer>
+          {!lyricsExpanded && lyricsPanel}
           <RecommendationPlaybackStatus />
           <SpotifyPlayerJam navigation={navigation} />
         </ContentContainer>
+        {lyricsExpanded && lyricsPanel}
       </Animated.View>
       {menuVisible && (
         <ContextMenu
