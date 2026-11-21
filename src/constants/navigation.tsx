@@ -1,3 +1,5 @@
+import { ArtistRoutes, artistMenuDestination } from '../pages/Artist/ArtistNavigation';
+import { RecommendationModes, RecommendationRoutes } from '../services/recommendations/RecommendationContracts';
 import HomeIcon from '../../assets/icons/homeIcon.tsx';
 import SearchIcon from '../../assets/icons/searchIcon.tsx';
 import LibraryIcon from '../../assets/icons/libraryIcon.tsx';
@@ -38,6 +40,13 @@ export const createActionButtons: ActionItem[] = [
 
 export const menuOptions: ActionItem[] = [
   spotifyJamMenuAction,
+  ...[
+    { label: 'Song radio', mode: RecommendationModes.songRadio },
+    { label: 'Artist radio', mode: RecommendationModes.artistRadio },
+  ].map(action => ({ label: action.label, icon: MusicNoteIcon, onClick: (navigation: any, parameters?: any) => {
+    const recordingId = parameters?.recordingIds?.[0];
+    if (recordingId) navigation.navigate(RecommendationRoutes.screen, { mode: action.mode, recordingId });
+  } })),
   {
     label: 'Add to playlist',
     icon: MusicNoteIcon,
@@ -46,6 +55,14 @@ export const menuOptions: ActionItem[] = [
         recordingIds: params?.recordingIds || [],
         songs: params?.songs || []
       });
+    },
+  },
+  {
+    label: 'Go to artist',
+    icon: MusicNoteIcon,
+    onClick: (navigation, parameters) => {
+      const destination = artistMenuDestination(parameters);
+      if (destination) navigation.navigate(ArtistRoutes.screen, destination);
     },
   },
   {

@@ -16,6 +16,10 @@ interface Props {
   panHandlers?: GestureResponderHandlers; // Updated to match PanResponder.panHandlers
 }
 
+const ProgressPresentationPolicy = Object.freeze({
+  trackIdentifier: 'audio-progress-track',
+});
+
 const styles = StyleSheet.create({
   mainContainer: {
     width: '100%',
@@ -95,7 +99,11 @@ export const Track = ({
   children,
   onLayout,
 }: Props & { onLayout?: (event: any) => void }) => (
-  <View style={styles.track} onLayout={onLayout}>
+  <View
+    testID={ProgressPresentationPolicy.trackIdentifier}
+    style={styles.track}
+    onLayout={onLayout}
+  >
     {children}
   </View>
 );

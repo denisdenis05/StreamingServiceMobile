@@ -223,15 +223,16 @@ export class PlaybackRuntime {
     );
   }
 
-  append(tracks: readonly PlaybackTrack[]): Promise<void> {
+  append(tracks: readonly PlaybackTrack[], isStillWanted: () => boolean = () => true): Promise<void> {
     const captured = this.captureTracks(tracks);
     const queueIdentifier = this.queue.getDesiredQueueIdentifier();
+    let committed = false;
     return this.authenticated(() =>
       this.changeQueue(
         PlaybackQueueChangeKind.Append,
         captured,
-        () => queueIdentifier === this.queue.getDesiredQueueIdentifier(),
-        () => this.queue.append(captured),
+        () => (committed || isStillWanted()) && queueIdentifier === this.queue.getDesiredQueueIdentifier(),
+        async () => { await this.queue.append(captured, isStillWanted); committed = true; },
       ),
     );
   }

@@ -1,3 +1,5 @@
+import ArtistPage from './src/pages/Artist/Artist.render';
+import { ArtistRoutes } from './src/pages/Artist/ArtistNavigation';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -6,6 +8,8 @@ import Toast from 'react-native-toast-message';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import Home from './src/pages/Home';
+import Recommendations from './src/pages/Recommendations/Recommendations.render';
+import { RecommendationRoutes } from './src/services/recommendations/RecommendationContracts';
 import Playing from './src/pages/Playing';
 import AlbumViewer from './src/pages/AlbumViewer';
 import Search from './src/pages/Search';
@@ -126,7 +130,9 @@ const InnerApp = () => {
   const MainStack = () => (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="Home" component={Home} />
+      <Stack.Screen name={RecommendationRoutes.screen} component={Recommendations} />
       <Stack.Screen name="Search" component={Search} />
+      <Stack.Screen name={ArtistRoutes.screen} component={ArtistPage} />
       <Stack.Screen
         name="Playing"
         component={Playing}

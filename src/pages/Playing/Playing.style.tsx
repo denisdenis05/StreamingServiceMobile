@@ -1,3 +1,4 @@
+import { PlayingCardLayout } from '../../constants/playingLayout';
 import { ReactNode } from 'react';
 import {
   ImageProps,
@@ -21,6 +22,8 @@ interface Props {
   disabled?: boolean;
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
+
+const PlayingSpacing = Object.freeze({ headerCoverGap: 8 });
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -65,7 +68,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: verticalScale(30),
+    marginBottom: verticalScale(PlayingSpacing.headerCoverGap),
   },
   headerTitle: {
     fontWeight: '500',
@@ -84,16 +87,16 @@ const styles = StyleSheet.create({
     color: colors.slightlyTransparentText,
   },
   albumCover: {
-    width: '80%',
+    width: PlayingCardLayout.width,
     aspectRatio: 1,
     borderRadius: moderateScale(20),
   },
   allPlayingControlsContainer: {
-    width: '100%',
+    width: PlayingCardLayout.width,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: moderateScale(30),
     marginBottom: verticalScale(30),
   },
 });
@@ -102,9 +105,24 @@ export const BackdropContainer = ({ children, style }: Props) => {
   return <View style={[styles.backdrop, style]}>{children}</View>;
 };
 
-export const ContentContainer = ({ children, style, onScroll }: Props) => {
+export const ContentContainer = ({
+  children,
+  style,
+  onScroll,
+  disabled = false,
+}: Props) => {
   return (
-    <SafeAreaView style={PlayingLayout.safeArea}>
+    <SafeAreaView
+      style={PlayingLayout.safeArea}
+      pointerEvents={
+        disabled ? PlayingControlPolicy.disabled : PlayingControlPolicy.enabled
+      }
+      importantForAccessibility={
+        disabled
+          ? PlayingControlPolicy.hiddenAccessibility
+          : PlayingControlPolicy.enabled
+      }
+    >
       <ScrollView
         onScroll={onScroll}
         contentContainerStyle={[styles.content, style]}
@@ -141,6 +159,7 @@ export const AlbumCover = ({
 }) => {
   return (
     <CachedImage
+      testID={PlayingControlPolicy.coverIdentifier}
       releaseId={releaseId}
       cover={cover}
       smallCover={smallCover}
@@ -177,6 +196,7 @@ export const AllPlayingControlsContainer = ({
       pointerEvents={
         disabled ? PlayingControlPolicy.disabled : PlayingControlPolicy.enabled
       }
+      testID={PlayingControlPolicy.controlsIdentifier}
       style={[
         styles.allPlayingControlsContainer,
         disabled && PlayingLayout.disabled,
@@ -188,8 +208,11 @@ export const AllPlayingControlsContainer = ({
 };
 
 const PlayingControlPolicy = Object.freeze({
+  coverIdentifier: 'playing-album-cover',
+  controlsIdentifier: 'playing-controls',
   disabled: 'none' as const,
   enabled: 'auto' as const,
+  hiddenAccessibility: 'no-hide-descendants' as const,
   disabledOpacity: 0.4,
 });
 const PlayingLayout = StyleSheet.create({

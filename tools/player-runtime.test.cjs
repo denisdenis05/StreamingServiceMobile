@@ -105,3 +105,26 @@ test('engine restart clears native state and restores credentials before further
   await scenario.runtime.playTracks([track(Fixture.secondRecording)], Fixture.firstIndex);
   assertion.equal(scenario.runtime.views.getSnapshot().currentTrack.recordingIdentifier, Fixture.secondRecording); scenario.runtime.dispose();
 });
+
+test('a canceled recommendation append is rejected after source preparation without changing the queue', async () => {
+  const scenario = await initialized();
+  const waiting = deferred(); const opened = deferred(); let wanted = true;
+  scenario.setCache(async () => { opened.resolve(); await waiting.promise; return null; });
+  const appending = scenario.runtime.append([track(Fixture.secondRecording)], () => wanted);
+  await opened.promise; wanted = false; waiting.resolve();
+  await assertion.rejects(appending, QueueIntentSupersededError);
+  assertion.equal(scenario.runtime.views.getSnapshot().queueLength, Fixture.singleCount);
+  scenario.runtime.dispose();
+});
+
+test('a committed recommendation append still reports its queue receipt after its own view changes', async () => {
+  let committed = 0;
+  const scenario = environment({ async prepare() { return { async committed() { committed++; } }; } });
+  await scenario.login(); await scenario.runtime.playTracks([track(Fixture.firstRecording)], Fixture.firstIndex);
+  const before = scenario.runtime.views.getSnapshot().queueLength;
+  const receipts = committed;
+  await scenario.runtime.append([track(Fixture.secondRecording)], () => scenario.runtime.views.getSnapshot().queueLength === before);
+  assertion.equal(scenario.runtime.views.getSnapshot().queueLength, before + Fixture.singleCount);
+  assertion.equal(committed, receipts + Fixture.singleCount);
+  scenario.runtime.dispose();
+});

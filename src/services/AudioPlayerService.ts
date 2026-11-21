@@ -1,3 +1,4 @@
+import { recommendationPlayback } from './RecommendationPlaybackPlatform';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import Toast from 'react-native-toast-message';
 import { AppState } from 'react-native';
@@ -55,7 +56,7 @@ const PlaylistPlaybackPolicy = Object.freeze({
 });
 const collectionLoader = new PlaybackCollectionLoader();
 const Commands = Object.freeze({
-  playPlaylist: (playlistIdentifier: string, selectedIndex: number, expectedRecordingIdentifier?: string) => runAudioCommand(() =>
+  playPlaylist: (playlistIdentifier: string, selectedIndex: number, expectedRecordingIdentifier?: string) => { recommendationPlayback.stop(); return runAudioCommand(() =>
     audioRuntime.playCollection(async isCurrent => {
       const account = authenticationSession.getSnapshot();
       if (account.accountIdentifier === null || account.token === null) throw new Error(PlaylistPlaybackPolicy.changedMessage);
@@ -69,13 +70,13 @@ const Commands = Object.freeze({
         throw new Error(PlaylistPlaybackPolicy.changedMessage);
       }
       return { tracks: recordings.map(recording => catalogPlaybackMapping.map(recording, undefined, playlistIdentifier)), selectedIndex };
-    })),
-  playTracks: (tracks: readonly PlaybackTrack[], selectedIndex: number) => runAudioCommand(() => audioRuntime.playTracks(tracks, selectedIndex)),
+    })); },
+  playTracks: (tracks: readonly PlaybackTrack[], selectedIndex: number) => { recommendationPlayback.stop(); return runAudioCommand(() => audioRuntime.playTracks(tracks, selectedIndex)); },
   addToQueue: (tracks: readonly PlaybackTrack[]) => runAudioCommand(() => audioRuntime.append(tracks)),
   removeFromQueue: (identifier: string) => runAudioCommand(() => audioRuntime.removeMany([identifier])),
   moveEntry: (identifier: string, beforeIdentifier: string | null) => runAudioCommand(() => audioRuntime.move(identifier, beforeIdentifier)),
   selectEntry: (identifier: string) => runAudioCommand(() => audioRuntime.select(identifier)),
-  clearQueue: () => runAudioCommand(() => audioRuntime.clear()),
+  clearQueue: () => { recommendationPlayback.stop(); return runAudioCommand(() => audioRuntime.clear()); },
   play: () => runAudioCommand(() => playerJam.control(PlayerJamControls.play, () => audioRuntime.play())),
   pause: () => runAudioCommand(() => playerJam.control(PlayerJamControls.pause, () => audioRuntime.pause())),
   playNext: () => runAudioCommand(() => playerJam.control(PlayerJamControls.next, () => audioRuntime.next())),
@@ -90,7 +91,7 @@ export function useQueue() {
     return entry === null || entry === undefined ? Promise.resolve()
       : runAudioCommand(() => playerJam.seek(seconds, () => audioRuntime.seek(entry.entryIdentifier, seconds)));
   }, []);
-  const toggleShuffle = useCallback(() => runAudioCommand(() => playerJam.localOptions(() => audioRuntime.setShuffle(!audioRuntime.views.getSnapshot().isShuffled))), []);
+  const toggleShuffle = useCallback(() => { recommendationPlayback.stop(); return runAudioCommand(() => playerJam.localOptions(() => audioRuntime.setShuffle(!audioRuntime.views.getSnapshot().isShuffled))); }, []);
   const setRepeatingState = useCallback((mode: RepeatingType) => runAudioCommand(() => playerJam.localOptions(() => audioRuntime.setRepeat(
     mode === RepeatingType.Song ? RepeatMode.One : mode === RepeatingType.Album ? RepeatMode.All : RepeatMode.Off))), []);
   return { ...view, ...Commands, isLoading: view.isLoading || application.initializing, isPlayerReady: application.ready, isPlayerInitializing: application.initializing,
