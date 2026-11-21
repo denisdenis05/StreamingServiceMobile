@@ -92,7 +92,7 @@ test('daily mixes regenerate only through the explicit playlist menu action', as
   const options = await menu();
   await act(async () => options.find(option => option.label === 'Regenerate today')!.onClick());
   expect(mockNetwork.post).toHaveBeenCalledWith(RecommendationRoutes.regenerate, { expectedVersion: 'version' }, expect.anything());
-  expect(mockNetwork.post).toHaveBeenCalledWith(RecommendationRoutes.preview, preview.request, expect.anything());
+  expect(mockNetwork.post).toHaveBeenCalledWith(RecommendationRoutes.preview + '?refresh=true', preview.request, expect.anything());
 });
 
 test('an already saved daily mix keeps playback and omits another save action', async () => {

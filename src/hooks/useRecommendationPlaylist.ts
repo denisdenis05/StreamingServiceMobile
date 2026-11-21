@@ -38,7 +38,7 @@ export function useRecommendationPlaylist(
     [key, scope],
   );
   const load = useCallback(
-    async (dailyVersion?: string) => {
+    async (dailyVersion?: string, refresh = false) => {
       if (!request) return;
       pending.current?.abort();
       const controller = new AbortController();
@@ -60,7 +60,9 @@ export function useRecommendationPlaylist(
             { signal: controller.signal },
           );
         const response = await api.post<RecommendationPlaylistPreview>(
-          RecommendationRoutes.preview,
+          refresh
+            ? RecommendationRoutes.preview + '?refresh=true'
+            : RecommendationRoutes.preview,
           request,
           { signal: controller.signal },
         );
@@ -165,5 +167,10 @@ export function useRecommendationPlaylist(
         setState(previous => ({ ...previous, saving: false }));
     }
   };
-  return { ...visible, play, save, reload: load };
+  return {
+    ...visible,
+    play,
+    save,
+    reload: (dailyVersion?: string) => load(dailyVersion, true),
+  };
 }
