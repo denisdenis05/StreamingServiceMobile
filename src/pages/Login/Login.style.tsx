@@ -6,9 +6,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
 import { REMEMBER_ME_TEXT } from '../../constants/texts.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
 
 interface Props {
   children: ReactNode;
@@ -32,64 +33,68 @@ const styles = StyleSheet.create({
     height: '100%',
     display: 'flex',
     alignItems: 'center',
-    paddingHorizontal: 30,
-    paddingVertical: 50,
-    gap: 100,
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(50),
+    gap: verticalScale(100),
     backgroundColor: colors.background,
   },
   headerContainer: {
     display: 'flex',
     alignItems: 'center',
-    width: '50%',
+    width: '90%',
   },
   centeredContainer: {
     display: 'flex',
-    gap: 20,
+    gap: verticalScale(20),
     alignItems: 'center',
-    width: '50%',
+    width: '90%',
   },
   title: {
     color: colors.normalText,
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: fonts.serif,
+    fontSize: typography.pageTitle,
+    textAlign: 'center',
+    letterSpacing: -0.4,
   },
   subtitle: {
-    color: colors.normalText,
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: colors.slightlyTransparentText,
+    fontSize: typography.body,
+    fontWeight: '400',
   },
   styledInput: {
-    height: 60,
+    height: verticalScale(56),
     width: '100%',
-    minWidth: 250,
-    backgroundColor: colors.lowOpacityText,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    color: colors.slightlyColoredText,
+    minWidth: scale(250),
+    backgroundColor: colors.surfaceCard,
+    borderRadius: moderateScale(12),
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    paddingHorizontal: scale(14),
+    color: colors.normalText,
+    fontSize: typography.inputText,
   },
   loginButton: {
-    height: 60,
+    height: verticalScale(56),
     width: '100%',
-    minWidth: 250,
-    borderColor: colors.normalText,
-    borderWidth: 2,
-    borderRadius: 8,
+    minWidth: scale(250),
+    backgroundColor: colors.accentPrimary,
+    borderRadius: moderateScale(12),
 
     display: 'flex',
     flexDirection: 'row',
-    gap: 5,
+    gap: scale(5),
     justifyContent: 'center',
     alignItems: 'center',
   },
   buttonText: {
-    color: colors.slightlyColoredText,
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: typography.body,
+    fontWeight: '600',
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 16,
+    marginVertical: verticalScale(16),
   },
   line: {
     flex: 1,
@@ -97,31 +102,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.slightlyTransparentText,
   },
   dividerText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: typography.secondary,
     color: colors.slightlyTransparentText,
   },
   normalTransparentText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: typography.secondary,
     color: colors.slightlyTransparentText,
     margin: 0,
     padding: 0,
   },
   normalText: {
-    marginHorizontal: 8,
-    fontSize: 14,
+    marginHorizontal: scale(8),
+    fontSize: typography.secondary,
     color: colors.normalText,
     margin: 0,
     padding: 0,
   },
   checkboxContainer: {
-    padding: 4,
+    padding: moderateScale(4),
   },
   checkbox: {
-    height: 16,
-    width: 16,
-    borderRadius: 8,
+    height: moderateScale(16),
+    width: moderateScale(16),
+    borderRadius: moderateScale(8),
     borderWidth: 2,
     borderColor: colors.normalText,
     backgroundColor: 'transparent',
@@ -168,7 +173,7 @@ export const StyledInput = ({
   value,
   onChangeText,
   placeholder,
-  secureTextEntry = false, // Add secureTextEntry prop
+  secureTextEntry = false,
 }: {
   value: string;
   onChangeText: (text: string) => void;
@@ -179,6 +184,7 @@ export const StyledInput = ({
     <TextInput
       style={styles.styledInput}
       placeholder={placeholder || '...'}
+      placeholderTextColor={colors.slightlyTransparentText}
       value={value}
       onChangeText={onChangeText}
       secureTextEntry={secureTextEntry}

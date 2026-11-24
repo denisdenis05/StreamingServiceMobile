@@ -9,45 +9,67 @@ import {
 } from 'react-native';
 import { ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors } from '../../constants/styling.tsx';
+import { colors, typography } from '../../constants/styling.tsx';
 import ScrollView = Animated.ScrollView;
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../CachedImage.tsx';
 
-interface Props {
+interface Props extends React.ComponentProps<typeof View> {
   children: ReactNode;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
+  numberOfLines?: number;
 }
 
 const styles = StyleSheet.create({
   mainContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    gap: verticalScale(20),
+    paddingHorizontal: scale(20),
+    paddingVertical: verticalScale(10),
     width: '100%',
+    maxWidth: '100%',
   },
   cardContainer: {
     display: 'flex',
     flexDirection: 'row',
-    gap: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: '100%',
+    gap: scale(10),
   },
   card: {
     display: 'flex',
+    flexDirection: 'row',
+    gap: scale(10),
+    flex: 1,
+    alignItems: 'center',
+  },
+  textContainer: {
+    display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: verticalScale(2),
+    flex: 1,
+  },
+  albumCover: {
+    width: verticalScale(45),
+    height: verticalScale(45),
+    borderRadius: moderateScale(4),
   },
   cardTitle: {
     color: colors.normalText,
     margin: 0,
-    marginTop: 5,
-    fontSize: 14,
-    fontWeight: 'semibold',
+    marginTop: verticalScale(5),
+    fontSize: typography.itemTitle,
+    fontWeight: '600',
+    maxWidth: '100%',
   },
   cardAuthor: {
     color: colors.slightlyTransparentText,
     margin: 0,
-    fontSize: 12,
+    fontSize: typography.secondary,
   },
 });
 
@@ -57,13 +79,9 @@ export const MainContainer = ({ children }: Props) => {
 
 export const CardContainer = ({ children }: Props) => {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.cardContainer}
-    >
+    <View style={styles.cardContainer}>
       {children}
-    </ScrollView>
+    </View>
   );
 };
 
@@ -75,10 +93,43 @@ export const MusicCard = ({ children, onPress }: Props) => {
   );
 };
 
-export const CardTitle = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardTitle]}>{children}</DefaultText>;
+interface AlbumCoverProps {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+}
+
+export const AlbumCover = ({ releaseId, cover, smallCover, verySmallCover }: AlbumCoverProps) => {
+  return (
+    <CachedImage
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="verySmall"
+      style={styles.albumCover}
+      resizeMode="cover"
+    />
+  );
 };
 
-export const CardAuthor = ({ children }: Props) => {
-  return <DefaultText style={[styles.cardAuthor]}>{children}</DefaultText>;
+export const TextContainer = ({ children }: Props) => {
+  return <View style={styles.textContainer}>{children}</View>;
+};
+
+export const CardTitle = ({ children, numberOfLines }: Props) => {
+  return (
+    <DefaultText style={[styles.cardTitle]} numberOfLines={numberOfLines}>
+      {children}
+    </DefaultText>
+  );
+};
+
+export const CardAuthor = ({ children, numberOfLines }: Props) => {
+  return (
+    <DefaultText style={[styles.cardAuthor]} numberOfLines={numberOfLines}>
+      {children}
+    </DefaultText>
+  );
 };

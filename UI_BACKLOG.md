@@ -1,0 +1,86 @@
+# Mobile UI work after the Settings chapter
+
+Reviewed 2026-11-01 against the current mobile source. This list covers work beyond
+the implemented Settings structure, Spotify account page, Last.fm flow and Liked
+Songs selection/heart persistence. Source inspection identifies the issues below;
+no new device session or visual runtime check was performed for this document.
+
+P1 means the next implementation chapter; P2 means the following polish chapter.
+Each implementation item needs deterministic tests for its stated behavior and a
+separate device check for layout, gestures and accessibility.
+
+## Pending release acceptance
+
+**G1 — Verify actual Spotify Jam playback and reconnect behavior.** This is pending
+live acceptance, separate from the source UI backlog. Read
+[the native handoff](SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md),
+[the rate-limit checkpoint](SPOTIFY_RATE_LIMIT_PROGRESS.md) and
+[the acceptance scenarios](SPOTIFY_JAM_ACCEPTANCE.md). The latest packaged app was
+not launched successfully on the disconnected Android target. Catalog matching
+previously returned RateLimited; active hosting and shared audio remain unverified.
+
+Acceptance: reconnect to the actual target, inspect the pending installation,
+verify the installed artifact, and perform one deliberate single-recording host
+action. Record its actual stage and safe cooldown diagnostics. Respect the exact
+cooldown before further requests. Verify the active playback device, audible
+playback, host/guest permissions, upcoming queue changes, screen lock and network
+reconnect with the required accounts/devices. Report each observed result
+separately. Passing source tests or packaging cannot close this gate.
+
+## P1 — Next implementation chapter
+
+| Item                                                       | Current evidence                                                                                                                                                                                                                                                                                                                                                                              | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Make playback state and control ownership visible**   | [Playing](src/pages/Playing/Playing.render.tsx) passes `isBuffering={false}` and does not render the exposed `playbackError`. [The mini-player](src/components/PlayingOverlay/PlayingOverlay.render.tsx) exposes play/pause without the full player's Jam preparation/authority presentation. [The service](src/services/AudioPlayerService.ts) already exposes readiness and playback error. | Show initial setup, buffering, recoverable failure and no-current-track states using actual runtime state. Offer the appropriate explicit recovery. Full and mini-player controls communicate the same ownership and unavailable state. An unavailable command must not appear to succeed. Preserve all existing domain guards.                                                          |
+| **2. Add a queue destination from the player**             | [Playing](src/pages/Playing/Playing.render.tsx) has no upcoming local queue list; [the service](src/services/AudioPlayerService.ts) already exposes select, move, remove and clear commands. The Jam destination has a separate [Spotify host queue](src/pages/SpotifyJam/SpotifyHostedQueue.render.tsx).                                                                                     | Show the actual current entry and upcoming entries, preserving repeated occurrences. Identify whether the displayed queue belongs to local playback or the Spotify host. Local edits route through existing commands and show acknowledgements/failures. Unsupported edits are disabled with a reason while Spotify owns playback. Add explicit confirmation for clearing a queue.       |
+| **3. Replace placeholder playlist ownership**              | [Library](src/pages/Library/Library.render.tsx) sets `isOwner` by comparing `artistName` with `PLACEHOLDER_USERNAME`; Home now uses the server's explicit `canEdit` capability; Library still needs that ownership contract. [PlaylistViewer](src/pages/PlaylistViewer/PlaylistViewer.render.tsx) uses this flag for edit/remove actions.                                                                | Use the authenticated account identifier and a server-provided owner identifier/capability. The same playlist has the same actions from Home, Library and other entry points. Missing ownership evidence hides owner-only actions. Test owned, other-account and missing-owner cases; retain server authorization.                                                                       |
+| **4. Show useful Library and Search failure states** | [Library](src/pages/Library/Library.render.tsx) consumes loading/data without presenting query errors. Home now provides separate loading/empty/failure states and targeted retries. [Search](src/pages/Search/Search.render.tsx) swallows initial, external and pagination failures.                                                                                                                                             | Distinguish first loading, successful empty results, full failure and partial/pagination failure. Keep usable results visible after a later failure. Give an explicit retry for the failed operation. A failed request must not say the library/search has no music. Preserve the current query and account fences.                                                                      |
+| **5. Finish collection save and playlist-picker feedback** | [AlbumViewer](src/pages/AlbumViewer/AlbumViewer.render.tsx) silently ignores saved-status failures and only logs a safe warning when saving fails. [AddToPlaylist](src/pages/AddToPlaylist/AddToPlaylist.render.tsx) now presents mutation errors but does not distinguish initial playlist loading from an empty picker or offer a fetch retry.                                              | Album save state remains unknown until read successfully; prevent accidental inverse actions and show explicit read/mutation retry. The picker distinguishes loading, empty, fetch failure and adding. Keep the sheet open on failure, retain the user's selection and refresh the affected library after success. Test delayed completion after account/route changes.                  |
+| **6. Resolve download controls and promises**              | [CollectionViewer](src/components/CollectionViewer/CollectionViewer.render.tsx) renders a download icon without an action. [Storage settings](src/pages/Settings/StorageSettings.render.tsx) measures cache and removes artwork; it does not provide an offline download workflow.                                                                                                            | Remove the inert affordance or implement it against an actual download service. If implemented, distinguish queued/downloading/downloaded/failed/canceled and cached audio from guaranteed offline availability. Show progress, retry, cancellation and storage failure. Rename navigation copy if only cache management is available. Do not imply that clearing artwork deletes audio. |
+| **7. Make existing controls accessible**                   | [Shared icon buttons](assets/icons/playIcon.tsx) wrap small icons without labels/roles or a minimum touch target. [AudioProgressBar](src/components/AudioProgressBar/AudioProgressBar.render.tsx) uses custom gestures without adjustable accessibility semantics. [ContextMenu](src/components/ContextMenu/ContextMenu.render.tsx) lacks explicit focus management.                          | Give playback, back, overflow, navigation and collection actions spoken names, roles, selected/disabled state and at least 44 logical units of touch area. Expose elapsed/duration and adjustable seek actions only when seeking is permitted. Focus enters menus/sheets, returns on dismissal and remains usable with screen readers and large text. Verify on a device.                |
+
+## P2 — Following polish chapter
+
+| Item                                                                 | Current evidence                                                                                                                                                                                                                                                                                     | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **8. Finish Search navigation and guidance**                         | [Search](src/pages/Search/Search.render.tsx) renders artist rows with an empty press handler and has no explanatory empty/minimum-query view. Track, album and artist buckets share one list.                                                                                                        | Open a supported artist destination or remove its interactive affordance. Explain when the user needs more characters, when no results matched and when part of the search failed. Add clear-query behavior and meaningful result-type labels. Preserve late-response/query fences.                                                                                      |
+| **9. Extend heart consistency beyond collection/player surfaces**    | This chapter implements the selected playlist and persisted hearts in collection rows and Playing. [SearchEntry](src/components/SearchEntry/SearchEntry.render.tsx) has no liked-state presentation; [the mini-player](src/components/PlayingOverlay/PlayingOverlay.render.tsx) has no heart action. | Decide the supported quick-like surfaces, then use the same account/recording-scoped heart service. Show pending, selected and failed/retry states consistently. Changing a heart must preserve Search query/results, refresh mounted collection indicators and never imply an unacknowledged write succeeded. Do not duplicate the completed playlist-selection work.   |
+| **10. Replace remaining account placeholders**                       | [Home](src/pages/Home/Home.render.tsx) greets `PLACEHOLDER_USERNAME`; Home, [Search](src/pages/Search/Search.render.tsx) and [Library](src/pages/Library/Library.render.tsx) still display a placeholder profile picture. Profile now has a real account-scoped local name.                          | Reuse the saved local display name or the neutral account fallback everywhere. Use account initials when no supported photo exists. Clear stale identity immediately after account/server changes. Do not imply a remote photo editor exists without a backend contract.                                                                                                 |
+| **11. Finish sheet and keyboard navigation**                         | [CreatePlaylist](src/pages/CreatePlaylist/CreatePlaylist.render.tsx) and [AddToPlaylist](src/pages/AddToPlaylist/AddToPlaylist.render.tsx) rely on drag-to-dismiss presentation. [ContextMenu](src/components/ContextMenu/ContextMenu.render.tsx) positions content from a touch coordinate.         | Provide a visible accessible close/back action, predictable Android Back behavior and keyboard-safe input/actions. Keep menus inside the viewport at large text sizes. Preserve entered names and selections after a request failure. Device checks cover short screens, open keyboard, long names and accidental drag dismissal.                                        |
+| **12. Align layout around the mini-player and shared design tokens** | [CollectionViewer](src/components/CollectionViewer/CollectionViewer.render.tsx) uses fixed spacer/overlay offsets, while [Navbar](src/components/Navbar/Navbar.render.tsx) measures its height. Older collection/player surfaces use different spacing and icon wrappers from Settings.              | Derive bottom clearance from safe-area, navigation and mini-player measurements. The final list row and primary actions remain reachable with and without playback, large fonts and rotation. Apply the existing cream/forest surfaces and type scale consistently after functional states are defined. Verify contrast, long content and low-width layouts on a device. |
+
+## Source review fixes already incorporated
+
+The collection integration review identified two issues that root corrected during
+this chapter. They are excluded from the open backlog above:
+
+- Library mutation originally cleared the whole query scope, losing cached
+  `search_state` and refetching unrelated sections. [DataProvider](src/services/DataProvider.tsx)
+  now invalidates the library key, and [useCollectionRecordings](src/hooks/useCollectionRecordings.ts)
+  observes a separate library revision with scope/identifier/kind/revision fences.
+  Required regression evidence: a heart/membership mutation refreshes collection
+  hearts without clearing Search query/results; responses from the old revision,
+  account or collection cannot replace current recordings; duplicate pagination
+  triggers do not submit duplicate pages; a failed page retries that same page.
+- [CollectionViewer](src/components/CollectionViewer/CollectionViewer.render.tsx)
+  now shows initial loading and does not display successful-empty copy alongside
+  a fetch error. Required regression evidence: initial loading, successful empty,
+  initial failure with retry, populated pagination loading and populated pagination
+  failure each have a distinct presentation.
+
+The initial review was read-only. Root subsequently passed the dedicated
+`library-heart-refresh` and `library-heart-ui` suites (20 tests) covering these
+source behaviors, including query preservation, request cancellation, pagination,
+filled hearts and loading/error/empty feedback. Full commands and boundaries are
+in [LIKED_SONGS_INTEGRATION_PROGRESS.md](LIKED_SONGS_INTEGRATION_PROGRESS.md).
+Device layout and gesture behavior remain unverified.
+
+## Home follow-up implemented
+
+The Home/history chapter replaces randomized recommendations with saved albums,
+artist evidence and recent additions, credits recent collections only from explicit
+queue origins, and avoids duplicate recent carousels. It also supplies Home retry,
+empty/failure feedback, focus/history/library refresh and real owned-playlist edit
+capabilities. See [HOME_LISTENING_PROGRESS.md](HOME_LISTENING_PROGRESS.md) for the
+source checks and deployment boundary. Library ownership, Library/Search failure
+states and account placeholders remain open as listed above.

@@ -1,4 +1,5 @@
 import { Text, StyleSheet, TextProps } from 'react-native';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 
 type DefaultTextProps = TextProps & {
   children: React.ReactNode;
@@ -6,10 +7,10 @@ type DefaultTextProps = TextProps & {
 
 const styles = StyleSheet.create({
   text: {
-    fontFamily: 'Outfit-Regular',
-    fontSize: 20,
-    color: '#fff',
-    fontWeight: 'bold',
+    fontFamily: fonts.serif,
+    fontSize: typography.sectionTitle,
+    color: colors.normalText,
+    letterSpacing: -0.3,
   },
 });
 

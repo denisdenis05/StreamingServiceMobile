@@ -6,7 +6,7 @@ interface MoreIconIconProps {
   width?: number;
   height?: number;
   fill?: string;
-  onPress?: () => void;
+  onPress?: (event: any) => void;
   style?: any;
 }
 

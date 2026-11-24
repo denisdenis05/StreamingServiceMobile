@@ -72,12 +72,42 @@ def enableProguardInReleaseBuilds = false
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def spotifyLibrespotBuildScript = file("../../tools/build-spotify-librespot-android.py")
+def spotifyLibrespotSources = file("../../native/librespot-session")
+def spotifyLibrespotJniDirectory = layout.buildDirectory.dir("generated/librespotJniLibs")
+def spotifyLibrespotBuildTask = "buildSpotifyLibrespot"
+def spotifyLibrespotArchitecturesProperty = "reactNativeArchitectures"
+def spotifyLibrespotArmArchitecture = "arm64-v8a"
+def spotifyLibrespotPython = "python3"
+def spotifyLibrespotNdkArgument = "--ndk-directory"
+def spotifyLibrespotOutputArgument = "--output-directory"
+def spotifyLibrespotArchitecturesArgument = "--architectures"
+def spotifyLibrespotPreBuildTask = "preBuild"
+
+tasks.register(spotifyLibrespotBuildTask, Exec) {
+    inputs.property(spotifyLibrespotArchitecturesProperty, project.findProperty(spotifyLibrespotArchitecturesProperty) ?: spotifyLibrespotArmArchitecture)
+    inputs.file(spotifyLibrespotBuildScript)
+    inputs.files(fileTree(spotifyLibrespotSources) {
+        include("Cargo.toml", "Cargo.lock", "src/**/*.rs")
+    })
+    outputs.dir(spotifyLibrespotJniDirectory)
+    commandLine(spotifyLibrespotPython, spotifyLibrespotBuildScript,
+        spotifyLibrespotNdkArgument, android.ndkDirectory,
+        spotifyLibrespotOutputArgument, spotifyLibrespotJniDirectory.get().asFile,
+        spotifyLibrespotArchitecturesArgument, project.findProperty(spotifyLibrespotArchitecturesProperty) ?: spotifyLibrespotArmArchitecture)
+}
+
+tasks.configureEach { task ->
+    if (task.name == spotifyLibrespotPreBuildTask) task.dependsOn(spotifyLibrespotBuildTask)
+}
+
 android {
     ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
     namespace "com.streamingservice"
+    sourceSets.main.jniLibs.srcDir(spotifyLibrespotJniDirectory)
 
     defaultConfig {
         applicationId "com.streamingservice"
@@ -109,6 +139,12 @@ android {
 }
 
 dependencies {
+    def spotifyUnitTestFramework = "junit:junit:4.13.2"
+    def spotifyJsonTestLibrary = "org.json:json:20180813"
+    def spotifyPlayerMediaSessionLibrary = "androidx.media3:media3-session:1.7.1"
+    implementation(spotifyPlayerMediaSessionLibrary)
+    testImplementation(spotifyUnitTestFramework)
+    testImplementation(spotifyJsonTestLibrary)
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
     implementation project(':react-native-config')

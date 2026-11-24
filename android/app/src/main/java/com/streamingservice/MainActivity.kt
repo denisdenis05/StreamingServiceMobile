@@ -1,11 +1,33 @@
 package com.streamingservice
 
+import android.content.Intent
+import android.content.res.Configuration
+import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
 import com.facebook.react.defaults.DefaultReactActivityDelegate
+import com.streamingservice.spotify.SpotifyAuthorizationReturnModule
 
 class MainActivity : ReactActivity() {
+
+  override fun onCreate(savedInstanceState: Bundle?) {
+    SpotifyAuthorizationReturnModule.capture(intent?.dataString)
+    requestedOrientation = ScreenOrientationPolicy.requestedOrientation(resources.configuration.smallestScreenWidthDp)
+    super.onCreate(null)
+  }
+
+  override fun onConfigurationChanged(newConfiguration: Configuration) {
+    super.onConfigurationChanged(newConfiguration)
+    val orientation = ScreenOrientationPolicy.requestedOrientation(newConfiguration.smallestScreenWidthDp)
+    if (requestedOrientation != orientation) requestedOrientation = orientation
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    SpotifyAuthorizationReturnModule.capture(intent.dataString)
+    setIntent(intent)
+    super.onNewIntent(intent)
+  }
 
   /**
    * Returns the name of the main component registered from JavaScript. This is used to schedule

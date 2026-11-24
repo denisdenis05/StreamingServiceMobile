@@ -1,12 +1,13 @@
 import React from 'react';
 import {
   TouchableOpacity,
-  Text,
   StyleSheet,
   GestureResponderEvent,
   ViewStyle,
   TextStyle,
 } from 'react-native';
+import { colors, typography } from '../../constants/styling.tsx';
+import DefaultText from '../DefaultText';
 
 type DefaultButtonProps = {
   title: string;
@@ -18,19 +19,20 @@ type DefaultButtonProps = {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#3478f6',
+    backgroundColor: colors.accentPrimary,
     paddingVertical: 12,
     paddingHorizontal: 20,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   disabled: {
-    backgroundColor: '#ccc',
+    backgroundColor: colors.secondaryBackground,
+    opacity: 0.6,
   },
   text: {
-    fontFamily: 'Outfit-Regular',
-    color: '#fff',
-    fontSize: 16,
+    color: '#FFFFFF',
+    fontSize: typography.body,
+    fontWeight: '600',
   },
 });
 
@@ -48,7 +50,7 @@ const DefaultButton: React.FC<DefaultButtonProps> = ({
       activeOpacity={0.7}
       disabled={disabled}
     >
-      <Text style={[styles.text, textStyle]}>{title}</Text>
+      <DefaultText style={[styles.text, textStyle]}>{title}</DefaultText>
     </TouchableOpacity>
   );
 };

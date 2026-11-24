@@ -3,77 +3,100 @@ import {
   Pressable,
   StyleProp,
   StyleSheet,
+  TextStyle,
   View,
   ViewStyle,
 } from 'react-native';
 import { ReactNode } from 'react';
-import { colors, sizes } from '../../constants/styling.tsx';
-import LinearGradient from 'react-native-linear-gradient';
+import { colors, typography } from '../../constants/styling.tsx';
 import DefaultText from '../DefaultText';
+import { moderateScale, scale } from '../../utils/scaling';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   children: ReactNode;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
+  onLayout?: (event: any) => void;
+}
+
+interface ButtonTextProps {
+  children: ReactNode;
+  style?: StyleProp<TextStyle>;
 }
 
 const styles = StyleSheet.create({
   gradientContainer: {
     position: 'absolute',
-    height: sizes.navbarHeight,
     width: '100%',
     bottom: 0,
-    paddingTop: 20,
-    paddingBottom: 10,
-    display: 'flex',
+    backgroundColor: colors.surfaceCard,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: moderateScale(8),
+    paddingHorizontal: scale(4),
     justifyContent: 'center',
     alignItems: 'center',
   },
   mainContainer: {
-    display: 'flex',
     flexDirection: 'row',
     justifyContent: 'space-around',
-    gap: 20,
+    alignItems: 'center',
     width: '100%',
-    height: '100%',
   },
   buttonContainer: {
-    display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: moderateScale(4),
+    paddingHorizontal: moderateScale(8),
+    gap: moderateScale(4),
+  },
+  iconPill: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: moderateScale(12),
+    padding: moderateScale(8),
   },
   buttonText: {
-    fontSize: 10,
-    fontWeight: 'bold',
+    fontSize: typography.navLabel,
+    fontWeight: '600',
+    color: colors.normalText,
   },
 });
 
-export const GradientContainer = ({ children }: Props) => {
+export const GradientContainer = ({ children, onLayout }: Props) => {
+  const insets = useSafeAreaInsets();
+
   return (
-    <LinearGradient
-      colors={colors.navbarGradient}
-      start={{ x: 0.5, y: 0 }}
-      end={{ x: 0.5, y: 1 }}
-      style={styles.gradientContainer}
+    <View
+      onLayout={onLayout}
+      style={[
+        styles.gradientContainer,
+        { paddingBottom: moderateScale(8) + insets.bottom },
+      ]}
     >
       {children}
-    </LinearGradient>
+    </View>
   );
 };
 
 export const MainContainer = ({ children }: Props) => {
-  return <View style={[styles.mainContainer]}>{children}</View>;
+  return <View style={styles.mainContainer}>{children}</View>;
 };
 
-export const ButtonContainer = ({ children, onPress, style }: Props) => {
+export const ButtonContainer = ({ children, onPress }: Props) => {
   return (
-    <Pressable style={[styles.buttonContainer, style]} onPress={onPress}>
+    <Pressable style={styles.buttonContainer} onPress={onPress}>
       {children}
     </Pressable>
   );
 };
 
-export const ButtonText = ({ children }: Props) => {
-  return <DefaultText style={[styles.buttonText]}>{children}</DefaultText>;
+export const IconPill = ({ children, style }: Props) => {
+  return <View style={[styles.iconPill, style]}>{children}</View>;
+};
+
+export const ButtonText = ({ children, style }: ButtonTextProps) => {
+  return <DefaultText style={[styles.buttonText, style]}>{children}</DefaultText>;
 };

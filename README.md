@@ -1,97 +1,90 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# StreamingServiceMobile
 
-# Getting Started
+StreamingServiceMobile is a React Native music library and player client for a self-hosted StreamingService server. It uses the sibling StreamingServicePlayer for local audio and StreamingServiceSpotifyJam for Spotify Jam integration.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+[Quick start](#quick-start) · [What the app does](#what-the-app-does) · [Development](#development-and-checks) · [Documentation](#documentation)
 
-## Step 1: Start Metro
+## What the app does
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- Browse albums and playlists, play library recordings, and use native background controls.
+- Use downloaded media and report listening history with collection context where the source is known.
+- Browse data-backed Home recommendations and recent listening sections.
+- Manage profile settings, Last.fm authorization, and a playlist-backed Liked Songs collection.
+- Connect a Spotify account, inspect recordings, host or follow a Jam, and share an invitation QR code.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+Recent-history attribution follows the actual playback selection: album playback is credited to its album, playlist playback to its playlist, and direct track playback to the track alone. The app does not infer missing collection context after playback.
+
+## Quick start
+
+The mobile project and its local packages must be checked out next to each other:
+
+```text
+StreamingServiceMobile/
+StreamingServicePlayer/
+StreamingServiceSpotifyJam/
+```
+
+Use Node.js 20 or later for the app and sibling packages. The app manifest accepts Node.js 18 or later, but the local packages require 20. Install each local package and then the app dependencies; `npm install` in the app runs `patch-package` to apply required tracked patches.
 
 ```sh
-# Using npm
+cd StreamingServicePlayer
+npm install
+cd ../StreamingServiceSpotifyJam
+npm install
+cd ../StreamingServiceMobile
+npm install
+```
+
+The current API origin is a source constant in [`src/constants/placeholders.tsx`](src/constants/placeholders.tsx); change that project-owned value when pointing a development build at another server. It is not a settings screen value. Start Metro in one terminal and Android in another:
+
+```sh
 npm start
-
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
 npm run android
-
-# OR using Yarn
-yarn android
 ```
 
-### iOS
+`start`, `android`, and `ios` prepare both sibling libraries before starting React Native. Android builds require JDK 17, Python 3, the Android SDK/NDK versions declared in [`android/build.gradle`](android/build.gradle), and Rust/Cargo. The current native build script supports a Linux x86_64 build host and the `aarch64-linux-android` and `x86_64-linux-android` Rust targets for arm64 devices and x86_64 emulators. Gradle invokes that script through [`android/app/build.gradle`](android/app/build.gradle). Its default native ABI is arm64; pass `-PreactNativeArchitectures=x86_64` to Gradle when building for an x86_64 emulator. iOS also requires Xcode, CocoaPods, and the configured native package integration. The iOS source path exists, but a complete React Native iOS host/device run remains an acceptance check.
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Spotify and account flows
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+Connect Spotify from **Profile → Settings → Spotify**. Jam hosting and following are controlled from the Playing/Jam controls. Invitation QR generation is local to the app; scanning hands the invitation to Spotify. The app does not implement an in-app camera scanner. Joining a Jam does not by itself establish active playback or make guest queue commands available. Native guest access is verified separately and can fail closed.
+
+Spotify authentication is separate from StreamingService account authentication. The app owns platform login, secure saved credential storage, country selection, and native session integration. See [Spotify integration progress](SPOTIFY_INTEGRATION_PROGRESS.md), [native follower handoff](SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md), and [QR flow](JAM_QR_PROGRESS.md).
+
+Profile settings provide explicit Last.fm connection status and disconnect controls. Liked Songs uses a playlist selected through settings; heart state reflects membership in that playlist. It is not a separate server-side like store. Home cards and recent history use server and playback data with the attribution rules above. See [profile settings](PROFILE_SETTINGS_PROGRESS.md), [Liked Songs settings](LIKED_SONGS_SETTINGS_PROGRESS.md), and [Home listening](HOME_LISTENING_PROGRESS.md).
+
+## Development and checks
+
+Commands available in `package.json` include:
+
+| Command | Scope |
+| --- | --- |
+| `npm test` | Jest application tests |
+| `npm run test:player-mobile` | Player adapter, queue, source, and reporting checks |
+| `npm run test:spotify` | Spotify/Jam TypeScript, service, platform, and screen checks |
+| `npm run test:settings` | Profile, Last.fm, and Liked Songs settings checks |
+| `npm run test:home` | Home recommendation and query lifecycle checks |
+| `npm run test:spotify-native` | Rust/native librespot JNI integration checks |
+| `cargo test --manifest-path native/librespot-session/Cargo.toml --locked` | Native Rust crate tests |
+| `npx tsc --noEmit` | Application TypeScript check using the repository TypeScript configuration |
+
+These are source checks. They do not establish physical-device audio, cross-account guest permissions, audible Jam timing, or background/reconnect behavior. An earlier emulator run verified remote selection and playback in a candidate build, but current host acceptance and guest/device lifecycle gates remain open. Check [SPOTIFY_JAM_APK.md](SPOTIFY_JAM_APK.md) for the current artifact and acceptance notes instead of relying on old artifact details here.
+
+For Android release packaging, the repository uses commands such as:
 
 ```sh
-bundle install
+./android/gradlew -p android :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
 ```
 
-Then, and every time you update your native dependencies, run:
+The selected ABI can be changed for a matching emulator or device. Packaging and signing configuration do not by themselves establish a production-signed release or successful playback.
 
-```sh
-bundle exec pod install
-```
+## Documentation
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+- [Audio migration](AUDIO_MIGRATION_PROGRESS.md): selected player integration and remaining device evidence
+- [Player Jam integration](PLAYER_JAM_PROGRESS.md): player and Jam coordination
+- [Spotify native follower handoff](SPOTIFY_NATIVE_FOLLOWER_HANDOFF.md): ownership, gates, and recovery
+- [Jam queue recovery](JAM_QUEUE_RECOVERY_PROGRESS.md): uncertain queue state and recovery behavior
+- [Jam QR flow](JAM_QR_PROGRESS.md): invitation generation and handoff
+- [Profile settings](PROFILE_SETTINGS_PROGRESS.md), [Liked Songs settings](LIKED_SONGS_SETTINGS_PROGRESS.md), and [Home listening](HOME_LISTENING_PROGRESS.md): app behavior details
+- [UI backlog](UI_BACKLOG.md): remaining UI work
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+The Server, Player, and SpotifyJam directories are separate repositories. The Player and SpotifyJam directories must be siblings of this checkout for local package dependencies to resolve.

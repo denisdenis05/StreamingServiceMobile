@@ -1,0 +1,328 @@
+diff --git a/node_modules/react-native-fs/FS.common.js b/node_modules/react-native-fs/FS.common.js
+--- a/node_modules/react-native-fs/FS.common.js
++++ b/node_modules/react-native-fs/FS.common.js
+@@ -539,8 +539,9 @@
+         subscriptions.forEach(sub => sub.remove());
+         return res;
+       })
+-        .catch(e => {
+-          return Promise.reject(e);
++        .catch(failure => {
++          subscriptions.forEach(subscription => subscription.remove());
++          throw failure;
+         })
+     };
+   },
+diff --git a/node_modules/react-native-fs/RNFSManager.m b/node_modules/react-native-fs/RNFSManager.m
+--- a/node_modules/react-native-fs/RNFSManager.m
++++ b/node_modules/react-native-fs/RNFSManager.m
+@@ -504,6 +504,9 @@
+       return;
+     }
+     callbackFired = YES;
++    @synchronized (self) {
++      [self.downloaders removeObjectForKey:[jobId stringValue]];
++    }
+ 
+     NSMutableDictionary* result = [[NSMutableDictionary alloc] initWithDictionary: @{@"jobId": jobId}];
+     if (statusCode) {
+@@ -520,6 +523,9 @@
+       return;
+     }
+     callbackFired = YES;
++    @synchronized (self) {
++      [self.downloaders removeObjectForKey:[jobId stringValue]];
++    }
+     return [self reject:reject withError:error];
+   };
+ 
+@@ -550,31 +556,31 @@
+     };
+   }
+ 
+-  if (!self.downloaders) self.downloaders = [[NSMutableDictionary alloc] init];
+-
+   RNFSDownloader* downloader = [RNFSDownloader alloc];
+-
++  @synchronized (self) {
++    if (!self.downloaders) self.downloaders = [[NSMutableDictionary alloc] init];
++    [self.downloaders setObject:downloader forKey:[jobId stringValue]];
++  }
+   NSString *uuid = [downloader downloadFile:params];
+-
+-  [self.downloaders setValue:downloader forKey:[jobId stringValue]];
+-    if (uuid) {
+-        if (!self.uuids) self.uuids = [[NSMutableDictionary alloc] init];
+-        [self.uuids setValue:uuid forKey:[jobId stringValue]];
+-    }
++  @synchronized (self) {
++    if (uuid && [self.downloaders objectForKey:[jobId stringValue]] == downloader) {
++      if (!self.uuids) self.uuids = [[NSMutableDictionary alloc] init];
++      [self.uuids setObject:uuid forKey:[jobId stringValue]];
++    }
++  }
+ }
+ 
+ RCT_EXPORT_METHOD(stopDownload:(nonnull NSNumber *)jobId)
+ {
+-  RNFSDownloader* downloader = [self.downloaders objectForKey:[jobId stringValue]];
+-
+-  if (downloader != nil) {
+-    [downloader stopDownload];
+-  }
++  RNFSDownloader* downloader;
++  @synchronized (self) { downloader = [self.downloaders objectForKey:[jobId stringValue]]; }
++  if (downloader != nil) [downloader stopDownload];
+ }
+ 
+ RCT_EXPORT_METHOD(resumeDownload:(nonnull NSNumber *)jobId)
+ {
+-    RNFSDownloader* downloader = [self.downloaders objectForKey:[jobId stringValue]];
++    RNFSDownloader* downloader;
++    @synchronized (self) { downloader = [self.downloaders objectForKey:[jobId stringValue]]; }
+ 
+     if (downloader != nil) {
+         [downloader resumeDownload];
+@@ -586,7 +592,8 @@
+                   rejecter:(RCTPromiseRejectBlock)reject
+ )
+ {
+-    RNFSDownloader* downloader = [self.downloaders objectForKey:[jobId stringValue]];
++    RNFSDownloader* downloader;
++    @synchronized (self) { downloader = [self.downloaders objectForKey:[jobId stringValue]]; }
+ 
+     if (downloader != nil) {
+         resolve([NSNumber numberWithBool:[downloader isResumable]]);
+@@ -599,14 +606,17 @@
+                   resolver:(RCTPromiseResolveBlock)resolve
+                   rejecter:(RCTPromiseRejectBlock)reject)
+ {
+-    if (self.uuids) {
+-        NSString *uuid = [self.uuids objectForKey:[jobId stringValue]];
+-        CompletionHandler completionHandler = [completionHandlers objectForKey:uuid];
+-        if (completionHandler) {
+-            completionHandler();
+-            [completionHandlers removeObjectForKey:uuid];
+-        }
+-    }
++    NSString *uuid;
++    @synchronized (self) {
++        uuid = [self.uuids objectForKey:[jobId stringValue]];
++        [self.uuids removeObjectForKey:[jobId stringValue]];
++    }
++    CompletionHandler completionHandler;
++    @synchronized ([RNFSManager class]) {
++        completionHandler = uuid ? [completionHandlers objectForKey:uuid] : nil;
++        if (uuid) [completionHandlers removeObjectForKey:uuid];
++    }
++    if (completionHandler) completionHandler();
+     resolve(nil);
+ }
+ 
+@@ -984,8 +994,10 @@
+ 
+ +(void)setCompletionHandlerForIdentifier: (NSString *)identifier completionHandler: (CompletionHandler)completionHandler
+ {
+-    if (!completionHandlers) completionHandlers = [[NSMutableDictionary alloc] init];
+-    [completionHandlers setValue:completionHandler forKey:identifier];
++    @synchronized ([RNFSManager class]) {
++      if (!completionHandlers) completionHandlers = [[NSMutableDictionary alloc] init];
++      [completionHandlers setValue:completionHandler forKey:identifier];
++    }
+ }
+ 
+ @end
+diff --git a/node_modules/react-native-fs/Downloader.m b/node_modules/react-native-fs/Downloader.m
+--- a/node_modules/react-native-fs/Downloader.m
++++ b/node_modules/react-native-fs/Downloader.m
+@@ -16,6 +16,7 @@
+ @property (retain) NSNumber* contentLength;
+ @property (retain) NSNumber* bytesWritten;
+ @property (retain) NSData* resumeData;
++@property (assign) BOOL completed;
+ 
+ @property (retain) NSFileHandle* fileHandle;
+ 
+@@ -28,6 +29,7 @@
+     NSString *uuid = nil;
+ 
+     _params = params;
++    _completed = NO;
+ 
+   _lastProgressEmitTimestamp = 0;
+   _bytesWritten = 0;
+@@ -41,7 +43,7 @@
+       NSError* error = [NSError errorWithDomain:@"Downloader" code:NSURLErrorFileDoesNotExist
+                                 userInfo:@{NSLocalizedDescriptionKey: [NSString stringWithFormat: @"Failed to write target file at path: %@", _params.toFile]}];
+ 
+-      _params.errorCallback(error);
++      [self finishWithError:error];
+       return nil;
+     } else {
+       [_fileHandle closeFile];
+@@ -110,6 +112,8 @@
+ 
+ - (void)URLSession:(NSURLSession *)session downloadTask:(NSURLSessionDownloadTask *)downloadTask didFinishDownloadingToURL:(NSURL *)location
+ {
++  @synchronized (self) {
++  if (self.completed) return;
+   NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)downloadTask.response;
+   if (!_statusCode) {
+     _statusCode = [NSNumber numberWithLong:httpResponse.statusCode];
+@@ -136,28 +140,60 @@
+     }];
+   }
+ 
+-  return _params.completeCallback(_statusCode, _bytesWritten);
++  if (![self claimCompletion]) return;
++  _params.completeCallback(_statusCode, _bytesWritten);
++  _task = nil;
++  _session = nil;
++  }
+ }
+ 
+ - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
+ {
+   if (error) {
+     NSLog(@"RNFS download: didCompleteWithError %@, %@", error, error.userInfo);
+-    if (error.code != NSURLErrorCancelled) {
++    if (error.code == NSURLErrorCancelled && !_params.resumableCallback) {
++      [self finishWithError:error];
++    } else if (error.code != NSURLErrorCancelled) {
+       _resumeData = error.userInfo[NSURLSessionDownloadTaskResumeData];
+       if (_resumeData != nil) {
+         if (_params.resumableCallback) {
+             _params.resumableCallback();
++        } else {
++            [self finishWithError:error];
+         }
+       } else {
+-          _params.errorCallback(error);
++          [self finishWithError:error];
+       }
+     }
+   }
+ }
+ 
++- (BOOL)claimCompletion
++{
++  @synchronized (self) {
++    if (_completed) return NO;
++    _completed = YES;
++    return YES;
++  }
++}
++
++- (void)finishWithError:(NSError *)error
++{
++  if (![self claimCompletion]) return;
++  [_session invalidateAndCancel];
++  _params.errorCallback(error);
++  _task = nil;
++  _session = nil;
++  _resumeData = nil;
++}
++
+ - (void)stopDownload
+ {
++  if (!_params.resumableCallback) {
++    NSError *failure = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
++    [self finishWithError:failure];
++    return;
++  }
+   if (_task.state == NSURLSessionTaskStateRunning) {
+     [_task cancelByProducingResumeData:^(NSData * _Nullable resumeData) {
+         if (resumeData != nil) {
+diff --git a/node_modules/react-native-fs/android/src/main/java/com/rnfs/RNFSManager.java b/node_modules/react-native-fs/android/src/main/java/com/rnfs/RNFSManager.java
+--- a/node_modules/react-native-fs/android/src/main/java/com/rnfs/RNFSManager.java
++++ b/node_modules/react-native-fs/android/src/main/java/com/rnfs/RNFSManager.java
+@@ -10,6 +10,7 @@
+ import android.provider.MediaStore;
+ import android.util.Base64;
+ import android.util.SparseArray;
++import java.util.concurrent.ConcurrentHashMap;
+ import android.media.MediaScannerConnection;
+ 
+ import com.facebook.react.bridge.Arguments;
+@@ -57,7 +58,7 @@
+   private static final String RNFSFileTypeRegular = "RNFSFileTypeRegular";
+   private static final String RNFSFileTypeDirectory = "RNFSFileTypeDirectory";
+ 
+-  private SparseArray<Downloader> downloaders = new SparseArray<>();
++  private final ConcurrentHashMap<Integer, Downloader> downloaders = new ConcurrentHashMap<>();
+   private SparseArray<Uploader> uploaders = new SparseArray<>();
+ 
+   private ReactApplicationContext reactContext;
+@@ -722,6 +723,7 @@
+ 
+       params.onTaskCompleted = new DownloadParams.OnTaskCompleted() {
+         public void onTaskCompleted(DownloadResult res) {
++          downloaders.remove(jobId);
+           if (res.exception == null) {
+             WritableMap infoMap = Arguments.createMap();
+ 
+@@ -773,9 +775,13 @@
+ 
+       Downloader downloader = new Downloader();
+ 
+-      downloader.execute(params);
+-
+       this.downloaders.put(jobId, downloader);
++      try {
++        downloader.execute(params);
++      } catch (RuntimeException failure) {
++        this.downloaders.remove(jobId, downloader);
++        throw failure;
++      }
+     } catch (Exception ex) {
+       ex.printStackTrace();
+       reject(promise, options.getString("toFile"), ex);
+diff --git a/node_modules/react-native-fs/android/src/main/java/com/rnfs/Downloader.java b/node_modules/react-native-fs/android/src/main/java/com/rnfs/Downloader.java
+--- a/node_modules/react-native-fs/android/src/main/java/com/rnfs/Downloader.java
++++ b/node_modules/react-native-fs/android/src/main/java/com/rnfs/Downloader.java
+@@ -17,6 +17,7 @@
+ 
+ public class Downloader extends AsyncTask<DownloadParams, long[], DownloadResult> {
+   private DownloadParams mParam;
++  private volatile HttpURLConnection activeConnection;
+   private AtomicBoolean mAbort = new AtomicBoolean(false);
+   DownloadResult res;
+ 
+@@ -46,6 +47,8 @@
+ 
+     try {
+       connection = (HttpURLConnection)param.src.openConnection();
++      activeConnection = connection;
++      if (mAbort.get()) throw new Exception("Download has been aborted");
+ 
+       ReadableMapKeySetIterator iterator = param.headers.keySetIterator();
+ 
+@@ -77,7 +80,10 @@
+         connection.disconnect();
+ 
+         connection = (HttpURLConnection) new URL(redirectURL).openConnection();
+-        connection.setConnectTimeout(5000);
++        connection.setConnectTimeout(param.connectionTimeout);
++        connection.setReadTimeout(param.readTimeout);
++        activeConnection = connection;
++        if (mAbort.get()) throw new Exception("Download has been aborted");
+         connection.connect();
+ 
+         statusCode = connection.getResponseCode();
+@@ -148,6 +154,7 @@
+       if (output != null) output.close();
+       if (input != null) input.close();
+       if (connection != null) connection.disconnect();
++      activeConnection = null;
+     }
+   }
+ 
+@@ -160,6 +167,8 @@
+ 
+   protected void stop() {
+     mAbort.set(true);
++    HttpURLConnection connection = activeConnection;
++    if (connection != null) connection.disconnect();
+   }
+ 
+   @Override

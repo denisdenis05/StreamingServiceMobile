@@ -9,7 +9,9 @@ import {
 import { ReactNode } from 'react';
 import DefaultText from '../../components/DefaultText';
 import ScrollView = Animated.ScrollView;
-import { sizes } from '../../constants/styling.tsx';
+import { fonts, sizes, typography } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../../components/CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
@@ -26,19 +28,25 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: scale(10),
   },
   contentContainer: {
     flexGrow: 1,
     display: 'flex',
     width: '100%',
     minHeight: '100%',
+    minWidth: '100%',
     flexDirection: 'column',
-    gap: 40,
+    gap: verticalScale(40),
     paddingBottom: sizes.navbarHeight,
+    paddingHorizontal: scale(20),
   },
-  image: { height: 40, width: 40, borderRadius: 20 },
-  title: { fontWeight: 'bold', fontSize: 24 },
+  image: {
+    height: moderateScale(40),
+    width: moderateScale(40),
+    borderRadius: moderateScale(20),
+  },
+  title: { fontFamily: fonts.serif, fontSize: typography.pageTitle, letterSpacing: -0.3 },
 });
 
 export const HeaderContainer = ({ children }: Props) => {
@@ -63,7 +71,7 @@ export const StyledImage = ({
 }: StyledImageProps) => {
   return (
     <TouchableOpacity onPress={() => navigation.navigate(redirect)}>
-      <Image source={source} style={styles.image} resizeMode="cover" />
+      <CachedImage source={source} style={styles.image} resizeMode="cover" />
     </TouchableOpacity>
   );
 };

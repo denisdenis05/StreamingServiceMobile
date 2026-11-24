@@ -8,7 +8,9 @@ import {
 } from 'react-native';
 import React, { FC, ReactNode } from 'react';
 import DefaultText from '../DefaultText';
-import { colors, sizes } from '../../constants/styling.tsx';
+import { colors, sizes, typography } from '../../constants/styling.tsx';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   children?: ReactNode;
@@ -20,57 +22,67 @@ interface ActionProps {
   text: string;
   onPress?: (event: GestureResponderEvent) => void;
   style?: StyleProp<ViewStyle>;
-  icon?: React.ComponentType<{ height: number }>;
+  icon?: React.ComponentType<{ height: number; fill?: string }>;
 }
 
 const styles = StyleSheet.create({
   mainContainer: {
     position: 'absolute',
     bottom: sizes.navbarHeight,
-    justifyContent: 'space-between',
-    display: 'flex',
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '80%',
-    height: 'auto',
-    borderRadius: 10,
-    backgroundColor: colors.secondaryBackground,
-    padding: 20,
+    left: scale(20),
+    flexDirection: 'column',
+    gap: verticalScale(4),
+    borderRadius: moderateScale(18),
+    backgroundColor: colors.accentPrimary,
+    paddingVertical: moderateScale(16),
+    paddingHorizontal: moderateScale(18),
+    shadowColor: '#1A2F1B',
+    shadowOpacity: 0.3,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 10,
+    minWidth: scale(200),
   },
   actionItem: {
     display: 'flex',
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    gap: 15,
+    gap: scale(14),
+    paddingVertical: verticalScale(6),
   },
   actionTitle: {
-    color: colors.normalText,
-    margin: 0,
-    marginTop: 5,
-    fontSize: 18,
-    fontWeight: 'bold',
-    textAlignVertical: 'center',
+    color: colors.textOnAccent,
+    fontSize: typography.body,
+    fontWeight: '600',
+    letterSpacing: -0.2,
   },
   actionIcon: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 50,
-    height: 50,
-    borderRadius: 50,
-    backgroundColor: colors.lowOpacityText,
+    width: moderateScale(42),
+    height: moderateScale(42),
+    borderRadius: moderateScale(21),
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
 });
 
 export const MainContainer = ({ children }: Props) => {
-  return <View style={[styles.mainContainer]}>{children}</View>;
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={[styles.mainContainer, { bottom: sizes.navbarHeight + insets.bottom + 10 }]}>
+      {children}
+    </View>
+  );
 };
 
 export const ActionItem = ({ onPress, icon, text }: ActionProps) => {
   return (
-    <Pressable style={[styles.actionItem]} onPress={onPress}>
-      <ActionIcon icon={icon} />
+    <Pressable
+      style={({ pressed }) => [styles.actionItem, { opacity: pressed ? 0.8 : 1 }]}
+      onPress={onPress}
+    >
+      <ActionIcon icon={icon} text={text} />
       <ActionTitle>{text}</ActionTitle>
     </Pressable>
   );
@@ -81,9 +93,10 @@ export const ActionTitle = ({ children }: Props) => {
 };
 
 export const ActionIcon = ({ icon: Icon }: ActionProps) => {
+  if (!Icon) return null;
   return (
     <View style={[styles.actionIcon]}>
-      <Icon height={30} />
+      <Icon height={22} fill="#FFFFFF" />
     </View>
   );
 };

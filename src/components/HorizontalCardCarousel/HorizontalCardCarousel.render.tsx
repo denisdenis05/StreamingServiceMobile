@@ -5,46 +5,50 @@ import {
   CardTitle,
   MainContainer,
   MusicCard,
+  cardImageRadius,
+  cardImageSize,
 } from './HorizontalCardCarousel.style.tsx';
+import { HomeCollectionCard, HomeCollectionType, homeCollectionDestination } from '../../services/home/HomeCollectionNavigation';
 import SectionTitle from '../SectionTitle';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
+import SkeletonLoader from '../SkeletonLoader/SkeletonLoader.tsx';
+import { View } from 'react-native';
+import { typography } from '../../constants/styling.tsx';
+
+const SKELETON_ITEMS = Array.from({ length: 5 });
 
 const HorizontalCardCarousel = ({
   navigation,
   sectionTitle,
   content,
+  isLoading = false,
 }: {
   navigation: any;
   sectionTitle: string;
-  content: any;
+  content: readonly HomeCollectionCard[];
+  isLoading?: boolean;
 }) => {
-  const handleCardClick = (
-    albumId: any,
-    albumTitle: any,
-    albumArtist: any,
-    albumCover: any
-  ) => {
-    navigation.navigate('AlbumViewer', {
-      albumId,
-      albumTitle,
-      albumArtist,
-      albumCover,
-    });
+  if (isLoading) {
+    return <HorizontalCardSkeleton sectionTitle={sectionTitle} />;
+  }
+  const handleCardClick = (card: HomeCollectionCard) => {
+    const destination = homeCollectionDestination(card);
+    if (destination) navigation.navigate(destination.route, destination.parameters);
   };
 
   return (
     <MainContainer>
       <SectionTitle>{sectionTitle}</SectionTitle>
       <CardContainer>
-        {content.map((card: any, index: number) => (
+        {content.map((card: HomeCollectionCard) => (
           <MusicCard
-            key={index}
-            onPress={() => {
-              handleCardClick(card.id, card.title, card.artistName, card.cover);
-            }}
+            key={card.type + card.id}
+            onPress={() => handleCardClick(card)}
           >
             <CardImage
-              source={{ uri: card.cover || PLACEHOLDER_ALBUM_COVER }}
+              releaseId={card.type === HomeCollectionType.Playlist || card.type === HomeCollectionType.Recommendation ? undefined : card.id}
+              cover={card.cover}
+              smallCover={card.smallCover}
+              verySmallCover={card.verySmallCover}
             />
             <CardTitle>{card.title}</CardTitle>
             <CardAuthor>{card.artistName}</CardAuthor>
@@ -56,3 +60,28 @@ const HorizontalCardCarousel = ({
 };
 
 export default HorizontalCardCarousel;
+
+export const HorizontalCardSkeleton = ({ sectionTitle }: { sectionTitle?: string }) => {
+  return (
+    <MainContainer>
+      {sectionTitle ? <SectionTitle>{sectionTitle}</SectionTitle> :
+        <SkeletonLoader width={150} height={20} style={{ marginBottom: 10 }} />}
+      <CardContainer>
+        {SKELETON_ITEMS.map((_, index) => (
+          <View
+            key={index}
+            style={{ gap: 5, width: cardImageSize }}
+          >
+            <SkeletonLoader
+              width={cardImageSize}
+              height={cardImageSize}
+              borderRadius={cardImageRadius}
+            />
+            <SkeletonLoader width={80} height={typography.itemTitle} />
+            <SkeletonLoader width={60} height={typography.secondary} />
+          </View>
+        ))}
+      </CardContainer>
+    </MainContainer>
+  );
+};

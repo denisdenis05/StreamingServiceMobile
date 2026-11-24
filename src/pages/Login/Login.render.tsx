@@ -146,7 +146,6 @@ const Login = () => {
       password: password,
       keepMeLoggedIn: rememberMe,
     };
-
     try {
       const response = await api.post(url, data);
       if (response.status === 200 || response.status === 201) {

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, PanResponder, StyleSheet } from 'react-native';
+import { colors } from '../../constants/styling.tsx';
 import {
   BackdropContainer,
   CardTitle,
@@ -9,6 +10,8 @@ import {
   StyledButton,
   StyledInput,
 } from './CreatePlaylist.style.tsx';
+import { notifyLibraryChanged } from '../../services/LibraryChanges';
+import DefaultText from '../../components/DefaultText';
 import { useApi } from '../../hooks/useApi.ts';
 import {
   PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE,
@@ -18,8 +21,10 @@ import {
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const CreatePlaylist = ({ navigation }: any) => {
-  const [playlistName, setPlaylistName] = useState('');
+const CreatePlaylist = ({ navigation, route }: any) => {
+  const { playlistId, initialName } = route.params || {};
+  const [playlistName, setPlaylistName] = useState(initialName || '');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const translateY = useRef(new Animated.Value(0)).current;
   const api = useApi();
@@ -55,18 +60,28 @@ const CreatePlaylist = ({ navigation }: any) => {
       toValue: 0,
       useNativeDriver: true,
     }).start();
-  }, []);
+  }, [translateY]);
 
   const createPlaylist = async () => {
     if (isLoading) return;
 
     setIsLoading(true);
 
-    var body = { name: playlistName, recordingIds: [] };
-    await api.post('library/playlists', body);
-
-    setIsLoading(false);
-    navigation.goBack();
+    setErrorMessage(null);
+    try {
+      if (playlistId) {
+        await api.put(`library/playlists/${playlistId}`, { name: playlistName });
+      } else {
+        const playlistDetails = { name: playlistName, recordingIds: [] };
+        await api.post(PlaylistMutationPolicy.playlistsRoute, playlistDetails);
+      }
+      notifyLibraryChanged();
+      navigation.goBack();
+    } catch {
+      setErrorMessage(PlaylistMutationPolicy.saveFailed);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -78,14 +93,15 @@ const CreatePlaylist = ({ navigation }: any) => {
         <ContentContainer>
           <DragIndicator />
           <CenteredContainer>
-            <CardTitle>{PLACEHOLDER_CREATE_PLAYLIST_TITLE}</CardTitle>
+            <CardTitle>{playlistId ? 'Edit Playlist' : PLACEHOLDER_CREATE_PLAYLIST_TITLE}</CardTitle>
             <StyledInput
               value={playlistName}
               onChangeText={setPlaylistName}
               placeholder={PLACEHOLDER_CREATE_PLAYLIST_INPUT_VALUE}
             />
+            {errorMessage && <DefaultText accessibilityRole="alert">{errorMessage}</DefaultText>}
             <StyledButton
-              title={PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT}
+              title={playlistId ? 'Save Changes' : PLACEHOLDER_CREATE_PLAYLIST_SUBMIT_TEXT}
               onPress={createPlaylist}
               disabled={isLoading}
             />
@@ -101,9 +117,14 @@ export default CreatePlaylist;
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     marginTop: 60,
   },
+});
+
+const PlaylistMutationPolicy = Object.freeze({
+  playlistsRoute: 'library/playlists',
+  saveFailed: 'Playlist changes could not be saved. Try again.',
 });

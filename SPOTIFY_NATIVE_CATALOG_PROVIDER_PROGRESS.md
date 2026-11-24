@@ -1,0 +1,150 @@
+# Native-session catalog provider — 2026-11-01
+
+## Why the provider changed
+
+The first live catalog request from the repaired Android app returned HTTP429
+with Retry-After56 before native hosting activation. No conclusion about actual
+quota exhaustion follows from that response alone. The root agent owns cooldowns
+and all live actions; this chapter sends no Spotify requests.
+
+The previous native provider sent its session token to the public Web API search
+surface. A primary open-source client documents the same persistent rejection
+with native keymaster grants and implements catalog search through the Partner
+Pathfinder surface instead. This is supporting evidence, not our own live proof:
+
+- https://github.com/ralph/Spotifly/blob/main/plans/done/single-grant-partner-api.md
+- https://github.com/ralph/Spotifly/blob/main/Spotifly/PartnerAPI/PartnerAPI.swift
+- https://github.com/ralph/Spotifly/blob/main/Spotifly/PartnerAPI/PathfinderOperations.swift
+- https://github.com/ralph/Spotifly/blob/main/Spotifly/PartnerAPI/PathfinderSearch.swift
+- https://github.com/ralph/Spotifly/blob/main/Spotifly/Auth/ClientTokenProvider.swift
+
+Read-only inspection of the installed desktop bundle confirmed searchTracks and
+searchDesktop operations. No extracted bundle or application artifact is included
+in production. The pinned librespot source supplies the existing protocol types
+and hashcash solver. Its generic platform helper changes client identifiers on
+Android, so this implementation deliberately binds its client-token request to
+our existing authenticated native session instead.
+
+## Implementation
+
+Native catalog search now sends one passive searchTracks GraphQL POST to the
+fixed Partner origin and path. The operation hash and version are named protocol
+constants taken from the primary implementation above. Variables, path, method,
+media type and operation are validated before dispatch. The developer OAuth
+provider in the separate JavaScript composition is unchanged.
+
+The request keeps the actual native session account, client and device identity.
+The client-token request declares the actual compile target platform, omits
+optional hardware claims and never tries an alternative client identifier.
+Requests include the bound session bearer, client token and fixed xpui origin and
+referrer. No guessed App-Platform header is added.
+
+A client-token exchange permits an initial request and at most one hashcash
+answer. Unknown challenges, multiple challenges and repeated challenges fail
+explicitly. Difficulty and prefix length are bounded. The pinned solver itself
+has a five-second deadline and runs outside the async worker. The existing
+fifteen-second catalog deadline bounds the exchange and search lifetime.
+Replacement account/device scope after dispatch or solving prevents adoption or
+answer submission. Tokens stay in the native connection and are not logged or
+returned through the JavaScript bridge.
+
+Positive protocol grant lifetimes are accepted, with refresh no later than expiry.
+The local cache expires at the earlier of the refresh boundary and twenty-four
+hours. This accepts normal long-lived protocol grants without retaining them for
+their entire lifetime. The cache is account/client/device scoped and is cleared
+before renewing. A real catalog HTTP401 invalidates the client-token cache before
+the existing single rejected-bearer renewal. A client-token HTTP401 is classified
+separately and does not trigger that bearer replay.
+
+The existing exact-query cache, two-second request spacing, actual catalog request
+counter and full Retry-After cooldown remain in force. Client-token requests also
+respect the same cooldown and can extend it after an actual HTTP429. There is no
+provider fallback, account rotation, client identifier rotation or rate-limit
+retry loop.
+
+The decoder checks GraphQL errors even with HTTP200. A retired persisted query
+returns Unsupported rather than empty success or a hash search loop. Actual
+returned track identifiers and URIs must agree. Artist names, versioned title,
+duration and explicit playability are retained; no recording code, identity or
+availability is invented. Search uses the actual signed-in account context. The
+market remains part of the existing scoped input/cache key, with account-country
+precedence, rather than a fabricated Partner query variable.
+
+Android SpotifyCatalog diagnostics are emitted directly by the typed Rust sink;
+there is no Kotlin origin parser to update. Partner catalog and client-token
+stages have distinct fixed origins. The desktop probe validates their exact
+origin/stage pairing and drops all other fields, including tokens, challenges,
+queries, account/song metadata and raw failures.
+
+## Dedicated tests
+
+| Behavior | Test source |
+| --- | --- |
+| Fixed passive Partner query, escaped metadata, bounds, operation/hash tampering and rejected foreign paths/credentials | `native/librespot-session/tests/connect_search.rs` |
+| Actual result identity, artist/duration/version metadata, availability, duplicates and unknown/retired GraphQL failures | `native/librespot-session/tests/connect_search.rs` |
+| Existing client/device identity, one bound hashcash answer and unsupported/repeated/excessive challenge rejection | `native/librespot-session/tests/connect_client_token.rs` |
+| Account replacement before/after dispatch or while solving, cancellation, deadline/rate-limit propagation and malformed/oversized responses | `native/librespot-session/tests/connect_client_token.rs` |
+| Account/device scoped cache, exact refresh expiry and long protocol grant with local retention clamp | `native/librespot-session/tests/connect_client_token.rs` |
+| Fixed diagnostic origins/stages and private-field exclusion | `native/librespot-session/tests/connect_search.rs`, `tools/spotify-connect-probe.test.cjs` |
+| HTTP429 never renews credentials or repeats search; cache/pacing/cooldown semantics | Existing `connect_authentication` and `connect_search_traffic` suites |
+
+`cargo test --manifest-path native/librespot-session/Cargo.toml --quiet` passes the
+full native suite: 270 passed. Node probe checks pass 20 cases with
+`node --test tools/spotify-connect-probe.test.cjs tools/spotify-native-search-probe.test.cjs`.
+These tests use injected transport, solver and identity collaborators and send no
+Spotify request.
+
+Root must build both Android native architectures, package the integrated source,
+and run one deliberate current-session Partner search after the prior cooldown.
+Actual client-token acceptance, persisted-query availability, returned matching
+metadata and host activation remain live gates. A successful catalog search alone
+does not verify device visibility, incoming commands or synchronized playback.
+
+## Android request correction — 2026-11-02
+
+The first Android provider attempt returned HTTP 400 during client-token exchange,
+before a Partner request (catalog requestCount 0). Two source omissions were found:
+empty Android platform data and conflation of the bearer client with the platform
+client-token client. Earlier same-client claims above describe the superseded
+implementation, not the corrected composition.
+
+The Android JNI boundary now captures Build.VERSION.RELEASE/SDK_INT and
+Build.DEVICE/MODEL/MANUFACTURER before starting asynchronous work. Immutable,
+validated platform data follows the transport through reconnects. Missing fields
+fail explicitly; hardware/version values are neither fabricated nor supplied by
+JavaScript. The request serializes the actual fields.
+
+The bearer session, account and device are preserved. ClientToken uses the pinned
+library's fixed compile-platform client selection on Android/iOS/Linux; other
+platforms retain the session client. The cache and current-scope check include
+both client roles. This follows the pinned core/spclient.rs composition, which
+explicitly distinguishes session.client_id from the Android platform client used
+for client-token exchange. There is one fixed composition, no fallback client
+list, identity rotation, provider retry or change to rate-limit handling.
+
+Primary implementation:
+https://github.com/librespot-org/librespot/blob/99b6088bf3ea028f90192676ac1a337fa4b2ed12/core/src/spclient.rs
+
+`cargo test --manifest-path native/librespot-session/Cargo.toml --quiet`: 274 passed.
+New tests in `connect_client_platform.rs` cover actual field capture/serialization,
+immutable capture, each failed read and invalid build data. Client-token tests
+cover distinct session/platform client roles, preserved device identity and cache
+rejection when either client scope changes. Live acceptance remains pending.
+
+## First corrected Android catalog acceptance — 2026-11-02
+
+Installed the corrected x86_64 candidate without clearing app data or restarting
+the emulator. Saved native sign-in restored. A deliberate host action completed
+the bounded client-token challenge exchange (HTTP200 receipts), then one Partner
+search returned HTTP200 and decoded successfully. No rate limit was returned.
+Activation was not reached because matching remained ambiguous. A subsequent
+metadata-free diagnostic attempt confirmed five candidates, three acceptable,
+four title and duration matches and five artist matches. Raw metadata and
+identities were not logged. Search attempts were minutes apart.
+
+`SpotifyMatchingDiagnostic.ts` projects only a validated status and numeric
+candidate/evidence counts, with a dedicated privacy regression in
+`tools/spotify-hosting.test.cjs`. Catalog NotFound now describes a missing recording
+match instead of a missing Jam/device. Targeted hosting checks pass 73 cases;
+TypeScript passes. Library chapter `3c7a771` handles strictly equivalent duplicate
+recordings; its effect on this live selection remains pending.

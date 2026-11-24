@@ -1,12 +1,26 @@
-/**
- * @format
- */
-
+import 'react-native-url-polyfill/auto';
 import { AppRegistry } from 'react-native';
 import App from './App';
+import { executeSpotifyBackgroundHosting } from './src/services/SpotifyBackgroundHostingHeadless';
+import { SpotifyBackgroundHostingPolicy } from './src/services/spotify/SpotifyBackgroundHostingTask';
 import { name as appName } from './app.json';
-import TrackPlayer from 'react-native-track-player';
-import playbackService from './playbackService';
+import './src/services/SpotifyIntegration';
+import { executeSpotifyBackgroundAuthentication } from './src/services/SpotifyBackgroundAuthenticationHeadless';
+import { SpotifyBackgroundAuthenticationPolicy } from './src/services/spotify/SpotifyBackgroundAuthenticationTask';
+import { executeSpotifyBackgroundRecording } from './src/services/SpotifyBackgroundRecordingHeadless';
 
 AppRegistry.registerComponent(appName, () => App);
-TrackPlayer.registerPlaybackService(() => playbackService);
+AppRegistry.registerHeadlessTask('StreamingServiceSpotifyRecording', () => async data => {
+  if (typeof data?.requestIdentifier !== 'string') return;
+  await executeSpotifyBackgroundRecording(data.requestIdentifier);
+});
+
+AppRegistry.registerHeadlessTask(SpotifyBackgroundAuthenticationPolicy.taskName, () => async taskData => {
+  if (typeof taskData?.requestIdentifier !== SpotifyBackgroundAuthenticationPolicy.stringType) return;
+  await executeSpotifyBackgroundAuthentication(taskData.requestIdentifier);
+});
+
+AppRegistry.registerHeadlessTask(SpotifyBackgroundHostingPolicy.taskName, () => async taskData => {
+  if (typeof taskData?.requestIdentifier !== SpotifyBackgroundHostingPolicy.stringType) return;
+  await executeSpotifyBackgroundHosting(taskData.requestIdentifier);
+});

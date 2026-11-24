@@ -1,17 +1,29 @@
+import { PlayingCardLayout } from '../../constants/playingLayout';
 import { ReactNode } from 'react';
 import {
-  Image,
   ImageProps,
   SafeAreaView,
+  ScrollView,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  StyleProp,
   StyleSheet,
   View,
+  ViewStyle,
 } from 'react-native';
-import { colors } from '../../constants/styling.tsx';
+import { colors, fonts, typography } from '../../constants/styling.tsx';
 import DefaultText from '../../components/DefaultText';
+import { moderateScale, scale, verticalScale } from '../../utils/scaling';
+import CachedImage from '../../components/CachedImage.tsx';
 
 interface Props {
   children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
+
+const PlayingSpacing = Object.freeze({ headerCoverGap: 8 });
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -21,8 +33,11 @@ const styles = StyleSheet.create({
   content: {
     display: 'flex',
     alignItems: 'center',
-    padding: 20,
-    gap: 20,
+    paddingTop: moderateScale(20),
+    gap: verticalScale(10),
+    paddingBottom: verticalScale(30),
+    borderTopLeftRadius: moderateScale(15),
+    borderTopRightRadius: moderateScale(15),
   },
   songDetailsContainer: {
     display: 'flex',
@@ -30,58 +45,92 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 20,
-    paddingHorizontal: 30,
-    gap: 20,
+    paddingVertical: verticalScale(20),
+    paddingHorizontal: scale(30),
+    gap: scale(20),
   },
   songDescriptorContainer: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 2,
+    gap: verticalScale(2),
   },
   dragIndicator: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#666',
-    borderRadius: 2,
+    width: scale(40),
+    height: verticalScale(4),
+    backgroundColor: 'rgba(42, 36, 32, 0.2)',
+    borderRadius: moderateScale(2),
     alignSelf: 'center',
-    marginBottom: 20,
+    marginBottom: verticalScale(20),
   },
   header: {
     width: '100%',
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: verticalScale(PlayingSpacing.headerCoverGap),
   },
-  headerTitle: { fontWeight: 'bold', fontSize: 16 },
-  songTitle: { fontWeight: 'condensedBold', fontSize: 26 },
+  headerTitle: {
+    fontWeight: '500',
+    fontSize: typography.secondary,
+    textAlign: 'center',
+    color: colors.slightlyTransparentText,
+  },
+  songTitle: {
+    fontFamily: fonts.serif,
+    fontSize: typography.dialogTitle,
+    letterSpacing: -0.3,
+  },
   songAuthor: {
-    fontWeight: 'regular',
-    fontSize: 14,
+    fontWeight: '400',
+    fontSize: typography.secondary,
     color: colors.slightlyTransparentText,
   },
   albumCover: {
-    width: '80%',
+    width: PlayingCardLayout.width,
     aspectRatio: 1,
-    borderRadius: 30,
+    borderRadius: moderateScale(20),
   },
   allPlayingControlsContainer: {
-    width: '100%',
+    width: PlayingCardLayout.width,
+    alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 30,
-    marginBottom: 30,
+    marginBottom: verticalScale(30),
   },
 });
 
-export const BackdropContainer = ({ children }: Props) => {
-  return <View style={styles.backdrop}>{children}</View>;
+export const BackdropContainer = ({ children, style }: Props) => {
+  return <View style={[styles.backdrop, style]}>{children}</View>;
 };
 
-export const ContentContainer = ({ children }: Props) => {
-  return <SafeAreaView style={styles.content}>{children}</SafeAreaView>;
+export const ContentContainer = ({
+  children,
+  style,
+  onScroll,
+  disabled = false,
+}: Props) => {
+  return (
+    <SafeAreaView
+      style={PlayingLayout.safeArea}
+      pointerEvents={
+        disabled ? PlayingControlPolicy.disabled : PlayingControlPolicy.enabled
+      }
+      importantForAccessibility={
+        disabled
+          ? PlayingControlPolicy.hiddenAccessibility
+          : PlayingControlPolicy.enabled
+      }
+    >
+      <ScrollView
+        onScroll={onScroll}
+        contentContainerStyle={[styles.content, style]}
+      >
+        {children}
+      </ScrollView>
+    </SafeAreaView>
+  );
 };
 
 export const DragIndicator = () => {
@@ -96,8 +145,32 @@ export const HeaderTitle = ({ children }: Props) => {
   return <DefaultText style={styles.headerTitle}>{children}</DefaultText>;
 };
 
-export const AlbumCover = ({ source }: ImageProps) => {
-  return <Image source={source} style={styles.albumCover} resizeMode="cover" />;
+export const AlbumCover = ({
+  source,
+  releaseId,
+  cover,
+  smallCover,
+  verySmallCover,
+  style,
+}: ImageProps & {
+  releaseId?: string;
+  cover?: string;
+  smallCover?: string;
+  verySmallCover?: string;
+}) => {
+  return (
+    <CachedImage
+      testID={PlayingControlPolicy.coverIdentifier}
+      releaseId={releaseId}
+      cover={cover}
+      smallCover={smallCover}
+      verySmallCover={verySmallCover}
+      tier="full"
+      source={source}
+      style={[styles.albumCover, style]}
+      resizeMode="cover"
+    />
+  );
 };
 
 export const SongDetailsContainer = ({ children }: Props) => {
@@ -115,6 +188,35 @@ export const SongAuthor = ({ children }: Props) => {
   return <DefaultText style={styles.songAuthor}>{children}</DefaultText>;
 };
 
-export const AllPlayingControlsContainer = ({ children }: Props) => {
-  return <View style={styles.allPlayingControlsContainer}>{children}</View>;
+export const AllPlayingControlsContainer = ({
+  children,
+  disabled = false,
+}: Props) => {
+  return (
+    <View
+      pointerEvents={
+        disabled ? PlayingControlPolicy.disabled : PlayingControlPolicy.enabled
+      }
+      testID={PlayingControlPolicy.controlsIdentifier}
+      style={[
+        styles.allPlayingControlsContainer,
+        disabled && PlayingLayout.disabled,
+      ]}
+    >
+      {children}
+    </View>
+  );
 };
+
+const PlayingControlPolicy = Object.freeze({
+  coverIdentifier: 'playing-album-cover',
+  controlsIdentifier: 'playing-controls',
+  disabled: 'none' as const,
+  enabled: 'auto' as const,
+  hiddenAccessibility: 'no-hide-descendants' as const,
+  disabledOpacity: 0.4,
+});
+const PlayingLayout = StyleSheet.create({
+  safeArea: { flex: 1, width: '100%' },
+  disabled: { opacity: PlayingControlPolicy.disabledOpacity },
+});
