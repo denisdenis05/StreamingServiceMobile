@@ -1,6 +1,7 @@
 package com.streamingservice
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
@@ -12,7 +13,14 @@ class MainActivity : ReactActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     SpotifyAuthorizationReturnModule.capture(intent?.dataString)
+    requestedOrientation = ScreenOrientationPolicy.requestedOrientation(resources.configuration.smallestScreenWidthDp)
     super.onCreate(null)
+  }
+
+  override fun onConfigurationChanged(newConfiguration: Configuration) {
+    super.onConfigurationChanged(newConfiguration)
+    val orientation = ScreenOrientationPolicy.requestedOrientation(newConfiguration.smallestScreenWidthDp)
+    if (requestedOrientation != orientation) requestedOrientation = orientation
   }
 
   override fun onNewIntent(intent: Intent) {
