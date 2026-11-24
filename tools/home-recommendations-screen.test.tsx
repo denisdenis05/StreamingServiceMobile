@@ -6,6 +6,7 @@ import { HomeCollectionRoutes, HomeCollectionType, homeCollectionDestination } f
 import { HomeRecommendationQueries, homeSectionQuery } from '../src/services/home/HomeRecommendationQueries';
 import HorizontalCardCarousel from '../src/components/HorizontalCardCarousel/HorizontalCardCarousel.render';
 import CachedImage from '../src/components/CachedImage';
+import { RecommendationModes } from '../src/services/recommendations/RecommendationContracts';
 
 const mockQuerySnapshots = new Map<string, { data: unknown; loading: boolean; error: Error | null }>();
 const mockInvalidate = jest.fn();
@@ -43,6 +44,7 @@ const texts = () => renderer.root.findAllByType(Text).map(element => element.pro
 async function renderHome() { await act(async () => { renderer = create(<Home navigation={navigation} route={{}} />); }); }
 beforeEach(() => {
   jest.clearAllMocks(); mockQuerySnapshots.clear(); mockFocusEffects.length = Fixture.initial;
+  mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: null, loading: false, error: null });
 });
 afterEach(async () => { if (renderer) await act(async () => renderer.unmount()); jest.restoreAllMocks(); });
 
@@ -80,6 +82,43 @@ test('does not duplicate the recently played grid as a carousel', async () => {
   const carousels = renderer.root.findAllByType(HorizontalCardCarousel);
   expect(carousels).toHaveLength(Fixture.once);
   expect(carousels[Fixture.firstCall].props.sectionTitle).toBe(Fixture.artistsTitle);
+});
+
+test('recommendations reuse the album carousel and open the existing playlist view with the generated collage', async () => {
+  const cards = [
+    { mode: RecommendationModes.daily, title: "Today's playlist", description: 'Daily tracks' },
+    { mode: RecommendationModes.calm, title: 'Take it easy', description: 'Calmer tracks' },
+    { mode: RecommendationModes.smartShuffle, title: 'Smart shuffle', description: 'A varied flow' },
+  ].map(card => ({ id: card.mode, title: card.title, artistName: card.description, cover: 'playlist-collage',
+    type: HomeCollectionType.Recommendation,
+    recommendation: { request: { mode: card.mode }, page: { tracks: [], mode: card.mode, continuationToken: null, explanation: card.description, featureGeneration: 'fixture' },
+      cover: 'playlist-collage', dailyVersion: null, savedPlaylistId: null } }));
+  mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: cards, loading: false, error: null });
+  await renderHome();
+  const carousel = renderer.root.findByType(HorizontalCardCarousel);
+  expect(carousel.props.sectionTitle).toBe('Recommendations');
+  expect(carousel.props.content).toEqual(cards);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Open recommendations' })).toHaveLength(0);
+  const clickables = carousel.findAll(element => typeof element.props.onPress === 'function');
+  await act(async () => clickables[0].props.onPress());
+  expect(navigation.navigate).toHaveBeenCalledWith(HomeCollectionRoutes.playlist, {
+    playlistTitle: cards[0].title, playlistOwner: cards[0].artistName,
+    playlistCover: cards[0].cover, recommendation: cards[0].recommendation,
+  });
+  for (const image of carousel.findAllByType(CachedImage)) {
+    expect(image.props.releaseId).toBeUndefined();
+    expect(image.props.cover).toBe('playlist-collage');
+  }
+  expect(mockNetwork.get).not.toHaveBeenCalled();
+});
+
+test('recommended playlist failures retry their own query', async () => {
+  mockQuerySnapshots.set(HomeRecommendationQueries.playlists, { data: null, loading: false, error: new Error(Fixture.failure) });
+  await renderHome();
+  expect(texts()).toContain('These recommendations could not be loaded.');
+  const retry = renderer.root.findAllByType(Pressable).find(element => element.findAllByType(Text).some(label => label.props.children === Fixture.retry));
+  await act(async () => retry?.props.onPress());
+  expect(mockInvalidate).toHaveBeenCalledWith(HomeRecommendationQueries.playlists);
 });
 
 test('shows a useful empty Home explanation without inventing recommendations', async () => {

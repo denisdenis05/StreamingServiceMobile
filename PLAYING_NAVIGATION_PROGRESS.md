@@ -55,3 +55,21 @@ Result: BUILD SUCCESSFUL in 34 seconds; 558 Android unit tests, zero failures/er
 Artifact: `build/playing/StreamingService-Playing.apk`, 60,593,147 bytes. SHA256: `aeb1d5e4f4caaa342846265885ef4d400a3bf8bc7a4d4275b531a7b5ce829806`. Android apksigner verifies its v2 signature, zipalign accepts 16 KB page alignment, and aapt reports `com.streamingservice`, minimum Android SDK 24 and target SDK 35. Archive verification confirms the 2,494,988-byte Hermes bundle contains the new artwork-transition markers and both native architectures are present. The repository's existing debug signing configuration signs this release sideload candidate; it runs without Metro. No phone or emulator execution was performed.
 
 The repeated HTTPS push attempt still failed for missing GitHub credentials. A private GitHub token prompt is pending for the PR. Unrelated recommendation/UI edits were restored from the temporary stash after packaging and remain excluded from the task's commits and APK.
+
+## Restore the current Recommendations flow
+
+The user reported that the packaged Recommendations UI was the older version. The cause was packaging only the committed Playing task while temporarily excluding the existing uncommitted Recommendations changes. Merging that earlier branch would not restore those changes. The user explicitly requested adding them and revoked merge authorization; create/update the PR, but do not merge it.
+
+The branch now includes the existing newer flow: Home shows recommendation playlist cards with generated collages, the Recommendations route opens the ordinary PlaylistViewer, and the recommendation hook loads previews, starts playback at the selected row, saves ordered selections, regenerates explicitly and fences stale account/request completions. The old standalone Recommendations screen is removed. Collection loading is disabled for recommendation previews; Home refresh includes the recommendation query. Related tests are included with these changes.
+
+Validation on 2026-11-24:
+
+- `npm run test:recommendations`: 95 controller/player tests and 22 screen tests passed.
+- `npm run test:home`: 22 query tests and 24 screen tests passed.
+- `npx tsc --noEmit`: passed for the full mobile app.
+- `git diff --check`: passed.
+- `:app:assembleRelease` with the preceding cached dependency overrides and unchanged native Spotify libraries: BUILD SUCCESSFUL in 29 seconds, with release lint enabled. The APK includes the Recommendations changes rather than stashing them.
+- Corrected artifact: `build/playing/StreamingService-Playing-Recommendations.apk`, 60,591,335 bytes, SHA256 `0a4be38efc77e575c01cabb287c53611fa0f3735e7a1f3d897716224c1e7c933`. Signature verification and 16 KB archive alignment pass. The 2,493,176-byte Hermes bundle contains the new recommendation-query/hook and Playing transition markers; the old standalone Recommendations introduction is absent. ARM64 and x86_64 Spotify libraries are present.
+- GitHub credentials were supplied privately for push/PR creation. The latest user instruction explicitly forbids merging; leave the PR open.
+
+The Recommendations preview/collections API endpoints exist in the server workspace. No server deployment or live backend validation is included in this correction.

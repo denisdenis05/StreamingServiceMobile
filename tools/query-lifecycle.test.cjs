@@ -92,6 +92,12 @@ test('clearing a search invalidates its operation even when its text is later re
 const LibraryChangeHarnessPaths = Object.freeze({ module: './LibraryChanges', source: 'LibraryChanges.ts',
   historyModule: './ListeningHistoryChanges', historySource: 'ListeningHistoryChanges.ts',
   homeModule: './home/HomeRecommendationQueries', homeSource: 'home/HomeRecommendationQueries.ts' });
+test('Home refresh includes recommended playlists and excludes unrelated queries', () => {
+  const { HomeRecommendationQueries, isHomeRecommendationQuery } = load(LibraryChangeHarnessPaths.homeSource);
+  assertion.equal(isHomeRecommendationQuery(HomeRecommendationQueries.playlists), true);
+  assertion.equal(isHomeRecommendationQuery('library'), false);
+  assertion.equal(isHomeRecommendationQuery('search'), false);
+});
 function hookEnvironment() {
   let accountIdentifier = 'first'; const listeners = new Set();
   const session = { getSnapshot: () => ({ accountIdentifier }), subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); } };

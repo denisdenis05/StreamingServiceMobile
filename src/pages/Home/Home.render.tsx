@@ -1,4 +1,3 @@
-import { RecommendationRoutes } from '../../services/recommendations/RecommendationContracts';
 import React, { useCallback } from 'react';
 import { AppState, Dimensions, Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +17,7 @@ import SectionTitle from '../../components/SectionTitle';
 import SkeletonLoader from '../../components/SkeletonLoader/SkeletonLoader';
 import { HomeRecommendationQueries, homeSectionQuery } from '../../services/home/HomeRecommendationQueries';
 import { HomeCollectionCard, HomeCollectionType, homeCollectionDestination } from '../../services/home/HomeCollectionNavigation';
+import { RecommendationRoutes } from '../../services/recommendations/RecommendationContracts';
 
 const HomePolicy = Object.freeze({
   columnGap: 8, horizontalPadding: 20, columnCount: 2, coverSize: 52,
@@ -120,6 +120,18 @@ function HomeSection({ section, navigation }: { section: RecommendationSection; 
   return <HorizontalCardCarousel navigation={navigation} sectionTitle={section.title} content={albums ?? []} isLoading={loading} />;
 }
 
+function RecommendedPlaylists({ navigation }: { navigation: HomeNavigation }) {
+  const network = useApi();
+  const { data, loading, error } = useData<HomeCollectionCard[]>(HomeRecommendationQueries.playlists,
+    async signal => (await network.get<HomeCollectionCard[]>(RecommendationRoutes.collections, { signal })).data);
+  if (error) return <View>
+    <SectionTitle>Recommendations</SectionTitle>
+    <HomeQueryFeedback message={HomeCopy.sectionFailure} retry={() => invalidateCache(HomeRecommendationQueries.playlists)} />
+  </View>;
+  if (!loading && !data?.length) return null;
+  return <HorizontalCardCarousel navigation={navigation} sectionTitle="Recommendations" content={data ?? []} isLoading={loading} />;
+}
+
 export default function Home({ navigation, route }: { navigation: any; route: any }) {
   const network = useApi();
   const fetchSections = async (signal: AbortSignal) =>
@@ -140,12 +152,7 @@ export default function Home({ navigation, route }: { navigation: any; route: an
         <HeaderTitle>{HOME_HEADER_TEXT}{PLACEHOLDER_USERNAME}</HeaderTitle>
       </HeaderContainer>
       <RecentQuickGrid navigation={navigation} />
-      <View><SectionTitle>Recommendations</SectionTitle>
-        <Pressable accessibilityRole="button" accessibilityLabel="Open recommendations" style={[styles.card, { width: '100%' }]}
-          onPress={() => navigation.navigate(RecommendationRoutes.screen, {})}>
-          <DefaultText style={styles.title}>Daily mixes, radio and Smart shuffle</DefaultText>
-        </Pressable>
-      </View>
+      <RecommendedPlaylists navigation={navigation} />
       {error && <HomeQueryFeedback message={HomeCopy.sectionsFailure} retry={refreshHomeRecommendations} />}
       {loading && sectionSkeletons.map((_, index) => <HorizontalCardCarousel key={index}
         navigation={navigation} sectionTitle={index === HomePolicy.firstSkeletonIndex ? HomeCopy.loading : HomeCopy.noHeading} content={[]} isLoading />)}
