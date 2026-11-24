@@ -318,8 +318,10 @@ export class PlaybackRuntime {
   }
 
   async next(): Promise<void> {
+    const fence = this.selectionFence;
     await this.authentication.whenReady();
     const snapshot = await this.dispatcher.getSnapshot();
+    if (fence !== this.selectionFence) throw new QueueIntentSupersededError();
     if (
       snapshot.currentEntry === null &&
       snapshot.queueLength > RuntimePolicy.emptyQueueLength

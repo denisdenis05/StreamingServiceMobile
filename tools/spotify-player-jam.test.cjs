@@ -101,7 +101,9 @@ test('Clearing an active local queue withdraws sharing after the actual receipt 
 for (const kind of [HostedPlaybackCommandKind.Play, HostedPlaybackCommandKind.Pause, HostedPlaybackCommandKind.Next, HostedPlaybackCommandKind.Previous]) {
   test(`Player ${kind} follows the actual remote command path without mutating local playback`, async () => {
     const current = fixture(); current.state.following.status = SharedPlaybackStatus.Following; current.changed();
-    await current.controller.control(kind, current.local); assertion.deepEqual(current.calls.remote, [kind]); assertion.equal(current.calls.local, Fixture.initial);
+    await current.controller.control(kind, current.local); assertion.deepEqual(current.calls.remote,
+      kind === HostedPlaybackCommandKind.Next || kind === HostedPlaybackCommandKind.Previous
+        ? [kind, HostedPlaybackCommandKind.Play] : [kind]); assertion.equal(current.calls.local, Fixture.initial);
   });
 }
 test('Denied guest controls never mutate local audio or submit remote requests', async () => {
@@ -460,4 +462,19 @@ test('A package queue write failure reports its code without replaying the actua
   assertion.equal(current.calls.local, Fixture.single);
   assertion.equal(current.calls.publications, Fixture.initial);
   assertion.equal(current.controller.getSnapshot().failure, IntegrationFailureCode.UnknownOutcome);
+});
+
+test('A superseded remote skip cannot send automatic Play into a new Jam scope', async () => {
+  const pending = deferred();
+  const commands = [];
+  const current = fixture({ async remoteControl(kind) { commands.push(kind); await pending.promise; } });
+  current.state.following.status = SharedPlaybackStatus.Following;
+  current.changed();
+  const next = current.controller.control(HostedPlaybackCommandKind.Next, current.local);
+  await flush();
+  current.state.connection.scopeIdentifier = Fixture.replacement;
+  current.changed();
+  pending.resolve();
+  await next;
+  assertion.deepEqual(commands, [HostedPlaybackCommandKind.Next]);
 });

@@ -128,3 +128,74 @@ test('a committed recommendation append still reports its queue receipt after it
   assertion.equal(committed, receipts + Fixture.singleCount);
   scenario.runtime.dispose();
 });
+
+for (const intent of [PlaybackIntent.Pause, PlaybackIntent.Stop]) {
+  for (const direction of [RuntimeFixture.nextName, RuntimeFixture.previousName]) {
+    test(`${direction} starts playback after ${intent}`, async () => {
+      const scenario = environment();
+      await scenario.login();
+      await scenario.runtime.playTracks([track(Fixture.firstRecording), track(Fixture.secondRecording)],
+        direction === RuntimeFixture.nextName ? Fixture.firstIndex : Fixture.secondIndex);
+      if (intent === PlaybackIntent.Pause) await scenario.runtime.pause();
+      else await scenario.runtime.stop();
+      await scenario.runtime[direction]();
+      assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Play);
+      assertion.equal(scenario.snapshot().currentEntry.recordingIdentifier,
+        direction === RuntimeFixture.nextName ? Fixture.secondRecording : Fixture.firstRecording);
+      scenario.runtime.dispose();
+    });
+  }
+}
+test('a newer Pause supersedes Next during navigation preflight', async () => {
+  const scenario = await initialized();
+  await scenario.runtime.append([track(Fixture.secondRecording)]);
+  await scenario.runtime.pause();
+  const next = scenario.runtime.next();
+  const rejected = assertion.rejects(next, QueueIntentSupersededError);
+  await scenario.runtime.pause();
+  await rejected;
+  assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Pause);
+  scenario.runtime.dispose();
+});
+test('Next from the paused final song continues the queue with playback enabled', async () => {
+  const scenario = await initialized();
+  await scenario.runtime.pause();
+  await scenario.runtime.next();
+  await settleUntil(() => scenario.snapshot().currentEntry?.recordingIdentifier === Fixture.thirdRecording);
+  assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Play);
+  scenario.runtime.dispose();
+});
+test('a newer native Pause before the navigation receipt prevents automatic Play', async () => {
+  const scenario = await initialized();
+  await scenario.runtime.append([track(Fixture.secondRecording)]);
+  await scenario.runtime.pause();
+  const next = scenario.native.next;
+  scenario.native.next = async context => {
+    const receipt = await next(context);
+    scenario.nativePause();
+    return receipt;
+  };
+  await assertion.rejects(scenario.runtime.next(), QueueIntentSupersededError);
+  assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Pause);
+  scenario.runtime.dispose();
+});
+
+test('Previous on the first paused song restarts playback without changing its occurrence', async () => {
+  const scenario = await initialized();
+  const identifier = scenario.snapshot().currentEntry.entryIdentifier;
+  await scenario.runtime.pause();
+  await scenario.runtime.previous();
+  assertion.equal(scenario.snapshot().currentEntry.entryIdentifier, identifier);
+  assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Play);
+  scenario.runtime.dispose();
+});
+test('Repeat Song Next on a paused song resumes its existing occurrence', async () => {
+  const scenario = await initialized();
+  const identifier = scenario.snapshot().currentEntry.entryIdentifier;
+  await scenario.runtime.setRepeat(RepeatMode.One);
+  await scenario.runtime.pause();
+  await scenario.runtime.next();
+  assertion.equal(scenario.snapshot().currentEntry.entryIdentifier, identifier);
+  assertion.equal(scenario.snapshot().playbackIntent, PlaybackIntent.Play);
+  scenario.runtime.dispose();
+});

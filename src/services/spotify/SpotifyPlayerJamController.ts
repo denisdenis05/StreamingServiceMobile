@@ -423,6 +423,8 @@ export class SpotifyPlayerJamController {
         if (!this.dependencies.remoteControlsAvailable())
           throw new IntegrationFailure(IntegrationFailureCode.Forbidden);
         await this.dependencies.remoteControl(kind);
+        if (current() && (kind === HostedPlaybackCommandKind.Next || kind === HostedPlaybackCommandKind.Previous))
+          await this.dependencies.remoteControl(HostedPlaybackCommandKind.Play);
         return;
       }
       await local();

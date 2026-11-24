@@ -1,4 +1,8 @@
 import {
+  PlayingCoverTransition,
+  CoverNavigation,
+} from './PlayingCoverTransition';
+import {
   PlayingControlButton,
   PlayingControlButtonPolicy,
 } from './PlayingControlButton';
@@ -26,7 +30,6 @@ import {
   StyleSheet,
 } from 'react-native';
 import {
-  AlbumCover,
   AllPlayingControlsContainer,
   BackdropContainer,
   ContentContainer,
@@ -41,7 +44,6 @@ import {
 import ArrowDownIcon from '../../../assets/icons/arrowDownIcon.tsx';
 import MoreIcon from '../../../assets/icons/moreIcon.tsx';
 import HeartIcon from '../../../assets/icons/heartIcon.tsx';
-import { PLACEHOLDER_ALBUM_COVER } from '../../constants/placeholders.tsx';
 import AudioProgressBar from '../../components/AudioProgressBar';
 
 import { useMusicQueue } from '../../../MusicProvider.tsx';
@@ -71,6 +73,26 @@ const Playing = ({ navigation }: any) => {
     isShuffled,
     toggleShuffle,
   } = useMusicQueue();
+
+  const [coverNavigation, setCoverNavigation] =
+    useState<CoverNavigation | null>(null);
+  useEffect(() => {
+    setCoverNavigation(null);
+  }, [currentTrack?.entryIdentifier]);
+  const navigateNext = useCallback(() => {
+    setCoverNavigation({
+      entryIdentifier: currentTrack?.entryIdentifier,
+      direction: 'next',
+    });
+    return playNext();
+  }, [currentTrack?.entryIdentifier, playNext]);
+  const navigatePrevious = useCallback(() => {
+    setCoverNavigation({
+      entryIdentifier: currentTrack?.entryIdentifier,
+      direction: 'previous',
+    });
+    return playPrevious();
+  }, [currentTrack?.entryIdentifier, playPrevious]);
 
   const [lyricsExpanded, setLyricsExpanded] = useState(false);
   const { state: lyricsState, refresh: refreshLyrics } = useLyrics(
@@ -203,14 +225,9 @@ const Playing = ({ navigation }: any) => {
               onPress={handleMorePress}
             />
           </HeaderContainer>
-          <AlbumCover
-            source={{
-              uri: currentTrack?.artworkAddress || PLACEHOLDER_ALBUM_COVER,
-            }}
-            releaseId={currentTrack?.albumIdentifier}
-            cover={currentTrack?.artworkAddress}
-            smallCover={currentTrack?.smallArtworkAddress}
-            verySmallCover={currentTrack?.thumbnailArtworkAddress}
+          <PlayingCoverTransition
+            track={currentTrack}
+            navigation={coverNavigation}
           />
           <SongDetailsContainer>
             <SongDescriptorContainer>
@@ -288,7 +305,7 @@ const Playing = ({ navigation }: any) => {
               glyph="previous"
               label={PlayingControlButtonPolicy.previous}
               color={colors.normalText}
-              onPress={playPrevious}
+              onPress={navigatePrevious}
               disabled={controlsDisabled}
             />
             <PlayingControlButton
@@ -306,7 +323,7 @@ const Playing = ({ navigation }: any) => {
               glyph="next"
               label={PlayingControlButtonPolicy.next}
               color={colors.normalText}
-              onPress={playNext}
+              onPress={navigateNext}
               disabled={controlsDisabled}
             />
             <PlayingControlButton

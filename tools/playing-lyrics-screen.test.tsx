@@ -1,3 +1,4 @@
+import { PlayingCoverTransition } from '../src/pages/Playing/PlayingCoverTransition';
 import React from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
 import Playing from '../src/pages/Playing/Playing.render';
@@ -133,3 +134,24 @@ test('Normalized controls retain their playback commands and accessible labels',
   act(() => playButton.props.onPress());
   expect(mockPlay).toHaveBeenCalledTimes(LyricsFixture.singleCall);
 });
+
+test.each([
+  [PlayingControlButtonPolicy.next, 'next', mockQueue.playNext],
+  [PlayingControlButtonPolicy.previous, 'previous', mockQueue.playPrevious],
+])(
+  'The %s control records its cover direction and sends the playback command',
+  (label, direction, command) => {
+    render();
+    const button = renderer.root
+      .findAllByType(PlayingControlButton)
+      .find(candidate => candidate.props.label === label)!;
+    act(() => button.props.onPress());
+    expect(command).toHaveBeenCalledTimes(LyricsFixture.singleCall);
+    expect(
+      renderer.root.findByType(PlayingCoverTransition).props.navigation,
+    ).toEqual({
+      entryIdentifier: mockTrack.entryIdentifier,
+      direction,
+    });
+  },
+);

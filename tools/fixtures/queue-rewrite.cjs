@@ -85,7 +85,7 @@ function environment() {
   }
   const native = {
     async initialize() {},
-    async getSnapshot() { return { cursor: cursor() }; },
+    async getSnapshot() { return { cursor: cursor(), playbackIntent: state.playbackIntent, currentEntry: state.canonicalEntries.find(entry => entry.entryIdentifier === state.activeEntryIdentifier) ?? null }; },
     async clearSession() { authenticationEpoch = Fixture.otherAccount; state = model.createEmptyState(); },
     async registerMediaSource(context, source, ownership) {
       const registration = { context, source, ownership, identifier: Fixture.sourcePrefix + sourceRegistrations.length };

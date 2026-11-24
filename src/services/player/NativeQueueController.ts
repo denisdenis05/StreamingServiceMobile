@@ -1,4 +1,4 @@
-import { CommandResultStatus, DefaultQueuePolicy, MediaSourceValidator, PlayerErrorCode } from 'streaming-service-player';
+import { CommandResultStatus, DefaultQueuePolicy, MediaSourceValidator, PlaybackIntent, PlayerErrorCode } from 'streaming-service-player';
 import type { CommandContext, CommandResult, PlayerCursor, PlayerPlaybackCommands, PlayerQueueCommands, QueueCommandContext, QueueEntry, RepeatMode } from 'streaming-service-player';
 import { copyMediaRequestConfiguration, copyMediaSourceConfiguration } from './PlaybackMediaConfiguration';
 import { NativePlayerCommandDispatcher, PlaybackIdentifierSource, PlayerDispatchPolicy } from './NativePlayerCommandDispatcher';
@@ -167,8 +167,8 @@ export class NativeQueueController {
   play(): Promise<void> { return this.control(context => this.native.play(context)); }
   pause(): Promise<void> { return this.control(context => this.native.pause(context)); }
   stop(): Promise<void> { return this.control(context => this.native.stop(context)); }
-  next(): Promise<void> { return this.control(context => this.native.next(context)); }
-  previous(): Promise<void> { return this.control(context => this.native.previous(context)); }
+  next(): Promise<void> { return this.navigateAndPlay(context => this.native.next(context)); }
+  previous(): Promise<void> { return this.navigateAndPlay(context => this.native.previous(context)); }
 
   async seek(entryIdentifier: string, positionSeconds: number): Promise<void> {
     this.requireIdentifier(entryIdentifier);
@@ -200,6 +200,22 @@ export class NativeQueueController {
         return this.submit(owner, () => operation(guardedContext));
       });
       this.requireApplied(result);
+    });
+  }
+
+  private navigateAndPlay(operation: (context: CommandContext) => Promise<CommandResult>): Promise<void> {
+    return this.control(async context => {
+      const navigationResult = await operation(context);
+      if (navigationResult.status !== CommandResultStatus.Applied) return navigationResult;
+      const snapshot = await this.dispatcher.getSnapshot();
+      if (snapshot.cursor.playbackControlRevision !== navigationResult.cursor.playbackControlRevision)
+        throw new QueueIntentSupersededError();
+      if (snapshot.currentEntry === null || snapshot.playbackIntent === PlaybackIntent.Play) return navigationResult;
+      return this.native.play({
+        requestIdentifier: this.identifiers.nextIdentifier(),
+        engineEpoch: navigationResult.cursor.engineEpoch,
+        authenticationEpoch: navigationResult.cursor.authenticationEpoch,
+      });
     });
   }
 

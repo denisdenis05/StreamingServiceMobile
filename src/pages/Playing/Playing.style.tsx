@@ -151,6 +151,7 @@ export const AlbumCover = ({
   cover,
   smallCover,
   verySmallCover,
+  style,
 }: ImageProps & {
   releaseId?: string;
   cover?: string;
@@ -166,7 +167,7 @@ export const AlbumCover = ({
       verySmallCover={verySmallCover}
       tier="full"
       source={source}
-      style={styles.albumCover}
+      style={[styles.albumCover, style]}
       resizeMode="cover"
     />
   );
