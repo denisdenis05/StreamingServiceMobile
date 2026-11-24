@@ -22,13 +22,16 @@ const mockTrack = {
 };
 const mockQueue = {
   currentTrack: mockTrack,
+  queue: [mockTrack],
+  selectEntry: jest.fn(async () => undefined),
+  readCurrentEntryIdentifier: jest.fn(async () => mockTrack.entryIdentifier),
   isPlaying: false,
   isLoading: false,
   canSeek: true,
   play: mockPlay,
   pause: jest.fn(),
-  playNext: jest.fn(),
-  playPrevious: jest.fn(),
+  playNext: jest.fn(async () => undefined),
+  playPrevious: jest.fn(async () => undefined),
   repeatingState: 0,
   setRepeatingState: jest.fn(),
   seekToPosition: mockSeek,
@@ -97,6 +100,8 @@ let renderer: ReactTestRenderer;
 beforeEach(() => {
   jest.clearAllMocks();
   mockQueue.canSeek = true;
+  mockQueue.queue = [mockTrack];
+  mockJamState.mode = 'idle';
 });
 afterEach(() => act(() => renderer?.unmount()));
 function render() {
@@ -135,23 +140,42 @@ test('Normalized controls retain their playback commands and accessible labels',
   expect(mockPlay).toHaveBeenCalledTimes(LyricsFixture.singleCall);
 });
 
-test.each([
-  [PlayingControlButtonPolicy.next, 'next', mockQueue.playNext],
-  [PlayingControlButtonPolicy.previous, 'previous', mockQueue.playPrevious],
-])(
-  'The %s control records its cover direction and sends the playback command',
-  (label, direction, command) => {
-    render();
-    const button = renderer.root
-      .findAllByType(PlayingControlButton)
-      .find(candidate => candidate.props.label === label)!;
-    act(() => button.props.onPress());
-    expect(command).toHaveBeenCalledTimes(LyricsFixture.singleCall);
-    expect(
-      renderer.root.findByType(PlayingCoverTransition).props.navigation,
-    ).toEqual({
-      entryIdentifier: mockTrack.entryIdentifier,
-      direction,
-    });
-  },
-);
+test('Playing passes queue selection and reads native selection after navigation commands', async () => {
+  render();
+  const cover = renderer.root.findByType(PlayingCoverTransition);
+  expect(cover.props.queue).toBe(mockQueue.queue);
+  await act(async () => {
+    await cover.props.onNext();
+  });
+  expect(mockQueue.playNext).toHaveBeenCalledTimes(LyricsFixture.singleCall);
+  expect(mockQueue.readCurrentEntryIdentifier).toHaveBeenCalledTimes(
+    LyricsFixture.singleCall,
+  );
+  await act(async () => {
+    await cover.props.onPrevious();
+  });
+  expect(mockQueue.playPrevious).toHaveBeenCalledTimes(
+    LyricsFixture.singleCall,
+  );
+  await act(async () => {
+    await cover.props.onSelect(mockTrack.entryIdentifier);
+  });
+  expect(mockQueue.selectEntry).toHaveBeenCalledWith(mockTrack.entryIdentifier);
+});
+
+test('Following a Jam routes a cover selection through remote navigation rather than local queue replacement', async () => {
+  mockJamState.mode = 'following';
+  const neighbor = {
+    ...mockTrack,
+    entryIdentifier: LyricsFixture.otherRecording,
+  };
+  mockQueue.queue = [mockTrack, neighbor];
+  render();
+  await act(async () => {
+    await renderer.root
+      .findByType(PlayingCoverTransition)
+      .props.onSelect(neighbor.entryIdentifier);
+  });
+  expect(mockQueue.playNext).toHaveBeenCalledTimes(LyricsFixture.singleCall);
+  expect(mockQueue.selectEntry).not.toHaveBeenCalled();
+});

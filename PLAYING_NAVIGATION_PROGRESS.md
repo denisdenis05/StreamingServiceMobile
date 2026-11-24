@@ -73,3 +73,54 @@ Validation on 2026-11-24:
 - GitHub credentials were supplied privately for push/PR creation. The latest user instruction explicitly forbids merging; leave the PR open.
 
 The Recommendations preview/collections API endpoints exist in the server workspace. No server deployment or live backend validation is included in this correction.
+
+## Correct cover transitions and add horizontal dragging
+
+The user reported inconsistent outgoing/incoming directions in the preceding APK and explicitly requested the quality skill for the fix, another APK and another PR. The latest no-merge instruction remains in force. The authored mobile changes in this chapter use the skill's constants, naming, dependency injection and dedicated test requirements.
+
+### Cause and replacement
+
+The preceding component replaced the cover layers while reusing one animated progress value, and direction was passed through parent React state that was cleared on track change. Its tests checked only the incoming starting side, not the retained outgoing layer or intermediate frame positions. Native Previous can also restart the same occurrence, and native selection can precede React's projected queue update; a direction request cannot be inferred from a Promise completing or from an album URL.
+
+CoverGestureController now owns one scene with a retained current cover and adjacent queue occurrences. Playing buttons call it directly. The controller reads the selected native occurrence after button commands and keeps the direction until that occurrence reaches the projected view. Restarting the same song clears the request without a cover transition. A scene remains mounted until its motion and observed selection agree. Motion identifiers fence retired callbacks. One pixel offset moves all three cover layers; the component's layout effect resets the offset only when committing a centered scene, rather than changing direction or artwork under a running interpolation.
+
+### Gesture behavior
+
+The cover takes the responder only after horizontal movement exceeds 6 logical pixels and dominates vertical movement. Parent scrolling/dismissal retains vertical gestures. Movement updates only the horizontal animated offset, without selecting a track while held. Dragging left reveals the next actual queue occurrence; dragging right reveals the previous one. Moving the finger back reverses those same layers.
+
+The release threshold is strictly greater than 30% of the latest measured cover width. Width is supplied by onLayout; the threshold and neighbor limits are computed on each movement/release, including after resizing. A missing neighbor limits movement to 30% in that direction and always returns smoothly. Gestures select the adjacent stable queue occurrence directly, so a right swipe selects the preceding song rather than invoking a position-based restart. Jam following uses its existing remote navigation path instead of trying to replace local shared playback.
+
+Fast flicks use the release velocity when its magnitude is at least 0.5 logical pixels per millisecond. The release decision projects the current offset by 180 milliseconds of that velocity, then compares the result with the same measured-width threshold. A short fast gesture can therefore commit; a slow short gesture returns. Missing neighbors still block flick navigation.
+
+Every release, responder cancellation and selection failure settles through a timed motion. The return path reads the stopped animated value, including a partially completed native animation, instead of assigning zero or assuming the animation reached its target. Completion animates the remaining distance with a bounded duration. Unacknowledged swipe selections return after the injected 2 second timeout. Duplicate release/button requests are blocked while settling; disposal cancels timers and fences late work.
+
+### Feature-to-test mapping
+
+| Behavior | Dedicated evidence |
+| --- | --- |
+| Next/Previous/Next outgoing and incoming positions | playing-cover-transition.test.tsx samples both layers halfway through each direction and verifies one final centered scene |
+| Delayed native selection and same-song restart | cover-gesture-controller.test.ts covers delayed queue-wrap projection and Previous restart followed by automatic advance; player-progress.test.cjs covers reading selected native identity |
+| Held, reversible horizontal drag | controller and component tests cover complete reveal, reversing the held offset and no selection before release |
+| Strict width-relative threshold and resizing | controller tests cover 89/90/91 pixels at 300-pixel width, resizing to 500 pixels and selecting above its new threshold |
+| Short fast flick versus short slow drag | controller/component tests cover both fling directions and a slow return |
+| Missing first/last queue neighbor | controller tests clamp both boundaries at 30%, including fast flicks |
+| Smooth return and interrupted motion | tests cover cancellation, disabled controls, removed neighbor, partial-animation selection failure and timeout |
+| Ordering, stale callbacks and disposal | tests cover animation-first and observation-first completion, rapid duplicate buttons, stale completion, metadata refresh and late selection failure after disposal |
+| Screen/remote wiring | Playing screen tests verify selection/native acknowledgement adapters and remote Jam navigation |
+
+React Native's exact gesture field names dx/dy/vx, React ref/JSX attributes, style values, accessibility values and Jest APIs are framework-owned identifiers/strings. Authored behavioral values live in CoverGesturePolicy, CoverPresentationPolicy and CoverFixture. No authored explanatory code comments were added. The controller depends on injected animation offset access, commands and scheduling; the component composes React Native implementations.
+
+### Validation and artifact
+
+- `npx tsc --noEmit`: passed for the complete app.
+- `npm run test:cover-gestures`: 6 native selection/progress tests and 34 controller/component/screen tests passed. This command was added for future changes.
+- `npm run test:player-mobile`: all 397 tests passed. The existing progress sandbox now includes the already-required RecommendationPlaybackPlatform dependency; its prior three fixture failures are resolved.
+- `npm run test:lyrics`: 53 tests passed in seven suites.
+- `npm run test:recommendations`: 95 controller/player tests and 22 screen tests passed.
+- ESLint on the new controller, component and dedicated tests: zero errors/warnings. Existing Playing screen warnings are unchanged. `git diff --check` passed.
+- `./gradlew :app:assembleRelease -x :app:buildSpotifyLibrespot -PreactNativeArchitectures=arm64-v8a,x86_64 --offline --init-script /tmp/lyrics-cached-android-dependencies.gradle --no-daemon`: BUILD SUCCESSFUL in 30 seconds, with release lint enabled. Cached dependency selection and unchanged native Spotify libraries were reused as in the preceding build. Native unit tests were not rerun for this TypeScript-only chapter.
+- Artifact: `build/playing/StreamingService-Cover-Gestures.apk`, 60,600,575 bytes, SHA256 `6e86e14164d1799f3297aa1023dbf88d088db5c1bc9a67ac94377960ca2574cc`. apksigner verifies its v2 signature; zipalign accepts 16 KB archive alignment. The 2,502,416-byte Hermes bundle contains the new gesture viewport/previous/current/next cover and native-selection markers, excludes the retired outgoing-cover implementation marker, and retains the newer Recommendations query. ARM64 and x86_64 Spotify libraries are present. Existing debug signing makes this a sideload candidate that runs without Metro.
+
+`adb devices` lists no connected device, and the installed emulator tooling lists no configured AVD or system image. No physical/runtime gesture test, audible playback test or animation frame measurement was performed. These deterministic motion-position and ordering tests are not evidence of device smoothness. Check alternating buttons, full held drags/reversals, short fast flicks, both queue boundaries and cancellation on a phone/tablet before claiming that validation.
+
+Created `fix/playing-cover-gestures` from freshly fetched origin/main, then fast-forwarded the existing unmerged #6 baseline to preserve the approved Recommendations and other app work. origin/master remains absent. The new PR targets main and includes that inherited baseline; this chapter's correction is a separate commit. No merge is authorized or performed.

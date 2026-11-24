@@ -28,6 +28,8 @@ async function runAudioCommand(operation: () => Promise<void>): Promise<void> {
   }
 }
 export const setupPlayer = (): Promise<void> => playbackApplication.start();
+export const getCurrentEntryIdentifier = async (): Promise<string | null> =>
+  (await audioRuntime.dispatcher.getSnapshot()).currentEntry?.entryIdentifier ?? null;
 export const getPosition = async (): Promise<number> => (await audioRuntime.dispatcher.getSnapshot()).positionMilliseconds / AudioRuntimePolicy.millisecondsPerSecond;
 export const getDuration = async (): Promise<number> => ((await audioRuntime.dispatcher.getSnapshot()).durationMilliseconds
   ?? PlaybackMessages.zeroSeconds) / AudioRuntimePolicy.millisecondsPerSecond;
@@ -56,6 +58,7 @@ const PlaylistPlaybackPolicy = Object.freeze({
 });
 const collectionLoader = new PlaybackCollectionLoader();
 const Commands = Object.freeze({
+  readCurrentEntryIdentifier: getCurrentEntryIdentifier,
   playPlaylist: (playlistIdentifier: string, selectedIndex: number, expectedRecordingIdentifier?: string) => { recommendationPlayback.stop(); return runAudioCommand(() =>
     audioRuntime.playCollection(async isCurrent => {
       const account = authenticationSession.getSnapshot();

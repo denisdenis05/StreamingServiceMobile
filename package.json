@@ -28,7 +28,8 @@
     "test:artists": "jest --runInBand --watchman=false --runTestsByPath tools/artist-screen.test.tsx tools/artist-navigation.test.tsx tools/artist-search.test.tsx",
     "test:home": "node --test tools/query-lifecycle.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/home-recommendations-screen.test.tsx tools/library-heart-refresh.test.tsx",
     "test:recommendations": "tsc --project tsconfig.recommendations.json && tsc --project tsconfig.audio-migration.json && node --test tools/recommendation-playback.test.cjs tools/player-runtime.test.cjs tools/player-queue-rewrite.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/recommendations-screen.test.tsx tools/home-recommendations-screen.test.tsx",
-    "test:lyrics": "jest --runInBand --watchman=false --runTestsByPath tools/lyrics-document.test.ts tools/lyrics-repository.test.ts tools/lyrics-panel.test.tsx tools/lyrics-cover-color.test.tsx tools/lyrics-platform.test.tsx tools/playing-control-geometry.test.ts tools/playing-lyrics-screen.test.tsx"
+    "test:lyrics": "jest --runInBand --watchman=false --runTestsByPath tools/lyrics-document.test.ts tools/lyrics-repository.test.ts tools/lyrics-panel.test.tsx tools/lyrics-cover-color.test.tsx tools/lyrics-platform.test.tsx tools/playing-control-geometry.test.ts tools/playing-lyrics-screen.test.tsx",
+    "test:cover-gestures": "node --test tools/player-progress.test.cjs && jest --runInBand --watchman=false --runTestsByPath tools/cover-gesture-controller.test.ts tools/playing-cover-transition.test.tsx tools/playing-lyrics-screen.test.tsx"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",

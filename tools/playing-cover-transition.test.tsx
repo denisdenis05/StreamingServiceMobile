@@ -1,153 +1,356 @@
-import React from 'react';
+import React, { createRef } from 'react';
 import { act, create, ReactTestRenderer } from 'react-test-renderer';
-import { Animated, StyleSheet } from 'react-native';
+import {
+  Animated,
+  PanResponder,
+  PanResponderCallbacks,
+  StyleSheet,
+} from 'react-native';
 import { AlbumCover } from '../src/pages/Playing/Playing.style';
 import {
-  CoverNavigation,
-  CoverTransitionPolicy,
+  CoverDirection,
+  CoverGesturePolicy,
+} from '../src/pages/Playing/CoverGestureController';
+import {
+  CoverPresentationPolicy,
+  PlayingCoverHandle,
   PlayingCoverTransition,
 } from '../src/pages/Playing/PlayingCoverTransition';
+import { CoverFixture, coverTracks } from './cover-gesture-fixtures';
 
 jest.mock('../src/components/CachedImage', () => () => null);
-const first = {
-  entryIdentifier: 'first-entry',
-  title: 'First',
-  artist: 'Artist',
-  isLocalCached: true,
-  artworkAddress: 'file:///first.png',
-};
-const second = {
-  ...first,
-  entryIdentifier: 'second-entry',
-  artworkAddress: 'file:///second.png',
-};
-const third = {
-  ...first,
-  entryIdentifier: 'third-entry',
-  artworkAddress: 'file:///third.png',
-};
-let renderer: ReactTestRenderer;
-let animations: {
+interface TestAnimation {
+  readonly value: Animated.Value;
+  readonly endOffsetPixels: number;
   completion?: (result: { finished: boolean }) => void;
-  stop: jest.Mock;
-}[];
+  readonly stop: jest.Mock;
+}
+let renderer: ReactTestRenderer;
+let animations: TestAnimation[];
+let responder: PanResponderCallbacks;
+const reference = createRef<PlayingCoverHandle>();
+const next = jest.fn(
+  async (): Promise<string | null> => CoverFixture.thirdIdentifier,
+);
+const previous = jest.fn(
+  async (): Promise<string | null> => CoverFixture.firstIdentifier,
+);
+const select = jest.fn(async (_entryIdentifier: string) => undefined);
+const busy = jest.fn();
+const gestureEvent = {} as Parameters<
+  NonNullable<PanResponderCallbacks['onPanResponderGrant']>
+>[0];
+function gesture(
+  horizontalDistancePixels: number,
+  horizontalVelocityPixelsPerMillisecond: number = CoverFixture.stationaryVelocityPixelsPerMillisecond,
+  verticalDistancePixels: number = CoverFixture.initialOffsetPixels,
+) {
+  return {
+    dx: horizontalDistancePixels,
+    dy: verticalDistancePixels,
+    vx: horizontalVelocityPixelsPerMillisecond,
+  } as Parameters<NonNullable<PanResponderCallbacks['onPanResponderMove']>>[1];
+}
+function render(index: number = CoverFixture.secondIndex, disabled = false) {
+  return (
+    <PlayingCoverTransition
+      ref={reference}
+      track={coverTracks[index]}
+      queue={coverTracks}
+      disabled={disabled}
+      onNext={next}
+      onPrevious={previous}
+      onSelect={select}
+      onBusyChange={busy}
+    />
+  );
+}
+function layer(identifier: string) {
+  return renderer.root.findAllByProps({ testID: identifier })[
+    CoverFixture.firstIndex
+  ];
+}
+function translation(identifier: string): number {
+  return StyleSheet.flatten(layer(identifier).props.style).transform[
+    CoverFixture.firstIndex
+  ].translateX.__getValue();
+}
+function measure(widthPixels: number = CoverFixture.phoneWidthPixels) {
+  act(() =>
+    renderer.root
+      .findByProps({ testID: CoverPresentationPolicy.gestureIdentifier })
+      .props.onLayout({ nativeEvent: { layout: { width: widthPixels } } }),
+  );
+}
+function frame(index: number, progress: number) {
+  const animation = animations[index];
+  const startOffsetPixels = (
+    animation.value as Animated.Value & { __getValue(): number }
+  ).__getValue();
+  act(() =>
+    animation.value.setValue(
+      startOffsetPixels +
+        (animation.endOffsetPixels - startOffsetPixels) * progress,
+    ),
+  );
+}
+function finish(index: number) {
+  frame(index, CoverFixture.fullProgress);
+  act(() => animations[index].completion?.({ finished: true }));
+}
 beforeEach(() => {
+  jest.clearAllMocks();
   animations = [];
-  jest.spyOn(Animated, 'timing').mockImplementation(() => {
-    const animation = {
-      start: (completion?: (result: { finished: boolean }) => void) => {
-        animation.completion = completion;
-      },
-      completion: undefined as
-        | ((result: { finished: boolean }) => void)
-        | undefined,
+  jest.spyOn(PanResponder, 'create').mockImplementation(configuration => {
+    responder = configuration;
+    return { panHandlers: {} };
+  });
+  jest.spyOn(Animated, 'timing').mockImplementation((value, configuration) => {
+    const animation: TestAnimation = {
+      value: value as Animated.Value,
+      endOffsetPixels: configuration.toValue as number,
       stop: jest.fn(),
-      reset: jest.fn(),
     };
     animations.push(animation);
-    return animation;
+    return {
+      start: completion => {
+        animation.completion = completion;
+      },
+      stop: animation.stop,
+      reset: jest.fn(),
+    };
   });
 });
 afterEach(() => {
   act(() => renderer?.unmount());
   jest.restoreAllMocks();
 });
-function render(track = first, navigation: CoverNavigation | null = null) {
-  return <PlayingCoverTransition track={track} navigation={navigation} />;
-}
-function layer(identifier: string) {
-  return renderer.root.findAllByProps({ testID: identifier })[0];
-}
-function translation(identifier: string) {
-  return StyleSheet.flatten(
-    layer(identifier).props.style,
-  ).transform[0].translateX.__getValue();
-}
-test('Initial artwork appears centered without a transition', () => {
+
+async function buttonTransition(
+  direction: CoverDirection,
+  targetIndex: number,
+) {
+  const operation = direction === CoverDirection.Next ? next : previous;
+  operation.mockResolvedValueOnce(coverTracks[targetIndex].entryIdentifier);
   act(() => {
-    renderer = create(render());
+    reference.current?.navigate(direction);
   });
-  expect(translation('playing-current-cover')).toBe(
-    CoverTransitionPolicy.startProgress,
-  );
-  expect(layer('playing-outgoing-cover')).toBeUndefined();
-  expect(animations).toHaveLength(0);
-});
-test.each(['next', 'previous'] as const)(
-  '%s retains the outgoing cover and slides the incoming cover from the matching side',
-  direction => {
-    act(() => {
-      renderer = create(render());
-    });
-    act(() =>
-      renderer.update(
-        render(second, { entryIdentifier: first.entryIdentifier, direction }),
-      ),
-    );
-    expect(layer('playing-outgoing-cover')).toBeDefined();
-    expect(
-      renderer.root.findAllByType(AlbumCover).map(cover => cover.props.cover),
-    ).toEqual([first.artworkAddress, second.artworkAddress]);
-    const incoming = translation('playing-current-cover');
-    expect(direction === 'next' ? incoming > 0 : incoming < 0).toBe(true);
-    expect(Animated.timing).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        duration: CoverTransitionPolicy.durationMilliseconds,
-        useNativeDriver: true,
-      }),
-    );
-    act(() => animations[0].completion?.({ finished: true }));
-    expect(layer('playing-outgoing-cover')).toBeUndefined();
-  },
-);
-test('Rapid skips stop earlier animation and stale completion cannot remove the latest outgoing cover', () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+  act(() => renderer.update(render(targetIndex)));
+}
+
+test('Next moves the retained current cover left while its neighbor moves continuously from the right', async () => {
   act(() => {
-    renderer = create(render());
+    renderer = create(render(CoverFixture.firstIndex));
   });
-  act(() => renderer.update(render(second)));
-  act(() => renderer.update(render(third)));
-  expect(animations[0].stop).toHaveBeenCalled();
-  act(() => animations[0].completion?.({ finished: true }));
-  expect(layer('playing-outgoing-cover')).toBeDefined();
+  measure();
+  await buttonTransition(CoverDirection.Next, CoverFixture.secondIndex);
   expect(
-    renderer.root.findAllByType(AlbumCover).map(cover => cover.props.cover),
-  ).toEqual([second.artworkAddress, third.artworkAddress]);
-  act(() => animations[1].completion?.({ finished: true }));
-  expect(layer('playing-outgoing-cover')).toBeUndefined();
+    layer(CoverPresentationPolicy.currentIdentifier).findByType(AlbumCover)
+      .props.cover,
+  ).toBe(CoverFixture.firstArtwork);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.initialOffsetPixels,
+  );
+  expect(translation(CoverPresentationPolicy.nextIdentifier)).toBe(
+    CoverFixture.fullPhoneStepPixels,
+  );
+  frame(CoverFixture.firstIndex, CoverFixture.halfProgress);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    -CoverFixture.halfPhoneStepPixels,
+  );
+  expect(translation(CoverPresentationPolicy.nextIdentifier)).toBe(
+    CoverFixture.halfPhoneStepPixels,
+  );
+  finish(CoverFixture.firstIndex);
+  expect(
+    layer(CoverPresentationPolicy.currentIdentifier).findByType(AlbumCover)
+      .props.cover,
+  ).toBe(CoverFixture.secondArtwork);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.initialOffsetPixels,
+  );
+  expect(animations).toHaveLength(CoverFixture.singleCall);
 });
-test('Metadata refresh for the same occurrence preserves the running transition', () => {
+
+test('Previous reverses the outgoing and incoming motion, and the following Next reverses it again', async () => {
   act(() => {
     renderer = create(render());
   });
-  act(() => renderer.update(render(second)));
-  act(() => renderer.update(render({ ...second, title: 'Updated' })));
-  expect(animations).toHaveLength(1);
-  expect(animations[0].stop).not.toHaveBeenCalled();
+  measure();
+  await buttonTransition(CoverDirection.Previous, CoverFixture.firstIndex);
+  frame(CoverFixture.firstIndex, CoverFixture.halfProgress);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.halfPhoneStepPixels,
+  );
+  expect(translation(CoverPresentationPolicy.previousIdentifier)).toBe(
+    -CoverFixture.halfPhoneStepPixels,
+  );
+  finish(CoverFixture.firstIndex);
+  await buttonTransition(CoverDirection.Next, CoverFixture.secondIndex);
+  frame(CoverFixture.secondIndex, CoverFixture.halfProgress);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    -CoverFixture.halfPhoneStepPixels,
+  );
+  expect(translation(CoverPresentationPolicy.nextIdentifier)).toBe(
+    CoverFixture.halfPhoneStepPixels,
+  );
+  finish(CoverFixture.secondIndex);
+  expect(previous).toHaveBeenCalledTimes(CoverFixture.singleCall);
+  expect(next).toHaveBeenCalledTimes(CoverFixture.singleCall);
 });
-test('Automatic advance defaults forward after an earlier Previous action', () => {
-  const navigation = {
-    entryIdentifier: first.entryIdentifier,
-    direction: 'previous' as const,
-  };
+
+test('Horizontal gesture ownership leaves vertical scrolling and dismissing to the parent', () => {
   act(() => {
     renderer = create(render());
   });
-  act(() => renderer.update(render(second, navigation)));
-  act(() => renderer.update(render(third, navigation)));
-  expect(translation('playing-current-cover')).toBeGreaterThan(0);
+  measure();
+  expect(
+    responder.onMoveShouldSetPanResponder?.(
+      gestureEvent,
+      gesture(CoverFixture.shortDragPixels),
+    ),
+  ).toBe(true);
+  expect(
+    responder.onMoveShouldSetPanResponder?.(
+      gestureEvent,
+      gesture(
+        CoverFixture.shortDragPixels,
+        CoverFixture.stationaryVelocityPixelsPerMillisecond,
+        CoverFixture.verticalDragPixels,
+      ),
+    ),
+  ).toBe(false);
+  expect(
+    responder.onMoveShouldSetPanResponder?.(
+      gestureEvent,
+      gesture(CoverFixture.smallerHorizontalPixels),
+    ),
+  ).toBe(false);
+  act(() => renderer.update(render(CoverFixture.secondIndex, true)));
+  expect(
+    responder.onMoveShouldSetPanResponder?.(
+      gestureEvent,
+      gesture(CoverFixture.shortDragPixels),
+    ),
+  ).toBe(false);
 });
-test('Clearing the track removes retained artwork and cancels animation', () => {
+
+test('While held, a fully dragged cover reveals its neighbor and reversing the finger reverses the same layers', () => {
   act(() => {
     renderer = create(render());
   });
-  act(() => renderer.update(render(second)));
+  measure();
   act(() =>
-    renderer.update(<PlayingCoverTransition track={null} navigation={null} />),
+    responder.onPanResponderGrant?.(
+      gestureEvent,
+      gesture(CoverFixture.initialOffsetPixels),
+    ),
   );
-  expect(animations[0].stop).toHaveBeenCalled();
-  expect(layer('playing-outgoing-cover')).toBeUndefined();
-  expect(translation('playing-current-cover')).toBe(
-    CoverTransitionPolicy.startProgress,
+  act(() =>
+    responder.onPanResponderMove?.(
+      gestureEvent,
+      gesture(-CoverFixture.fullPhoneStepPixels),
+    ),
   );
+  expect(translation(CoverPresentationPolicy.nextIdentifier)).toBe(
+    CoverFixture.initialOffsetPixels,
+  );
+  expect(select).not.toHaveBeenCalled();
+  act(() =>
+    responder.onPanResponderMove?.(
+      gestureEvent,
+      gesture(CoverFixture.shortDragPixels),
+    ),
+  );
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.shortDragPixels,
+  );
+  expect(translation(CoverPresentationPolicy.previousIdentifier)).toBe(
+    -CoverFixture.fullPhoneStepPixels + CoverFixture.shortDragPixels,
+  );
+  expect(animations).toHaveLength(CoverFixture.noCalls);
+});
+
+test('A short fast release completes its current horizontal position and selects once', () => {
+  act(() => {
+    renderer = create(render());
+  });
+  measure();
+  act(() =>
+    responder.onPanResponderGrant?.(
+      gestureEvent,
+      gesture(CoverFixture.initialOffsetPixels),
+    ),
+  );
+  act(() =>
+    responder.onPanResponderMove?.(
+      gestureEvent,
+      gesture(-CoverFixture.shortDragPixels),
+    ),
+  );
+  act(() =>
+    responder.onPanResponderRelease?.(
+      gestureEvent,
+      gesture(
+        -CoverFixture.shortDragPixels,
+        -CoverFixture.fastVelocityPixelsPerMillisecond,
+      ),
+    ),
+  );
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    -CoverFixture.shortDragPixels,
+  );
+  expect(select).toHaveBeenCalledWith(CoverFixture.thirdIdentifier);
+  expect(animations[CoverFixture.firstIndex].endOffsetPixels).toBe(
+    -CoverFixture.fullPhoneStepPixels,
+  );
+  act(() => renderer.update(render(CoverFixture.thirdIndex)));
+  finish(CoverFixture.firstIndex);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.initialOffsetPixels,
+  );
+  expect(animations).toHaveLength(CoverFixture.singleCall);
+});
+
+test('A cancelled gesture animates from the held position instead of snapping to center', () => {
+  act(() => {
+    renderer = create(render());
+  });
+  measure();
+  act(() =>
+    responder.onPanResponderGrant?.(
+      gestureEvent,
+      gesture(CoverFixture.initialOffsetPixels),
+    ),
+  );
+  act(() =>
+    responder.onPanResponderMove?.(
+      gestureEvent,
+      gesture(CoverFixture.shortDragPixels),
+    ),
+  );
+  act(() =>
+    responder.onPanResponderTerminate?.(
+      gestureEvent,
+      gesture(CoverFixture.shortDragPixels),
+    ),
+  );
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.shortDragPixels,
+  );
+  expect(animations[CoverFixture.firstIndex].endOffsetPixels).toBe(
+    CoverGesturePolicy.centeredOffsetPixels,
+  );
+  frame(CoverFixture.firstIndex, CoverFixture.halfProgress);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.shortDragPixels * CoverFixture.halfProgress,
+  );
+  finish(CoverFixture.firstIndex);
+  expect(translation(CoverPresentationPolicy.currentIdentifier)).toBe(
+    CoverFixture.initialOffsetPixels,
+  );
+  expect(select).not.toHaveBeenCalled();
 });

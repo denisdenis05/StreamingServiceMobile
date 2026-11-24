@@ -1,7 +1,8 @@
 import {
   PlayingCoverTransition,
-  CoverNavigation,
+  PlayingCoverHandle,
 } from './PlayingCoverTransition';
+import { CoverDirection, CoverGesturePolicy } from './CoverGestureController';
 import {
   PlayingControlButton,
   PlayingControlButtonPolicy,
@@ -60,6 +61,9 @@ const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const Playing = ({ navigation }: any) => {
   const {
     currentTrack,
+    queue,
+    selectEntry,
+    readCurrentEntryIdentifier,
     isPlaying,
     isLoading,
     play,
@@ -74,25 +78,25 @@ const Playing = ({ navigation }: any) => {
     toggleShuffle,
   } = useMusicQueue();
 
-  const [coverNavigation, setCoverNavigation] =
-    useState<CoverNavigation | null>(null);
-  useEffect(() => {
-    setCoverNavigation(null);
-  }, [currentTrack?.entryIdentifier]);
-  const navigateNext = useCallback(() => {
-    setCoverNavigation({
-      entryIdentifier: currentTrack?.entryIdentifier,
-      direction: 'next',
-    });
-    return playNext();
-  }, [currentTrack?.entryIdentifier, playNext]);
-  const navigatePrevious = useCallback(() => {
-    setCoverNavigation({
-      entryIdentifier: currentTrack?.entryIdentifier,
-      direction: 'previous',
-    });
-    return playPrevious();
-  }, [currentTrack?.entryIdentifier, playPrevious]);
+  const coverReference = useRef<PlayingCoverHandle>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const navigateNext = useCallback(
+    () => coverReference.current?.navigate(CoverDirection.Next),
+    [],
+  );
+  const navigatePrevious = useCallback(
+    () => coverReference.current?.navigate(CoverDirection.Previous),
+    [],
+  );
+
+  const advanceCoverNext = useCallback(async () => {
+    await playNext();
+    return readCurrentEntryIdentifier();
+  }, [playNext, readCurrentEntryIdentifier]);
+  const advanceCoverPrevious = useCallback(async () => {
+    await playPrevious();
+    return readCurrentEntryIdentifier();
+  }, [playPrevious, readCurrentEntryIdentifier]);
 
   const [lyricsExpanded, setLyricsExpanded] = useState(false);
   const { state: lyricsState, refresh: refreshLyrics } = useLyrics(
@@ -114,6 +118,34 @@ const Playing = ({ navigation }: any) => {
     jam.mode === SpotifyPlayerJamMode.Stopping ||
     (jam.mode === SpotifyPlayerJamMode.Following &&
       !jam.remoteControlsAvailable);
+  const selectCoverEntry = useCallback(
+    (entryIdentifier: string) => {
+      if (jam.mode !== SpotifyPlayerJamMode.Following)
+        return selectEntry(entryIdentifier);
+      const currentIndex = queue.findIndex(
+        entry => entry.entryIdentifier === currentTrack?.entryIdentifier,
+      );
+      const targetIndex = queue.findIndex(
+        entry => entry.entryIdentifier === entryIdentifier,
+      );
+      if (
+        currentIndex === CoverGesturePolicy.missingQueueIndex ||
+        targetIndex === CoverGesturePolicy.missingQueueIndex ||
+        currentIndex === targetIndex
+      )
+        return Promise.resolve();
+      return targetIndex > currentIndex ? playNext() : playPrevious();
+    },
+    [
+      currentTrack?.entryIdentifier,
+      jam.mode,
+      playNext,
+      playPrevious,
+      queue,
+      selectEntry,
+    ],
+  );
+
   const {
     state: preferenceState,
     toggle: toggleRecordingLike,
@@ -226,8 +258,14 @@ const Playing = ({ navigation }: any) => {
             />
           </HeaderContainer>
           <PlayingCoverTransition
+            ref={coverReference}
             track={currentTrack}
-            navigation={coverNavigation}
+            queue={queue}
+            disabled={controlsDisabled || lyricsExpanded}
+            onNext={advanceCoverNext}
+            onPrevious={advanceCoverPrevious}
+            onSelect={selectCoverEntry}
+            onBusyChange={setCoverBusy}
           />
           <SongDetailsContainer>
             <SongDescriptorContainer>
@@ -306,7 +344,7 @@ const Playing = ({ navigation }: any) => {
               label={PlayingControlButtonPolicy.previous}
               color={colors.normalText}
               onPress={navigatePrevious}
-              disabled={controlsDisabled}
+              disabled={controlsDisabled || coverBusy}
             />
             <PlayingControlButton
               glyph={isPlaying ? 'pause' : 'play'}
@@ -324,7 +362,7 @@ const Playing = ({ navigation }: any) => {
               label={PlayingControlButtonPolicy.next}
               color={colors.normalText}
               onPress={navigateNext}
-              disabled={controlsDisabled}
+              disabled={controlsDisabled || coverBusy}
             />
             <PlayingControlButton
               glyph={
